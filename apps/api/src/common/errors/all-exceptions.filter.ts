@@ -3,6 +3,7 @@ import { Prisma } from '@pay2all/database';
 import { type ApiFailure, ErrorCode } from '@pay2all/types';
 import type { Response } from 'express';
 import { RequestContextStore } from '../context/request-context';
+import { ReplayedResponse } from '../idempotency/idempotency.service';
 import { AppError } from './app-error';
 
 const HTTP_STATUS_TO_CODE: Record<number, ErrorCode> = {
@@ -25,6 +26,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const res = host.switchToHttp().getResponse<Response>();
+    if (exception instanceof ReplayedResponse) {
+      // Idempotent replay: the original response, byte-for-byte.
+      res.setHeader('Idempotent-Replayed', 'true');
+      res.status(exception.status).json(exception.body);
+      return;
+    }
     const requestId = RequestContextStore.get()?.requestId ?? 'unknown';
     const appError = this.toAppError(exception);
 

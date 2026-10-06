@@ -31,6 +31,13 @@ describe('mock payin', () => {
     expect((await m.getPaymentStatus(failing.providerOrderId)).status).toBe('FAILED');
   });
 
+  it('scripts creation-time rejection and ambiguity', async () => {
+    const m = new MockPayinProvider(ctx);
+    const base = { reference: idAt('pay', Date.now()), currency: 'INR' as const, method: 'UPI_QR' as const, expiresAt: new Date() };
+    await expect(m.createPayment({ ...base, amountMinor: 100_091n })).rejects.toMatchObject({ kind: 'REJECTED' });
+    await expect(m.createPayment({ ...base, amountMinor: 100_092n })).rejects.toMatchObject({ kind: 'AMBIGUOUS' });
+  });
+
   it('verifies webhook signatures', () => {
     const m = new MockPayinProvider(ctx);
     const body = Buffer.from(JSON.stringify({ event_id: 'ev1', type: 'payment.status', data: { reference: 'pay_x', status: 'SUCCESS', amount_minor: '100' } }));

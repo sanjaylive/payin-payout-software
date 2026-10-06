@@ -47,6 +47,9 @@ importers:
       '@pay2all/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@pay2all/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@pay2all/ledger':
         specifier: workspace:*
         version: link:../../packages/ledger

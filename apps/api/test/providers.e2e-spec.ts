@@ -140,7 +140,8 @@ describe('inbound provider webhooks', () => {
     expect(await ctx.prisma.providerWebhookEvent.count()).toBe(before);
 
     const stored = await ctx.prisma.providerWebhookEvent.findFirstOrThrow({ where: { provider: { code: 'mock-upi' } }, orderBy: { receivedAt: 'desc' } });
-    expect(stored).toMatchObject({ eventType: 'payment.status', signatureValid: true, status: 'RECEIVED' });
+    // Processed inline; no such payment exists, so it is recorded and ignored (reconciliation flags it).
+    expect(stored).toMatchObject({ eventType: 'payment.status', signatureValid: true, status: 'IGNORED' });
   });
 
   it('returns 404 for unknown providers', async () => {

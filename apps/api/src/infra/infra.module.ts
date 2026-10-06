@@ -2,6 +2,7 @@ import { Global, Inject, Logger, Module, type OnApplicationShutdown } from '@nes
 import { createPrismaClient, type PrismaClient } from '@pay2all/database';
 import Redis from 'ioredis';
 import { ApiConfig } from '../config/api-config';
+import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { MailService } from './mail.service';
 import { OutboxService } from './outbox.service';
@@ -35,8 +36,9 @@ import { PRISMA, REDIS } from './tokens';
     MailService,
     StorageService,
     OutboxService,
+    IdempotencyService,
   ],
-  exports: [PRISMA, REDIS, RateLimitService, MailService, StorageService, OutboxService],
+  exports: [PRISMA, REDIS, RateLimitService, MailService, StorageService, OutboxService, IdempotencyService],
 })
 export class InfraModule implements OnApplicationShutdown {
   private readonly logger = new Logger(InfraModule.name);

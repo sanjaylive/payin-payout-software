@@ -8,6 +8,7 @@
 // approval policies, sales leads, MFA recovery codes.
 // Phase 3 scope: double-entry ledger (accounts, journals, entries, snapshots, adjustments).
 // Phase 4 scope: providers, encrypted credentials, routing rules, health snapshots, inbound webhooks.
+// Phase 5 scope: payments, attempts, refunds, pricing, idempotency, merchant webhook events.
 // Later phases add their models in their own migrations (see docs/ROADMAP.md).
 
 generator client {
@@ -476,19 +477,21 @@ enum LeadStatus {
 
 /// Merchant aggregate. Shares its primary key with its Organization (merchantId == organizationId).
 model Merchant {
-  id            String         @id
+  id                String            @id
   /// Denormalised parent reseller (null = direct Pay2All merchant) for single-index reseller scoping.
-  resellerId    String?        @map("reseller_id")
-  status        MerchantStatus @default(DRAFT)
-  payinEnabled  Boolean        @default(false) @map("payin_enabled")
-  payoutEnabled Boolean        @default(false) @map("payout_enabled")
-  riskCategory  RiskCategory?  @map("risk_category")
-  submittedAt   DateTime?      @map("submitted_at") @db.Timestamptz(3)
-  approvedAt    DateTime?      @map("approved_at") @db.Timestamptz(3)
+  resellerId        String?           @map("reseller_id")
+  status            MerchantStatus    @default(DRAFT)
+  payinEnabled      Boolean           @default(false) @map("payin_enabled")
+  payoutEnabled     Boolean           @default(false) @map("payout_enabled")
+  riskCategory      RiskCategory?     @map("risk_category")
+  /// What to do when a provider reports success after we expired/failed a payment.
+  lateSuccessPolicy LateSuccessPolicy @default(AUTO_ACCEPT) @map("late_success_policy")
+  submittedAt       DateTime?         @map("submitted_at") @db.Timestamptz(3)
+  approvedAt        DateTime?         @map("approved_at") @db.Timestamptz(3)
   /// Optimistic concurrency for status transitions.
-  version       Int            @default(1)
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version           Int               @default(1)
+  createdAt         DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization          @relation(fields: [id], references: [id], onDelete: Restrict)
   profile      MerchantProfile?
@@ -1111,4 +1114,323 @@ model ProviderWebhookEvent {
   @@unique([providerId, externalEventId])
   @@index([status, receivedAt])
   @@map("provider_webhook_events")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 5 — Payin, refunds, pricing, idempotency (docs/PAYIN_FLOW.md)
+// ---------------------------------------------------------------------------------------------
+
+enum LateSuccessPolicy {
+  AUTO_ACCEPT
+  MANUAL_REVIEW
+}
+
+enum PayinMethod {
+  UPI_QR
+  UPI_INTENT
+  PAYMENT_LINK
+  VIRTUAL_ACCOUNT
+  IMPS
+  NEFT
+  RTGS
+  CARD
+  NETBANKING
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
+  CANCELLED
+  SETTLEMENT_PENDING
+  SETTLED
+  REFUND_PENDING
+  PARTIALLY_REFUNDED
+  REFUNDED
+  DISPUTED
+  CHARGEBACK
+}
+
+enum AttemptStatus {
+  INITIATED
+  SUCCEEDED
+  FAILED
+  AMBIGUOUS
+}
+
+enum RefundStatus {
+  CREATED
+  PENDING
+  SUCCESS
+  FAILED
+  MANUAL_REVIEW
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum PricingPlanKind {
+  /// What a provider charges Pay2All.
+  PROVIDER_COST
+  /// What Pay2All charges a reseller (wholesale).
+  WHOLESALE
+  /// What the merchant is charged.
+  MERCHANT
+}
+
+enum PricingPlanStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ChargeType {
+  FLAT
+  PERCENTAGE
+  PERCENTAGE_WITH_MIN_MAX
+}
+
+enum PricingSubjectType {
+  MERCHANT
+  RESELLER
+  PROVIDER
+}
+
+/// A collection. `id` (pay_…) is Pay2All's external id; provider ids are separate columns.
+model Payment {
+  id                    String        @id
+  merchantId            String        @map("merchant_id")
+  resellerId            String?       @map("reseller_id")
+  merchantOrderId       String        @map("merchant_order_id") @db.VarChar(64)
+  method                PayinMethod
+  status                PaymentStatus @default(CREATED)
+  amountMinor           BigInt        @map("amount_minor")
+  currency              String        @default("INR") @db.Char(3)
+  feeMinor              BigInt        @default(0) @map("fee_minor")
+  taxMinor              BigInt        @default(0) @map("tax_minor")
+  netAmountMinor        BigInt        @map("net_amount_minor")
+  refundedAmountMinor   BigInt        @default(0) @map("refunded_amount_minor")
+  providerId            String?       @map("provider_id")
+  routeId               String?       @map("route_id")
+  providerOrderId       String?       @map("provider_order_id") @db.VarChar(120)
+  providerTransactionId String?       @map("provider_transaction_id") @db.VarChar(120)
+  utr                   String?       @db.VarChar(40)
+  rrn                   String?       @db.VarChar(40)
+  payerVpa              String?       @map("payer_vpa") @db.VarChar(120)
+  customerName          String?       @map("customer_name") @db.VarChar(120)
+  customerMobile        String?       @map("customer_mobile") @db.VarChar(16)
+  customerEmail         String?       @map("customer_email") @db.VarChar(254)
+  description           String?       @db.VarChar(200)
+  metadata              Json          @default("{}")
+  qrPayload             String?       @map("qr_payload") @db.VarChar(1000)
+  upiIntent             String?       @map("upi_intent") @db.VarChar(1000)
+  paymentLink           String?       @map("payment_link") @db.VarChar(500)
+  expiresAt             DateTime      @map("expires_at") @db.Timestamptz(3)
+  successAt             DateTime?     @map("success_at") @db.Timestamptz(3)
+  failedAt              DateTime?     @map("failed_at") @db.Timestamptz(3)
+  failureCode           String?       @map("failure_code") @db.VarChar(60)
+  failureReason         String?       @map("failure_reason") @db.VarChar(300)
+  settledAt             DateTime?     @map("settled_at") @db.Timestamptz(3)
+  settlementId          String?       @map("settlement_id")
+  lateSuccess           Boolean       @default(false) @map("late_success")
+  requiresReview        Boolean       @default(false) @map("requires_review")
+  reviewReason          String?       @map("review_reason") @db.VarChar(300)
+  captureJournalId      String?       @map("capture_journal_id")
+  nextPollAt            DateTime?     @map("next_poll_at") @db.Timestamptz(3)
+  pollCount             Int           @default(0) @map("poll_count")
+  createdById           String?       @map("created_by_id")
+  requestId             String?       @map("request_id") @db.VarChar(40)
+  version               Int           @default(1)
+  createdAt             DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  attempts PaymentAttempt[]
+  refunds  Refund[]
+
+  @@unique([merchantId, merchantOrderId])
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([resellerId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@index([providerId, createdAt])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@map("payments")
+}
+
+/// One provider call for a payment (failover creates more than one).
+model PaymentAttempt {
+  id              String        @id
+  paymentId       String        @map("payment_id")
+  attemptNo       Int           @map("attempt_no")
+  providerId      String        @map("provider_id")
+  status          AttemptStatus @default(INITIATED)
+  providerOrderId String?       @map("provider_order_id") @db.VarChar(120)
+  errorKind       String?       @map("error_kind") @db.VarChar(20)
+  errorCode       String?       @map("error_code") @db.VarChar(60)
+  errorMessage    String?       @map("error_message") @db.VarChar(300)
+  latencyMs       Int?          @map("latency_ms")
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt     DateTime?     @map("completed_at") @db.Timestamptz(3)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([paymentId, attemptNo])
+  @@map("payment_attempts")
+}
+
+model Refund {
+  id                String       @id
+  paymentId         String       @map("payment_id")
+  merchantId        String       @map("merchant_id")
+  merchantRefundId  String?      @map("merchant_refund_id") @db.VarChar(64)
+  amountMinor       BigInt       @map("amount_minor")
+  currency          String       @default("INR") @db.Char(3)
+  reason            String?      @db.VarChar(300)
+  status            RefundStatus @default(CREATED)
+  providerId        String       @map("provider_id")
+  providerRefundId  String?      @map("provider_refund_id") @db.VarChar(120)
+  failureReason     String?      @map("failure_reason") @db.VarChar(300)
+  attempts          Int          @default(0)
+  nextAttemptAt     DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  journalId         String?      @map("journal_id")
+  reversalJournalId String?      @map("reversal_journal_id")
+  createdById       String?      @map("created_by_id")
+  completedAt       DateTime?    @map("completed_at") @db.Timestamptz(3)
+  version           Int          @default(1)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([paymentId])
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@map("refunds")
+}
+
+/// Request-level idempotency (docs/PAYIN_FLOW.md §4).
+model IdempotencyRecord {
+  id                 String            @id
+  merchantId         String            @map("merchant_id")
+  idempotencyKey     String            @map("idempotency_key") @db.VarChar(64)
+  requestMethod      String            @map("request_method") @db.VarChar(8)
+  requestPath        String            @map("request_path") @db.VarChar(200)
+  requestHash        String            @map("request_hash") @db.Char(64)
+  status             IdempotencyStatus @default(IN_PROGRESS)
+  responseStatusCode Int?              @map("response_status_code")
+  responseBody       Json?             @map("response_body")
+  resourceId         String?           @map("resource_id") @db.VarChar(60)
+  expiresAt          DateTime          @map("expires_at") @db.Timestamptz(3)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([merchantId, idempotencyKey])
+  @@index([status, createdAt])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}
+
+model PricingPlan {
+  id            String            @id
+  name          String            @db.VarChar(120)
+  kind          PricingPlanKind
+  status        PricingPlanStatus @default(ACTIVE)
+  /// Organization that owns/edits the plan (platform, or a reseller for its merchants).
+  ownerOrgId    String            @map("owner_org_id")
+  /// Default plan of its kind for the owner when no assignment exists.
+  isDefault     Boolean           @default(false) @map("is_default")
+  /// GST on the fee, as rate micros (18% = 18000000).
+  taxRateMicros BigInt            @default(18000000) @map("tax_rate_micros")
+  /// Return the merchant fee on refund (default: no).
+  refundFee     Boolean           @default(false) @map("refund_fee")
+  effectiveFrom DateTime          @default(now()) @map("effective_from") @db.Timestamptz(3)
+  effectiveTo   DateTime?         @map("effective_to") @db.Timestamptz(3)
+  createdById   String?           @map("created_by_id")
+  version       Int               @default(1)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  rules       PricingRule[]
+  assignments PricingAssignment[]
+
+  @@index([kind, status, isDefault])
+  @@map("pricing_plans")
+}
+
+model PricingRule {
+  id             String      @id
+  planId         String      @map("plan_id")
+  service        ServiceType
+  /// Payin method / payout mode; null = any.
+  method         String?     @db.VarChar(30)
+  providerId     String?     @map("provider_id")
+  minAmountMinor BigInt?     @map("min_amount_minor")
+  maxAmountMinor BigInt?     @map("max_amount_minor")
+  chargeType     ChargeType  @map("charge_type")
+  rateMicros     BigInt?     @map("rate_micros")
+  flatMinor      BigInt?     @map("flat_minor")
+  minFeeMinor    BigInt?     @map("min_fee_minor")
+  maxFeeMinor    BigInt?     @map("max_fee_minor")
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  plan PricingPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([planId, service])
+  @@map("pricing_rules")
+}
+
+model PricingAssignment {
+  id            String             @id
+  planId        String             @map("plan_id")
+  subjectType   PricingSubjectType @map("subject_type")
+  subjectId     String             @map("subject_id")
+  effectiveFrom DateTime           @default(now()) @map("effective_from") @db.Timestamptz(3)
+  effectiveTo   DateTime?          @map("effective_to") @db.Timestamptz(3)
+  createdById   String?            @map("created_by_id")
+  createdAt     DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  plan PricingPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([subjectType, subjectId, effectiveFrom(sort: Desc)])
+  @@map("pricing_assignments")
+}
+
+/// Immutable record of exactly how a transaction was priced. Fees are never recomputed.
+model TransactionPricingSnapshot {
+  id                  String   @id
+  transactionType     String   @map("transaction_type") @db.VarChar(20)
+  transactionId       String   @unique @map("transaction_id")
+  merchantId          String   @map("merchant_id")
+  /// Plans and the exact rules applied (JSON copies — later plan edits can't change this).
+  pricing             Json
+  merchantFeeMinor    BigInt   @map("merchant_fee_minor")
+  taxMinor            BigInt   @map("tax_minor")
+  taxRateMicros       BigInt   @map("tax_rate_micros")
+  wholesaleFeeMinor   BigInt?  @map("wholesale_fee_minor")
+  providerCostMinor   BigInt   @map("provider_cost_minor")
+  resellerMarginMinor BigInt   @map("reseller_margin_minor")
+  platformMarginMinor BigInt   @map("platform_margin_minor")
+  refundFee           Boolean  @default(false) @map("refund_fee")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([merchantId, createdAt])
+  @@map("transaction_pricing_snapshots")
+}
+
+/// Merchant-facing event (payment.success, refund.failed …). Delivered by the webhook worker (Phase 7).
+model WebhookEvent {
+  id         String   @id
+  merchantId String   @map("merchant_id")
+  type       String   @db.VarChar(60)
+  apiVersion String   @default("2026-10-01") @map("api_version") @db.VarChar(20)
+  payload    Json
+  resourceId String   @map("resource_id") @db.VarChar(60)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([resourceId])
+  @@map("webhook_events")
 }

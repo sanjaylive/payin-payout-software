@@ -13,7 +13,11 @@ import { cfg, digits, mockHealthCheck, paise, settings, simulateLatency, ulidTim
 /**
  * Sandbox UPI collection provider. Stateless and deterministic so it behaves the same on every API
  * node; outcomes are scripted by the amount's paise:
- *   .13 → FAILED   .50 → stays PENDING   .77 → provider 5xx (AMBIGUOUS)   otherwise SUCCESS after a delay
+ *   .13 → FAILED   .50 → stays PENDING   .77 → status check 5xx (AMBIGUOUS)
+ *   .91 → createPayment REJECTED (safe to fail over)   .92 → createPayment times out (AMBIGUOUS)
+ *   otherwise SUCCESS after a delay
+ * `config.scripted_create_failures: false` disables .91/.92 (used by the fallback sandbox so failover
+ * can be demonstrated end to end).
  */
 export class MockPayinProvider implements PayinProvider {
   constructor(private readonly ctx: ProviderContext) {}
@@ -31,6 +35,9 @@ export class MockPayinProvider implements PayinProvider {
   async createPayment(req: CreatePaymentRequest): Promise<CreatePaymentResult> {
     await simulateLatency(this.ctx);
     if (req.amountMinor <= 0n) throw new ProviderError('REJECTED', 'INVALID_AMOUNT', 'Amount must be positive', this.ctx.providerCode);
+    const scripted = this.ctx.config.scripted_create_failures !== false;
+    if (scripted && paise(req.amountMinor) === 91) throw new ProviderError('REJECTED', 'COLLECT_NOT_SUPPORTED', 'Simulated rejection at order creation', this.ctx.providerCode, 422);
+    if (scripted && paise(req.amountMinor) === 92) throw new ProviderError('AMBIGUOUS', 'TIMEOUT', 'Simulated timeout creating the order', this.ctx.providerCode);
     const providerOrderId = this.orderId(req.reference, req.amountMinor);
     const vpa = cfg(this.ctx, 'collect_vpa', 'pay2all.mock@upi');
     const major = `${req.amountMinor / 100n}.${String(req.amountMinor % 100n).padStart(2, '0')}`;

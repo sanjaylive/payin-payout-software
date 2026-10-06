@@ -12,7 +12,7 @@ import {
   recordProbe,
   type RedisLike,
 } from '@pay2all/providers';
-import type { ScheduledJob } from './scheduler';
+import type { ScheduledJob } from '@pay2all/events';
 
 const AUTO_STATES: BreakerStatus[] = ['ACTIVE', 'DEGRADED', 'DOWN'];
 

@@ -52,7 +52,7 @@ export async function createApp(config: ApiConfig): Promise<NestExpressApplicati
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Request-Id', 'X-Pay2All-CSRF'],
-    exposedHeaders: ['X-Request-Id', 'Retry-After'],
+    exposedHeaders: ['X-Request-Id', 'Retry-After', 'Idempotent-Replayed'],
     maxAge: 600,
   });
 

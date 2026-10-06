@@ -10,7 +10,9 @@
     "lint": "eslint .",
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "seed:demo-ledger": "tsx scripts/seed-demo-ledger.ts"
+    "seed:demo-ledger": "tsx scripts/seed-demo-ledger.ts",
+    "dev:jobs": "nest start --watch --preserveWatchOutput --entryFile jobs.main",
+    "start:jobs": "node dist/jobs.main.js"
   },
   "dependencies": {
     "@nestjs/common": "~11.2.7",
@@ -39,7 +41,8 @@
     "@aws-sdk/client-s3": "^3.1146.0",
     "@pay2all/ledger": "workspace:*",
     "multer": "^2.4.0",
-    "@pay2all/providers": "workspace:*"
+    "@pay2all/providers": "workspace:*",
+    "@pay2all/events": "workspace:*"
   },
   "devDependencies": {
     "@nestjs/cli": "~11.0.24",

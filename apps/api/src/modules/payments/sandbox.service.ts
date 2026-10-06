@@ -1,0 +1,56 @@
+import { createHmac, randomUUID } from 'node:crypto';
+import { Inject, Injectable } from '@nestjs/common';
+import type { PrismaClient } from '@pay2all/database';
+import { ErrorCode } from '@pay2all/types';
+import { AppError } from '../../common/errors/app-error';
+import { ApiConfig } from '../../config/api-config';
+import { PRISMA } from '../../infra/tokens';
+import { TenantScopeService } from '../access/tenant-scope.service';
+import type { Actor } from '../auth/actor';
+import { ProviderRegistryService } from '../providers/provider-registry.service';
+import { InboundEventsService } from './inbound-events.service';
+
+/**
+ * Sandbox "customer pays" simulator. Builds a correctly signed mock-provider callback and feeds it
+ * through the real inbound path — so demos exercise exactly the production code. Only for mock
+ * providers in the TEST environment, and never in production.
+ */
+@Injectable()
+export class SandboxService {
+  constructor(
+    @Inject(PRISMA) private readonly prisma: PrismaClient,
+    private readonly registry: ProviderRegistryService,
+    private readonly inbound: InboundEventsService,
+    private readonly scope: TenantScopeService,
+    private readonly config: ApiConfig,
+  ) {}
+
+  async completePayment(actor: Actor, paymentId: string, outcome: 'SUCCESS' | 'FAILED') {
+    if (this.config.isProduction) throw new AppError(ErrorCode.NOT_FOUND);
+    const ids = await this.scope.accessibleOrganizationIds(actor);
+    const p = await this.prisma.payment.findFirst({ where: { id: paymentId, ...(ids ? { merchantId: { in: ids } } : {}) } });
+    if (!p) throw new AppError(ErrorCode.TRANSACTION_NOT_FOUND);
+    if (!p.providerId || !p.providerOrderId) throw new AppError(ErrorCode.INVALID_REQUEST, 'Payment has no provider order yet');
+    const provider = await this.prisma.provider.findUniqueOrThrow({ where: { id: p.providerId } });
+    if (provider.adapter !== 'mock' || provider.environment !== 'TEST') throw new AppError(ErrorCode.FORBIDDEN, 'Simulation is only available for sandbox providers');
+    const ctx = await this.registry.context(provider);
+    const secret = ctx.credentials.webhook_secret;
+    if (!secret) throw new AppError(ErrorCode.INVALID_REQUEST, 'Sandbox provider has no webhook secret');
+    const digits = () => String(Math.floor(1e11 + Math.random() * 9e11));
+    const body = Buffer.from(
+      JSON.stringify({
+        event_id: `sbx_${randomUUID()}`,
+        type: 'payment.status',
+        data: {
+          reference: p.id,
+          provider_order_id: p.providerOrderId,
+          status: outcome,
+          amount_minor: p.amountMinor.toString(),
+          ...(outcome === 'SUCCESS' ? { utr: digits(), rrn: digits(), payer_vpa: 'sandbox.customer@okmock' } : { failure_reason: 'Customer declined the collect request (sandbox)' }),
+        },
+      }),
+    );
+    const signature = createHmac('sha256', secret).update(body).digest('hex');
+    return this.inbound.receive(provider.code, body, { 'x-mock-signature': signature });
+  }
+}
