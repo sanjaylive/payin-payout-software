@@ -1,11 +1,12 @@
 import { Global, Inject, Logger, Module, type OnApplicationShutdown } from '@nestjs/common';
+import { createKeyring, FieldEncryptor } from '@pay2all/auth';
 import { createPrismaClient, type PrismaClient } from '@pay2all/database';
 import Redis from 'ioredis';
 import { ApiConfig } from '../config/api-config';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
-import { MailService } from './mail.service';
 import { MerchantEventsService } from './merchant-events.service';
+import { NotificationsService } from './notifications.service';
 import { OutboxService } from './outbox.service';
 import { StorageService } from './storage.service';
 import { PRISMA, REDIS } from './tokens';
@@ -33,14 +34,19 @@ import { PRISMA, REDIS } from './tokens';
           lazyConnect: false,
         }),
     },
+    {
+      provide: FieldEncryptor,
+      inject: [ApiConfig],
+      useFactory: (config: ApiConfig) => new FieldEncryptor(createKeyring(config.env.ENCRYPTION_KEY_ID, { [config.env.ENCRYPTION_KEY_ID]: config.env.ENCRYPTION_KEY })),
+    },
     RateLimitService,
-    MailService,
+    NotificationsService,
     StorageService,
     OutboxService,
     IdempotencyService,
     MerchantEventsService,
   ],
-  exports: [PRISMA, REDIS, RateLimitService, MailService, StorageService, OutboxService, IdempotencyService, MerchantEventsService],
+  exports: [PRISMA, REDIS, FieldEncryptor, RateLimitService, NotificationsService, StorageService, OutboxService, IdempotencyService, MerchantEventsService],
 })
 export class InfraModule implements OnApplicationShutdown {
   private readonly logger = new Logger(InfraModule.name);

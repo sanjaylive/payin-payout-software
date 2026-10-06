@@ -20,6 +20,7 @@ import { PaymentsModule } from './modules/payments/payments.module';
 import { PayoutsModule } from './modules/payouts/payouts.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { ProviderEventsModule } from './modules/provider-events/provider-events.module';
+import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
@@ -68,6 +69,7 @@ export class AppModule implements NestModule {
         PaymentsModule,
         PayoutsModule,
         ProviderEventsModule,
+        WebhooksModule,
       ],
       controllers: [HealthController],
       providers: [

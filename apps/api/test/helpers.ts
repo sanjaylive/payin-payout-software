@@ -6,7 +6,8 @@ import request from 'supertest';
 import type TestAgent from 'supertest/lib/agent';
 import { createApp } from '../src/app.factory';
 import { ApiConfig } from '../src/config/api-config';
-import { MailService } from '../src/infra/mail.service';
+import { FieldEncryptor } from '@pay2all/auth';
+import { notificationAad } from '../src/infra/notifications.service';
 import { PRISMA } from '../src/infra/tokens';
 
 export const SEED_PASSWORD = 'Test-Seed-Password-2026!';
@@ -15,7 +16,6 @@ export const ORIGIN = 'http://localhost:3000';
 export interface TestContext {
   app: INestApplication;
   prisma: PrismaClient;
-  mail: MailService;
   http: () => TestAgent;
 }
 
@@ -25,7 +25,6 @@ export async function createTestContext(): Promise<TestContext> {
   return {
     app,
     prisma: app.get<PrismaClient>(PRISMA),
-    mail: app.get(MailService),
     http: () => request(app.getHttpServer()),
   };
 }
@@ -109,4 +108,21 @@ export async function loginWithMfaEnrollment(ctx: TestContext, email: string) {
 
 export function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
+}
+
+export interface QueuedMail {
+  id: string;
+  to: string;
+  subject: string;
+  text: string;
+  template: string;
+}
+
+/** Emails queued for the notification worker, decrypted (tests only — content is encrypted at rest). */
+export async function queuedMail(ctx: TestContext, to?: string): Promise<QueuedMail[]> {
+  const enc = ctx.app.get(FieldEncryptor);
+  const rows = await ctx.prisma.notification.findMany({ where: { contentEncrypted: { not: null } }, orderBy: { createdAt: 'asc' } });
+  return rows
+    .map((r) => ({ id: r.id, template: r.template, ...(JSON.parse(enc.decrypt(r.contentEncrypted!, notificationAad(r.id))) as { to: string; subject: string; text: string }) }))
+    .filter((m) => !to || m.to === to);
 }

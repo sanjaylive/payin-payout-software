@@ -92,13 +92,14 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Bulk CSV payouts
 - [x] Dashboard: make payout, bulk payout, approvals, beneficiaries, payout transactions; admin payouts with review
 
-## Phase 7 — Kafka + workers ⬜
+## Phase 7 — Kafka + workers ✅
 
-- [ ] Outbox relay (SKIP LOCKED), idempotent Kafka producer, topic provisioning
-- [ ] Consumer framework with `processed_events`, retries, DLQ
-- [ ] Webhook delivery worker (signing, backoff, SSRF guard), logs and replay UI
-- [ ] Notification worker (email via SMTP; SMS provider later)
-- [ ] Move password-reset email from the API to the outbox
+- [x] Outbox relay (single leader + SKIP LOCKED), idempotent Kafka producer, topic provisioning
+- [x] Consumer framework with `processed_events`, retries, DLQ (+ dashboard and requeue)
+- [x] Webhook delivery worker (signing with rotation overlap, backoff, SSRF guard), logs and replay UI
+- [x] Notification worker (email via SMTP; SMS provider later)
+- [x] Move all API email (password reset, invites, alerts) to the outbox with encrypted content
+- [x] Payout `payout.queued` Kafka fast path (polling kept as the safety net)
 
 ## Phase 8 — Settlement & reconciliation ⬜
 
@@ -316,3 +317,46 @@ The dashboard charts were not checked visually in a browser this phase (the brow
 - risk pre-checks arrive in Phase 10.
 
 As in Phase 5, the new pages were compiled and fetched but not visually checked in a browser.
+
+### Phase 7 — Kafka + workers (completed 2026-10-07)
+
+**Delivered:**
+- **`@pay2all/events`:** an idempotent publisher with topic provisioning; a consumer framework (dedupe, retries, DLQ); webhook signing and verification; and the SSRF address classifier.
+- **Worker:**
+  - single-leader outbox relay;
+  - webhook dispatcher consumer and signed delivery sender (pinned-IP SSRF guard, no redirects, 9 attempts over about 2 days, attempt log, auto-disable after 100 consecutive failures with an email to the merchant's admins);
+  - notification sender (Kafka fast path plus polling; ciphertext wiped after sending);
+  - `processed_events` cleanup.
+- **API:**
+  - the API no longer talks to SMTP: notifications are queued encrypted through the outbox;
+  - webhook endpoints (secret shown once, 24-hour rotation overlap, test events), event and delivery logs with replay;
+  - platform pipeline health and dead-letter requeue;
+  - payout Kafka fast path in the jobs process.
+- **UI:** Developers → Webhooks and Webhook log; Admin → Events & webhooks (pipeline cards, all deliveries, dead letters with requeue).
+- **Docs:** WEBHOOKS.md (merchant guide with Node and Python verifiers); SECURITY.md §7 and ARCHITECTURE.md §8 updated.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- **Worker:** 13 integration tests against real Kafka, Postgres, Redis and Mailpit:
+  - relay order per aggregate, full envelope and headers; a single leader with failover;
+  - consumer dedupe across duplicate deliveries; poison message → DLQ topic plus DB row while consumption continues;
+  - signed delivery (verified with the reference verifier); fan-out only to subscribed endpoints, once;
+  - retry after a 500, redirect not followed, then success;
+  - SSRF blocks for loopback, `localhost`, metadata and `[::1]` with nothing sent;
+  - rotation overlap signs with both secrets and then only the new one;
+  - auto-disable plus admin email;
+  - email delivered through Mailpit with content wiped; SMTP failure retries, then fails and wipes.
+- **API:** 139 integration tests, including the new webhooks suite (secret shown once and encrypted, rotation overlap, URL and event validation, tenancy and permissions, test event, delivery log and replay, pipeline health and DLQ requeue). The auth suite now proves the reset token is never in plaintext in the notification row or the outbox.
+- **Events:** 22 unit tests (topics, signatures including rotation, SSRF ranges).
+- **Config:** tests for the new production rules.
+- **Dev stack end to end:** worker, API, jobs and a local signature-verifying receiver.
+  - All 51 pending outbox events were published.
+  - Six signed webhooks were delivered and verified (payment created / pending / success, payout created / queued / processing).
+  - The payout left QUEUED **0.26 s** after creation via the Kafka fast path.
+  - The password-reset email reached Mailpit, and the content was wiped.
+  - No errors were logged.
+
+**Notes:**
+- SMS notifications are still deferred.
+- The DLQ requeue republishes through the outbox rather than replaying the Kafka offset.
+- As before, the new pages were compiled and fetched but not checked visually in a browser.

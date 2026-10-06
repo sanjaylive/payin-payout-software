@@ -1,7 +1,5 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
-import { createKeyring, FieldEncryptor } from '@pay2all/auth';
-import { ApiConfig } from '../../config/api-config';
 import { AccessModule } from '../access/access.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthController } from './auth.controller';
@@ -17,14 +15,6 @@ import { TokenService } from './token.service';
   imports: [JwtModule.register({}), AccessModule, AuditModule],
   controllers: [AuthController],
   providers: [
-    {
-      provide: FieldEncryptor,
-      inject: [ApiConfig],
-      useFactory: (config: ApiConfig) =>
-        new FieldEncryptor(
-          createKeyring(config.env.ENCRYPTION_KEY_ID, { [config.env.ENCRYPTION_KEY_ID]: config.env.ENCRYPTION_KEY }),
-        ),
-    },
     TokenService,
     SessionService,
     AuthService,
@@ -33,6 +23,6 @@ import { TokenService } from './token.service';
     MeService,
     AuthGuard,
   ],
-  exports: [AuthGuard, SessionService, PasswordService, TokenService, FieldEncryptor, MfaService],
+  exports: [AuthGuard, SessionService, PasswordService, TokenService, MfaService],
 })
 export class AuthModule {}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { apiEnvSchema, EnvValidationError, loadEnv } from './env';
+import { apiEnvSchema, EnvValidationError, loadEnv, workerEnvSchema } from './env';
 
 const validKey = Buffer.alloc(32, 7).toString('base64');
 const baseEnv = {
@@ -43,5 +43,25 @@ describe('loadEnv(apiEnvSchema)', () => {
       expect((err as Error).message).toMatch(/JWT_ACCESS_SECRET: placeholder/);
       expect((err as Error).message).not.toContain(secretValue);
     }
+  });
+});
+
+describe('loadEnv(workerEnvSchema)', () => {
+  const worker = { DATABASE_URL: baseEnv.DATABASE_URL, REDIS_URL: baseEnv.REDIS_URL, ENCRYPTION_KEY: validKey, KAFKA_BROKERS: 'localhost:9092' };
+  it('requires Kafka brokers', () => {
+    expect(() => loadEnv(workerEnvSchema, { ...worker, KAFKA_BROKERS: '' })).toThrow(/KAFKA_BROKERS/);
+  });
+  it('enforces production safety: SMTP, no private webhook targets, replicated topics', () => {
+    const prod = { ...worker, NODE_ENV: 'production' };
+    expect(() => loadEnv(workerEnvSchema, prod)).toThrow(/SMTP_URL/);
+    expect(() => loadEnv(workerEnvSchema, { ...prod, SMTP_URL: 'smtps://mail', KAFKA_REPLICATION_FACTOR: '3', WEBHOOK_ALLOW_PRIVATE_TARGETS: 'true' })).toThrow(/WEBHOOK_ALLOW_PRIVATE_TARGETS/);
+    expect(() => loadEnv(workerEnvSchema, { ...prod, SMTP_URL: 'smtps://mail' })).toThrow(/KAFKA_REPLICATION_FACTOR/);
+    expect(loadEnv(workerEnvSchema, { ...prod, SMTP_URL: 'smtps://mail', KAFKA_REPLICATION_FACTOR: '3' }).WEBHOOK_ALLOW_PRIVATE_TARGETS).toBe(false);
+  });
+});
+
+describe('API webhook URL policy', () => {
+  it('requires https webhook endpoints in production', () => {
+    expect(() => loadEnv(apiEnvSchema, { ...baseEnv, NODE_ENV: 'production', SWAGGER_ENABLED: 'false', S3_SSE: 'AES256', CORS_ALLOWED_ORIGINS: 'https://app.pay2all.in' })).toThrow(/WEBHOOK_REQUIRE_HTTPS/);
   });
 });

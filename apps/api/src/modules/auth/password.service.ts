@@ -7,7 +7,7 @@ import { RequestContextStore } from '../../common/context/request-context';
 import { AppError } from '../../common/errors/app-error';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { ApiConfig } from '../../config/api-config';
-import { MailService } from '../../infra/mail.service';
+import { NotificationsService } from '../../infra/notifications.service';
 import { PRISMA } from '../../infra/tokens';
 import { AccessProfileService } from '../access/access-profile.service';
 import { AuditService } from '../audit/audit.service';
@@ -24,7 +24,7 @@ export class PasswordService {
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly config: ApiConfig,
     private readonly rateLimit: RateLimitService,
-    private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
     private readonly sessions: SessionService,
     private readonly profiles: AccessProfileService,
     private readonly audit: AuditService,
@@ -51,7 +51,8 @@ export class PasswordService {
       organizationId: null,
       actor: { type: 'USER', id: user.id },
     });
-    this.mail.sendInBackground({
+    await this.notifications.queue(this.prisma, {
+        template: 'password_reset',
       to: user.email,
       subject: 'Reset your Pay2All password',
       text: [
@@ -127,7 +128,8 @@ export class PasswordService {
     });
     await this.sessions.revokeAllForUser(user.id, 'PASSWORD_RESET');
     await this.profiles.invalidateUser(user.id);
-    this.mail.sendInBackground({
+    await this.notifications.queue(this.prisma, {
+        template: 'password_changed',
       to: user.email,
       subject: 'Your Pay2All password was changed',
       text: `Your Pay2All Payments password was just set. If this wasn't you, contact support immediately. (${maskEmail(user.email)})`,

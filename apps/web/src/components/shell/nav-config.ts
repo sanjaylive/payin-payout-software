@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 /** Highest delivered phase — nav entries above it render roadmap placeholders. */
-export const CURRENT_PHASE = 6;
+export const CURRENT_PHASE = 7;
 
 export interface NavLeaf {
   label: string;

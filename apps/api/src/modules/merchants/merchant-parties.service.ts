@@ -5,7 +5,7 @@ import { ErrorCode } from '@pay2all/types';
 import { maskTail, type merchantBankAccountSchema, type merchantPersonSchema } from '@pay2all/validation';
 import type { z } from 'zod';
 import { AppError } from '../../common/errors/app-error';
-import { MailService } from '../../infra/mail.service';
+import { NotificationsService } from '../../infra/notifications.service';
 import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/actor';
@@ -20,7 +20,7 @@ export class MerchantPartiesService {
     private readonly access: MerchantAccessService,
     private readonly encryptor: FieldEncryptor,
     private readonly audit: AuditService,
-    private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private personData(merchantId: string, input: z.output<typeof merchantPersonSchema>) {
@@ -147,6 +147,6 @@ export class MerchantPartiesService {
       where: { organizationId: merchantId, role: { key: { in: ['MERCHANT_OWNER', 'MERCHANT_ADMIN'] } }, user: { status: 'ACTIVE' } },
       select: { user: { select: { email: true } } },
     });
-    for (const { user } of owners) this.mail.sendInBackground({ to: user.email, subject, text });
+    for (const { user } of owners) await this.notifications.queue(this.prisma, { to: user.email, subject, text, template: 'settlement_account_changed' });
   }
 }

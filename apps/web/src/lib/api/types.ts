@@ -585,3 +585,65 @@ export interface BulkBatch {
   completed_at: string | null;
   rows?: { row_no: number; merchant_order_id: string | null; amount: string | null; mode: string | null; beneficiary: string | null; status: 'VALID' | 'INVALID' | 'CREATED' | 'FAILED'; errors: string[] | null; payout_id: string | null }[];
 }
+
+export interface WebhookEndpointRow {
+  endpoint_id: string;
+  merchant_id: string;
+  url: string;
+  description: string | null;
+  events: string[];
+  status: 'ACTIVE' | 'DISABLED';
+  disabled_reason: string | null;
+  secret_hint: string;
+  previous_secret_valid_until: string | null;
+  consecutive_failures: number;
+  last_success_at: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Present only in the create / rotate response. */
+  secret?: string;
+}
+
+export interface WebhookDeliveryRow {
+  delivery_id: string;
+  event_id: string;
+  event_type: string;
+  endpoint_id: string;
+  endpoint_url?: string;
+  merchant_id: string;
+  status: 'PENDING' | 'SUCCEEDED' | 'FAILED';
+  attempts: number;
+  next_attempt_at: string | null;
+  last_status_code: number | null;
+  last_error: string | null;
+  last_attempt_at: string | null;
+  delivered_at: string | null;
+  created_at: string;
+  attempt_log?: { attempt_no: number; status_code: number | null; duration_ms: number; error: string | null; response_snippet: string | null; created_at: string }[];
+  payload?: unknown;
+}
+
+export interface PipelineHealth {
+  outbox_backlog: number;
+  outbox_oldest_age_seconds: number;
+  dead_letters_open: number;
+  webhook_deliveries_pending: number;
+  webhook_deliveries_failed_24h: number;
+  webhook_endpoints_auto_disabled: number;
+  notifications_queued: number;
+}
+
+export interface DeadLetterRow {
+  id: string;
+  consumer_group: string;
+  topic: string;
+  partition: number;
+  offset: string;
+  event_id: string | null;
+  event_type: string | null;
+  aggregate_id: string | null;
+  error: string;
+  attempts: number;
+  created_at: string;
+  requeued_at: string | null;
+}

@@ -340,6 +340,10 @@ model Notification {
   recipientMasked   String              @map("recipient_masked") @db.VarChar(254)
   userId            String?             @map("user_id")
   status            NotificationStatus  @default(QUEUED)
+  /// Rendered message (to, subject, body) encrypted at rest; wiped once sent. May contain one-time links.
+  contentEncrypted  String?             @map("content_encrypted")
+  attempts          Int                 @default(0)
+  nextAttemptAt     DateTime?           @map("next_attempt_at") @db.Timestamptz(3)
   providerMessageId String?             @map("provider_message_id") @db.VarChar(200)
   error             String?             @db.VarChar(1000)
   requestId         String?             @map("request_id") @db.VarChar(40)
@@ -1680,4 +1684,120 @@ model BulkPayoutRow {
 
   @@unique([batchId, rowNo])
   @@map("bulk_payout_rows")
+}
+
+// ------------------------------------------------------------------------------------------------
+// Event pipeline & merchant webhooks (Phase 7) — docs/ARCHITECTURE.md §8, docs/WEBHOOKS.md
+// ------------------------------------------------------------------------------------------------
+
+/// Consumer idempotency: a row per (consumer group, event) inserted with the consumer's side effects.
+model ProcessedEvent {
+  consumerGroup String   @map("consumer_group") @db.VarChar(80)
+  eventId       String   @map("event_id") @db.VarChar(60)
+  processedAt   DateTime @default(now()) @map("processed_at") @db.Timestamptz(3)
+
+  @@id([consumerGroup, eventId])
+  @@index([processedAt])
+  @@map("processed_events")
+}
+
+/// Messages a consumer gave up on after its retries (also published to `<topic>.dlq`).
+model DeadLetterEvent {
+  id            String    @id
+  consumerGroup String    @map("consumer_group") @db.VarChar(80)
+  topic         String    @db.VarChar(120)
+  partition     Int
+  offset        String    @db.VarChar(30)
+  eventId       String?   @map("event_id") @db.VarChar(60)
+  eventType     String?   @map("event_type") @db.VarChar(80)
+  aggregateId   String?   @map("aggregate_id") @db.VarChar(60)
+  error         String    @db.VarChar(1000)
+  attempts      Int
+  envelope      Json
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  requeuedAt    DateTime? @map("requeued_at") @db.Timestamptz(3)
+  requeuedById  String?   @map("requeued_by_id")
+
+  @@index([requeuedAt, createdAt])
+  @@map("dead_letter_events")
+}
+
+enum WebhookEndpointStatus {
+  ACTIVE
+  DISABLED
+}
+
+model WebhookEndpoint {
+  id                      String                @id
+  merchantId              String                @map("merchant_id")
+  url                     String                @db.VarChar(500)
+  description             String?               @db.VarChar(200)
+  /// Signing secret, encrypted (we must sign with it, so it can't be hashed). Shown once on creation/rotation.
+  secretEncrypted         String                @map("secret_encrypted")
+  secretHint              String                @map("secret_hint") @db.VarChar(20)
+  /// After a rotation the old secret also signs deliveries until this time, so receivers can switch over.
+  previousSecretEncrypted String?               @map("previous_secret_encrypted")
+  previousSecretExpiresAt DateTime?             @map("previous_secret_expires_at") @db.Timestamptz(3)
+  /// Subscribed event types; empty = all.
+  events                  String[]              @default([])
+  status                  WebhookEndpointStatus @default(ACTIVE)
+  disabledReason          String?               @map("disabled_reason") @db.VarChar(300)
+  consecutiveFailures     Int                   @default(0) @map("consecutive_failures")
+  lastSuccessAt           DateTime?             @map("last_success_at") @db.Timestamptz(3)
+  createdById             String?               @map("created_by_id")
+  version                 Int                   @default(1)
+  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  deliveries WebhookDelivery[]
+
+  @@index([merchantId, status])
+  @@map("webhook_endpoints")
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model WebhookDelivery {
+  id             String                @id
+  eventId        String                @map("event_id")
+  endpointId     String                @map("endpoint_id")
+  merchantId     String                @map("merchant_id")
+  eventType      String                @map("event_type") @db.VarChar(60)
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  nextAttemptAt  DateTime?             @map("next_attempt_at") @db.Timestamptz(3)
+  lastStatusCode Int?                  @map("last_status_code")
+  lastError      String?               @map("last_error") @db.VarChar(500)
+  lastAttemptAt  DateTime?             @map("last_attempt_at") @db.Timestamptz(3)
+  deliveredAt    DateTime?             @map("delivered_at") @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  endpoint    WebhookEndpoint          @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+  attemptLogs WebhookDeliveryAttempt[]
+
+  @@unique([eventId, endpointId])
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([endpointId, createdAt(sort: Desc)])
+  @@map("webhook_deliveries")
+}
+
+/// One HTTP attempt. Response bodies are truncated and never include our signing secret.
+model WebhookDeliveryAttempt {
+  id              String   @id
+  deliveryId      String   @map("delivery_id")
+  attemptNo       Int      @map("attempt_no")
+  statusCode      Int?     @map("status_code")
+  durationMs      Int      @map("duration_ms")
+  error           String?  @db.VarChar(500)
+  responseSnippet String?  @map("response_snippet") @db.VarChar(1000)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  delivery WebhookDelivery @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+
+  @@unique([deliveryId, attemptNo])
+  @@map("webhook_delivery_attempts")
 }

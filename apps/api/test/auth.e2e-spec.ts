@@ -11,6 +11,7 @@ import {
   orgBySlug,
   randomIp,
   refresh,
+  queuedMail,
   SEED_PASSWORD,
   type TestContext,
 } from './helpers';
@@ -204,8 +205,16 @@ describe('password reset', () => {
 
     const forgot = await ctx.http().post('/v1/auth/password/forgot').set('X-Forwarded-For', randomIp()).send({ identifier: user.email });
     expect(forgot.status).toBe(200);
-    await new Promise((r) => setTimeout(r, 50)); // background send
-    const mail = ctx.mail.memoryOutbox.findLast((m) => m.to === user.email)!;
+    const mails = await queuedMail(ctx, user.email);
+    const mail = mails[mails.length - 1]!;
+    expect(mail.template).toBe('password_reset');
+    // The one-time link is never stored or published in plaintext.
+    const row = await ctx.prisma.notification.findUniqueOrThrow({ where: { id: mail.id } });
+    const outbox = await ctx.prisma.outboxEvent.findFirstOrThrow({ where: { aggregateId: mail.id } });
+    const secretPart = /token=([^\s&]+)/.exec(mail.text)![1]!;
+    expect(JSON.stringify(row)).not.toContain(secretPart);
+    expect(JSON.stringify(outbox)).not.toContain(secretPart);
+    expect(row.recipientMasked).not.toContain(user.email);
     const token = /token=([^\s&]+)/.exec(mail.text)![1]!;
 
     const weak = await ctx.http().post('/v1/auth/password/reset').send({ token: decodeURIComponent(token), new_password: 'short' });
@@ -222,10 +231,10 @@ describe('password reset', () => {
   });
 
   it('responds identically for unknown identifiers and sends nothing', async () => {
-    const count = ctx.mail.memoryOutbox.length;
+    const count = await ctx.prisma.notification.count();
     const res = await ctx.http().post('/v1/auth/password/forgot').set('X-Forwarded-For', randomIp()).send({ identifier: 'nobody@nowhere.local' });
     expect(res.status).toBe(200);
-    expect(ctx.mail.memoryOutbox.length).toBe(count);
+    expect(await ctx.prisma.notification.count()).toBe(count);
   });
 });
 

@@ -157,14 +157,20 @@ X-Pay2All-Signature: v1=hex(HMAC_SHA256(secret, `${timestamp}.${METHOD}.${pathWi
 ## 7. Webhook signing (Phase 7)
 
 ```
-X-Pay2All-Event-Id:  evt_01J…
-X-Pay2All-Timestamp: 1767225600
-X-Pay2All-Signature: v1=hex(HMAC_SHA256(endpointSecret, `${eventId}.${timestamp}.${rawBody}`))
+Pay2All-Event-Id:  evt_01J…
+Pay2All-Signature: t=<unix seconds>,v1=hex(HMAC_SHA256(endpointSecret, `${t}.${rawBody}`))
 ```
 
-- Each endpoint has its own secret, which can be rotated. During rotation both signatures are sent: `v1=…,v1=…`.
-- The receiver guide (in the docs) tells merchants to verify the signature, enforce the timestamp tolerance and dedupe on `event_id`.
-- **SSRF protection:** endpoints must be `https` in LIVE. Resolved IPs in private, link-local or loopback ranges are refused at delivery time, not only when the URL is saved. Redirects are not followed.
+- **Secrets.** Each endpoint has its own secret (`whsec_` + 32 random bytes), generated server-side and shown **once**, at creation or rotation. Delivery needs the raw secret, so it is stored AES-256-GCM encrypted with AAD bound to the endpoint id, not hashed. Responses and audit entries carry only a hint (`whsec_…abcd`).
+- **Rotation.** The old secret keeps signing alongside the new one for 24 h, so the header carries `v1=…,v1=…`. The reference verifier accepts any `v1`.
+- **Integrity.** The body (which contains the event id) and the timestamp are signed together. Receivers enforce a 5-minute tolerance and dedupe on the event id. The merchant guide with code samples is [WEBHOOKS.md](./WEBHOOKS.md).
+- **SSRF protection (worker).**
+  - Production requires `https` endpoints (`WEBHOOK_REQUIRE_HTTPS`).
+  - At **every** delivery, all resolved addresses are checked against loopback, private, link-local (including `169.254.169.254`), CGNAT, multicast and reserved ranges, for IPv4, IPv6 and IPv4-mapped addresses. The socket connects to the **checked** address through a custom `lookup`, so DNS rebinding between check and connect is impossible.
+  - IP-literal hosts are checked directly.
+  - Redirects are never followed. Responses are read up to 1 KB, with a 10 s timeout.
+  - `WEBHOOK_ALLOW_PRIVATE_TARGETS` exists for local development and is rejected at boot in production.
+- **Notifications.** Emails can carry one-time links (password reset, invites). The API stores the rendered message encrypted (AAD = notification id), and the outbox / Kafka event carries only the notification id. The worker decrypts in memory, sends, and then wipes the ciphertext; failed messages are also wiped after the final attempt. Message bodies are never logged.
 
 ## 8. HTTP hardening
 

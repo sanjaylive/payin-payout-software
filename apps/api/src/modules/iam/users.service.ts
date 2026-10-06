@@ -6,7 +6,7 @@ import type { assignRoleSchema, createUserSchema, listUsersQuerySchema, updateUs
 import type { z } from 'zod';
 import { AppError } from '../../common/errors/app-error';
 import { decodeCursor, keysetAfter, toPage } from '../../common/http/paginated';
-import { MailService } from '../../infra/mail.service';
+import { NotificationsService } from '../../infra/notifications.service';
 import { PRISMA } from '../../infra/tokens';
 import { AccessProfileService } from '../access/access-profile.service';
 import { TenantScopeService } from '../access/tenant-scope.service';
@@ -71,7 +71,7 @@ export class UsersService {
     private readonly profiles: AccessProfileService,
     private readonly sessions: SessionService,
     private readonly passwords: PasswordService,
-    private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
   ) {}
 
@@ -175,13 +175,15 @@ export class UsersService {
 
     if (!existing && userId) {
       inviteToken = await this.passwords.issueToken(userId, INVITE_TOKEN_TTL_MS);
-      this.mail.sendInBackground({
+      await this.notifications.queue(this.prisma, {
+        template: 'team_invite',
         to: input.email,
         subject: `You've been invited to ${org.name} on Pay2All`,
         text: `Hi ${input.name},\n\nYou've been invited to join ${org.name} on Pay2All Payments. Set your password within 72 hours:\n${this.passwords.link('/reset-password', inviteToken)}\n`,
       });
     } else {
-      this.mail.sendInBackground({
+      await this.notifications.queue(this.prisma, {
+        template: 'team_membership_added',
         to: input.email,
         subject: `You've been added to ${org.name} on Pay2All`,
         text: `You now have access to ${org.name} on Pay2All Payments.`,
