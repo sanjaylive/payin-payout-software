@@ -60,3 +60,34 @@ export const REFUND_TRANSITIONS: Record<RefundStatusValue, readonly RefundStatus
   SUCCESS: [],
   FAILED: [],
 };
+
+// ---- Payouts (docs/PAYOUT_FLOW.md §10) ------------------------------------------------------------
+
+export const PAYOUT_STATUSES = [
+  'CREATED', 'VALIDATING', 'APPROVAL_PENDING', 'MANUAL_REVIEW', 'QUEUED', 'PROCESSING', 'PENDING', 'SUCCESS', 'FAILED', 'REJECTED', 'REVERSED',
+] as const;
+export type PayoutStatusValue = (typeof PAYOUT_STATUSES)[number];
+
+export const PAYOUT_TRANSITIONS: Record<PayoutStatusValue, readonly PayoutStatusValue[]> = {
+  CREATED: ['VALIDATING', 'APPROVAL_PENDING', 'QUEUED', 'FAILED'],
+  VALIDATING: ['APPROVAL_PENDING', 'QUEUED', 'MANUAL_REVIEW', 'FAILED'],
+  APPROVAL_PENDING: ['QUEUED', 'REJECTED'],
+  // Pre-send risk review, or post-send unknown outcome (resolved only with evidence + audit reason).
+  MANUAL_REVIEW: ['QUEUED', 'REJECTED', 'SUCCESS', 'FAILED'],
+  QUEUED: ['PROCESSING', 'REJECTED'],
+  // PROCESSING → QUEUED only when every attempt provably never reached a provider (requeue).
+  PROCESSING: ['QUEUED', 'PENDING', 'SUCCESS', 'FAILED', 'MANUAL_REVIEW'],
+  PENDING: ['SUCCESS', 'FAILED', 'MANUAL_REVIEW'],
+  SUCCESS: ['REVERSED'],
+  FAILED: [],
+  REJECTED: [],
+  REVERSED: [],
+};
+
+export function payoutCanTransition(from: PayoutStatusValue, to: PayoutStatusValue): boolean {
+  return PAYOUT_TRANSITIONS[from].includes(to);
+}
+
+/** Funds are held in RESERVED while a payout is in one of these. */
+export const PAYOUT_RESERVED_STATUSES: readonly PayoutStatusValue[] = ['APPROVAL_PENDING', 'MANUAL_REVIEW', 'QUEUED', 'PROCESSING', 'PENDING'];
+export const PAYOUT_TERMINAL_STATUSES: readonly PayoutStatusValue[] = ['SUCCESS', 'FAILED', 'REJECTED', 'REVERSED'];

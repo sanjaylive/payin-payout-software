@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
 import type { DbClient, Prisma } from '@pay2all/database';
-import { OutboxService } from '../../infra/outbox.service';
+import { OutboxService } from './outbox.service';
 
 export type MerchantEventType =
   | 'payment.created'
@@ -10,7 +10,14 @@ export type MerchantEventType =
   | 'payment.failed'
   | 'refund.created'
   | 'refund.success'
-  | 'refund.failed';
+  | 'refund.failed'
+  | 'payout.created'
+  | 'payout.queued'
+  | 'payout.processing'
+  | 'payout.success'
+  | 'payout.failed'
+  | 'payout.rejected'
+  | 'payout.reversed';
 
 /**
  * Records a merchant-facing event (the thing a merchant webhook will carry) and the matching outbox

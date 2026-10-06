@@ -17,7 +17,9 @@ import { IamModule } from './modules/iam/iam.module';
 import { LedgerModule } from './modules/ledger/ledger.module';
 import { LimitsModule } from './modules/limits/limits.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { PayoutsModule } from './modules/payouts/payouts.module';
 import { PricingModule } from './modules/pricing/pricing.module';
+import { ProviderEventsModule } from './modules/provider-events/provider-events.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
@@ -64,6 +66,8 @@ export class AppModule implements NestModule {
         ProvidersModule,
         PricingModule,
         PaymentsModule,
+        PayoutsModule,
+        ProviderEventsModule,
       ],
       controllers: [HealthController],
       providers: [

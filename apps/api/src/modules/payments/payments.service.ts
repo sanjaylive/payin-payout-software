@@ -18,7 +18,7 @@ import { LimitsService } from '../limits/limits.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { RoutingService } from '../providers/routing.service';
-import { MerchantEventsService } from './merchant-events.service';
+import { MerchantEventsService } from '../../infra/merchant-events.service';
 import { PaymentTransitionsService } from './payment-transitions.service';
 import { presentPayment } from './payment.presenter';
 

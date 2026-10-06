@@ -4,6 +4,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { ApiConfig } from '../config/api-config';
 import { InfraModule } from '../infra/infra.module';
 import { PaymentsModule } from '../modules/payments/payments.module';
+import { PayoutsModule } from '../modules/payouts/payouts.module';
+import { ProviderEventsModule } from '../modules/provider-events/provider-events.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -21,6 +23,8 @@ export class JobsModule {
         { module: class ConfigHolderModule {}, global: true, providers: [{ provide: ApiConfig, useValue: config }], exports: [ApiConfig] },
         InfraModule,
         PaymentsModule,
+        PayoutsModule,
+        ProviderEventsModule,
       ],
       providers: [JobsRunner],
     };

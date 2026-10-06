@@ -4,7 +4,6 @@ import { classify } from '@pay2all/providers';
 import { PRISMA } from '../../infra/tokens';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
-import { InboundEventsService } from './inbound-events.service';
 import { PaymentTransitionsService } from './payment-transitions.service';
 import { presentPayment, presentRefund } from './payment.presenter';
 import { healthOutcomeOf } from './payments.service';
@@ -25,7 +24,6 @@ export class PayinJobsService {
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly registry: ProviderRegistryService,
     private readonly transitions: PaymentTransitionsService,
-    private readonly inbound: InboundEventsService,
     private readonly refunds: RefundsService,
     private readonly idempotency: IdempotencyService,
   ) {}
@@ -98,10 +96,6 @@ export class PayinJobsService {
       }
     }
     return stale.length;
-  }
-
-  retryInboundEvents() {
-    return this.inbound.retryPending();
   }
 
   processRefunds() {

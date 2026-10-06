@@ -19,7 +19,7 @@ import { PRISMA } from '../infra/tokens';
 import type { Actor } from '../modules/auth/actor';
 import { PaymentsService } from '../modules/payments/payments.service';
 import { RefundsService } from '../modules/payments/refunds.service';
-import { SandboxService } from '../modules/payments/sandbox.service';
+import { SandboxService } from '../modules/provider-events/sandbox.service';
 
 // Amounts script the sandbox: .13 → declined, .50 → stays pending; everything else succeeds.
 const DEMO: { amount: string; method: 'UPI_QR' | 'UPI_INTENT' | 'PAYMENT_LINK'; customer: string; outcome: 'SUCCESS' | 'FAILED' | 'OPEN'; refund?: string }[] = [

@@ -14,6 +14,7 @@ import { config as loadDotenv } from 'dotenv';
 import { checkPasswordPolicy, hashPassword, newId, PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@pay2all/auth';
 import { createPrismaClient, type OrganizationType, type PrismaClient } from '../src/index';
 import { ensureMerchantAggregates, seedMerchantOnboarding } from './seed-merchants';
+import { seedPayoutPolicies } from './seed-payouts';
 import { seedPricing } from './seed-pricing';
 import { seedProviders } from './seed-providers';
 
@@ -151,6 +152,7 @@ async function main() {
   });
   await seedProviders(prisma, m1.id);
   await seedPricing(prisma, platform.id);
+  await seedPayoutPolicies(prisma);
   const salesId = created.get('sales@pay2all.local')!;
   await prisma.organization.updateMany({ where: { id: { in: [reseller.id, m1.id, m2.id] } }, data: { assignedSalesUserId: salesId } });
   if ((await prisma.salesLead.count()) === 0) {

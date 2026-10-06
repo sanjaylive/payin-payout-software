@@ -7,7 +7,7 @@ import { AppError } from '../../common/errors/app-error';
 import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
 import { LedgerService } from '../ledger/ledger.service';
-import { MerchantEventsService } from './merchant-events.service';
+import { MerchantEventsService } from '../../infra/merchant-events.service';
 import { presentPayment } from './payment.presenter';
 
 export interface ProviderOutcome {
