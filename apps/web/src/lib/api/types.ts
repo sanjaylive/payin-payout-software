@@ -323,3 +323,59 @@ export interface TrialBalance {
   entries: number;
   journals: number;
 }
+
+export interface ProviderHealth {
+  window_minutes: number;
+  requests: number;
+  success_rate: number | null;
+  failure_rate: number | null;
+  timeout_rate: number | null;
+  avg_latency_ms: number | null;
+  p95_latency_ms: number | null;
+  p99_latency_ms: number | null;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+}
+
+export interface ProviderRow {
+  id: string;
+  code: string;
+  name: string;
+  kind: 'PAYIN' | 'PAYOUT' | 'BOTH';
+  adapter: string;
+  adapter_label: string;
+  required_credentials: string[];
+  environment: 'TEST' | 'LIVE';
+  status: string;
+  status_source: 'AUTO' | 'MANUAL';
+  status_reason: string | null;
+  status_changed_at: string;
+  capabilities: { payin_methods?: string[]; payout_modes?: string[]; min_amount_minor?: string; max_amount_minor?: string };
+  config: Record<string, string | number | boolean>;
+  costs: { payin_rate_micros?: string; payout_flat_minor?: string };
+  credentials: { environment: string; fingerprints: Record<string, string>; rotated_at: string }[];
+  health?: { payin: ProviderHealth | null; payout: ProviderHealth | null };
+  snapshots?: { service: string; window_end: string; requests: number; success_rate: number | null; p95_latency_ms: number | null; status: string }[];
+}
+
+export interface ProviderRoute {
+  id: string;
+  name: string;
+  service: 'PAYIN' | 'PAYOUT';
+  tier: 'PRIMARY' | 'SECONDARY' | 'FALLBACK';
+  priority: number;
+  is_active: boolean;
+  provider: { id: string; code: string; name: string; status: string };
+  merchant_id: string | null;
+  reseller_id: string | null;
+  method: string | null;
+  min_amount: string | null;
+  max_amount: string | null;
+  risk_categories: string[];
+  time_window: { start: string; end: string; days?: number[] } | null;
+}
+
+export interface RoutingSimulation {
+  candidates: { order: number; provider_code: string; route_name: string; tier: string; degraded: boolean }[];
+  evaluations: { route_id: string; route_name: string; provider_code: string; tier: string; selected: boolean; reasons: string[] }[];
+}

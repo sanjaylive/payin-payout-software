@@ -23,6 +23,10 @@ const CARDS = [
   { label: 'Transactions / sec', icon: Clock, phase: 10 },
 ];
 
+interface ProviderBrief {
+  status: string;
+}
+
 interface Summary {
   total_merchant_balance: string;
   unsettled: string;
@@ -31,7 +35,10 @@ interface Summary {
 export default function AdminDashboard() {
   const can = useCan();
   const summary = useQuery({ queryKey: ['ledger-summary'], queryFn: () => api.get<Summary>('/v1/ledger/summary'), enabled: can('ledger.platform.read') });
+  const providers = useQuery({ queryKey: ['providers', 'all'], queryFn: () => api.get<ProviderBrief[]>('/v1/providers'), enabled: can('provider.read') });
+  const healthy = providers.data?.filter((p) => p.status === 'ACTIVE').length;
   const live: Record<string, string | undefined> = {
+    'Provider Health': providers.data ? `${healthy}/${providers.data.filter((p) => p.status !== 'DISABLED').length} healthy` : undefined,
     'Total Merchant Balance': summary.data ? fmt(summary.data.total_merchant_balance) : undefined,
     'Unsettled Amount': summary.data ? fmt(summary.data.unsettled) : undefined,
   };
@@ -44,9 +51,9 @@ export default function AdminDashboard() {
             key={c.label}
             label={c.label}
             value={live[c.label] ?? '—'}
-            loading={c.label in live && summary.isPending && can('ledger.platform.read')}
+            loading={c.label === 'Provider Health' ? providers.isPending && can('provider.read') : c.label in live && summary.isPending && can('ledger.platform.read')}
             icon={c.icon}
-            hint={c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
+            hint={c.label === 'Provider Health' && providers.data ? <Link href="/admin/providers/health" className="hover:underline">View health</Link> : c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
           />
         ))}
       </div>
