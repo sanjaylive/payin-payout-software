@@ -4,9 +4,11 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 export const WEBHOOK_SIGNATURE_HEADER = 'Pay2All-Signature';
 export const WEBHOOK_TOLERANCE_SECONDS = 300;
 
-export function signWebhook(secret: string, rawBody: string, timestamp = Math.floor(Date.now() / 1000)): string {
-  const v1 = createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
-  return `t=${timestamp},v1=${v1}`;
+/** Sign with one or more secrets (during a rotation overlap both the new and the old secret sign). */
+export function signWebhook(secret: string | string[], rawBody: string, timestamp = Math.floor(Date.now() / 1000)): string {
+  const secrets = Array.isArray(secret) ? secret : [secret];
+  const sigs = secrets.map((s) => `v1=${createHmac('sha256', s).update(`${timestamp}.${rawBody}`).digest('hex')}`);
+  return `t=${timestamp},${sigs.join(',')}`;
 }
 
 /**

@@ -123,6 +123,29 @@ describe('webhook dispatch and delivery', () => {
     }
   });
 
+  it('signs with both secrets during a rotation overlap, and only the new one after it', async () => {
+    const { merchantId, endpointId, secret: oldSecret } = await merchantWithEndpoint(`${base}/rotate`);
+    const newSecret = `whsec_${randomUUID()}`;
+    const ep = await prisma.webhookEndpoint.findUniqueOrThrow({ where: { id: endpointId } });
+    await prisma.webhookEndpoint.update({ where: { id: endpointId }, data: { secretEncrypted: encryptor.encrypt(newSecret, `webhook-endpoint:${endpointId}`), previousSecretEncrypted: ep.secretEncrypted, previousSecretExpiresAt: new Date(Date.now() + 3_600_000) } });
+    respond = (res) => res.writeHead(200).end();
+    const send = async () => {
+      const { envelope } = await event(merchantId);
+      await dispatch(envelope);
+      const d = await prisma.webhookDelivery.findFirstOrThrow({ where: { merchantId, status: 'PENDING' } });
+      const before = received.length;
+      await sendNow(d.id);
+      return received[before]!;
+    };
+    let req = await send();
+    expect(verifyWebhookSignature(newSecret, req.headers['pay2all-signature'] as string, req.body)).toBe(true);
+    expect(verifyWebhookSignature(oldSecret, req.headers['pay2all-signature'] as string, req.body)).toBe(true);
+    await prisma.webhookEndpoint.update({ where: { id: endpointId }, data: { previousSecretExpiresAt: new Date(Date.now() - 1000) } });
+    req = await send();
+    expect(verifyWebhookSignature(newSecret, req.headers['pay2all-signature'] as string, req.body)).toBe(true);
+    expect(verifyWebhookSignature(oldSecret, req.headers['pay2all-signature'] as string, req.body)).toBe(false);
+  });
+
   it('auto-disables an endpoint after consecutive failures and emails the merchant admins', async () => {
     const { merchantId, endpointId } = await merchantWithEndpoint(`${base}/dead`);
     const role = await prisma.role.findFirst({ where: { key: 'MERCHANT_OWNER', organizationId: null } });

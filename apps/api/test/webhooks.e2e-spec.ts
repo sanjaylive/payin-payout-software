@@ -39,7 +39,10 @@ describe('webhook endpoints', () => {
 
     const rotated = await ctx.http().post(`/v1/webhooks/endpoints/${row.id}/rotate-secret`).set(bearer(owner));
     expect(rotated.body.data.secret).not.toBe(secret);
-    expect((await ctx.prisma.webhookEndpoint.findUniqueOrThrow({ where: { id: row.id } })).secretEncrypted).not.toBe(row.secretEncrypted);
+    const after = await ctx.prisma.webhookEndpoint.findUniqueOrThrow({ where: { id: row.id } });
+    expect(after.secretEncrypted).not.toBe(row.secretEncrypted);
+    expect(after.previousSecretEncrypted).toBe(row.secretEncrypted); // old secret still signs during the overlap
+    expect(rotated.body.data.previous_secret_valid_until).not.toBeNull();
   });
 
   it('validates URLs and event types', async () => {

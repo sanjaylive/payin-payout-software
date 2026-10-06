@@ -1728,23 +1728,26 @@ enum WebhookEndpointStatus {
 }
 
 model WebhookEndpoint {
-  id                  String                @id
-  merchantId          String                @map("merchant_id")
-  url                 String                @db.VarChar(500)
-  description         String?               @db.VarChar(200)
+  id                      String                @id
+  merchantId              String                @map("merchant_id")
+  url                     String                @db.VarChar(500)
+  description             String?               @db.VarChar(200)
   /// Signing secret, encrypted (we must sign with it, so it can't be hashed). Shown once on creation/rotation.
-  secretEncrypted     String                @map("secret_encrypted")
-  secretHint          String                @map("secret_hint") @db.VarChar(20)
+  secretEncrypted         String                @map("secret_encrypted")
+  secretHint              String                @map("secret_hint") @db.VarChar(20)
+  /// After a rotation the old secret also signs deliveries until this time, so receivers can switch over.
+  previousSecretEncrypted String?               @map("previous_secret_encrypted")
+  previousSecretExpiresAt DateTime?             @map("previous_secret_expires_at") @db.Timestamptz(3)
   /// Subscribed event types; empty = all.
-  events              String[]              @default([])
-  status              WebhookEndpointStatus @default(ACTIVE)
-  disabledReason      String?               @map("disabled_reason") @db.VarChar(300)
-  consecutiveFailures Int                   @default(0) @map("consecutive_failures")
-  lastSuccessAt       DateTime?             @map("last_success_at") @db.Timestamptz(3)
-  createdById         String?               @map("created_by_id")
-  version             Int                   @default(1)
-  createdAt           DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+  events                  String[]              @default([])
+  status                  WebhookEndpointStatus @default(ACTIVE)
+  disabledReason          String?               @map("disabled_reason") @db.VarChar(300)
+  consecutiveFailures     Int                   @default(0) @map("consecutive_failures")
+  lastSuccessAt           DateTime?             @map("last_success_at") @db.Timestamptz(3)
+  createdById             String?               @map("created_by_id")
+  version                 Int                   @default(1)
+  createdAt               DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   deliveries WebhookDelivery[]
 

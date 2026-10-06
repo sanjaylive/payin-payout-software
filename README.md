@@ -15,7 +15,7 @@ pnpm install
 pnpm prisma:migrate                        # applies migrations to the dev DB
 SEED_PASSWORD='Choose-A-Dev-Password' pnpm db:seed
 pnpm dev                                   # API :4000, web :3000, worker health :4001
-pnpm dev:jobs                              # payin jobs: status polling, expiry, refunds (separate terminal)
+pnpm dev:jobs                              # payin/payout jobs + payout Kafka fast path (separate terminal)
 ```
 
 | Service | URL |
@@ -26,6 +26,8 @@ pnpm dev:jobs                              # payin jobs: status polling, expiry,
 | Mailpit (reset/invite emails) | http://localhost:58025 |
 
 Docker host ports default to non-standard values (Postgres `55432`, Redis `56379`, Kafka `59092`, S3 `58333`) to avoid clashing with other local stacks. Override them with `*_HOST_PORT` env vars.
+
+The worker (part of `pnpm dev`) relays the outbox to Kafka, delivers merchant webhooks and sends email (view it in Mailpit). To deliver webhooks to a receiver on your own machine, set `WEBHOOK_ALLOW_PRIVATE_TARGETS=true` (development only).
 
 Platform and reseller users must enroll TOTP on first sign-in (`AUTH_ENFORCE_MFA=true`). Seeded merchant owners (e.g. `owner@sharma-electronics.local`) can sign in directly.
 

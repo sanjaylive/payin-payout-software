@@ -67,7 +67,11 @@ export class WebhookSender {
     }
     const event = await this.prisma.webhookEvent.findUniqueOrThrow({ where: { id: d.eventId } });
     const body = JSON.stringify(event.payload);
-    const secret = this.encryptor.decrypt(d.endpoint.secretEncrypted, endpointAad(d.endpoint.id));
+    const secrets = [this.encryptor.decrypt(d.endpoint.secretEncrypted, endpointAad(d.endpoint.id))];
+    // Rotation overlap: the previous secret's ciphertext was bound to the same endpoint id.
+    if (d.endpoint.previousSecretEncrypted && d.endpoint.previousSecretExpiresAt && d.endpoint.previousSecretExpiresAt > new Date()) {
+      secrets.push(this.encryptor.decrypt(d.endpoint.previousSecretEncrypted, endpointAad(d.endpoint.id)));
+    }
     const headers = {
       'content-type': 'application/json',
       'user-agent': 'Pay2All-Webhooks/1.0',
@@ -75,7 +79,7 @@ export class WebhookSender {
       'pay2all-event-type': event.type,
       'pay2all-delivery-id': d.id,
       'pay2all-delivery-attempt': String(attemptNo),
-      [WEBHOOK_SIGNATURE_HEADER.toLowerCase()]: signWebhook(secret, body),
+      [WEBHOOK_SIGNATURE_HEADER.toLowerCase()]: signWebhook(secrets, body),
     };
     let status: number | null = null;
     let error: string | null = null;

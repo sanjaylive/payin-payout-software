@@ -47,7 +47,7 @@ export class WebhooksController {
   @Post('endpoints/:id/rotate-secret')
   @HttpCode(200)
   @RequirePermissions('webhook.manage')
-  @ApiOperation({ summary: 'Issue a new signing secret (returned once); the old one stops working immediately.' })
+  @ApiOperation({ summary: 'Issue a new signing secret (returned once); the old one keeps signing alongside it for 24 h.' })
   rotate(@CurrentActor() actor: Actor, @Param('id', endpointIdPipe) id: string) {
     return this.webhooks.rotateSecret(actor, id);
   }

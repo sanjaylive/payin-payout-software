@@ -191,7 +191,25 @@ worker: outbox relay
 - **Partitioning:** the key is `aggregateId`, which preserves the order of events for one payment or payout. Topics start at 12 partitions.
 - **Poison messages:** after N retries, a message goes to `<topic>.dlq` with error metadata, and the dashboard shows DLQ depth.
 
-### Topics (initial)
+### Phase 7 implementation
+
+- **Topics.** One topic per aggregate: `pay2all.<aggregate_type>` (`pay2all.payment`, `pay2all.payout`, `pay2all.refund`, `pay2all.notification`, `pay2all.provider`, …), each with a `.dlq` twin. The key is the aggregate id, and topics have 12 partitions. They are provisioned by the publisher, because broker auto-creation is off.
+- **Relay.** Exactly one relay is active at a time. It holds a Redis lease (renewed every 5 s, expiring after 15 s), and stand-bys take over within one lease period. This preserves per-aggregate order, which concurrent `SKIP LOCKED` relays would not. Each batch (≤ 500) is claimed, published (`acks=all`, idempotent producer) and marked `published_at` inside one DB transaction. A crash republishes and never loses events.
+- **Consumers.** `runConsumer()` in `@pay2all/events` parses the envelope, skips foreign types, and runs the handler with a `processed_events` insert in the same DB transaction. It retries in process (0.2 s → 8 s, 5 attempts), then writes to `<topic>.dlq` plus a `dead_letter_events` row and commits the offset, so a poison message stalls its partition for about 12 s at most. Handlers that are idempotent through their own conditional claim opt out of the dedupe table.
+- **Where consumers run.**
+
+  | Consumer group | Process | Topics → work |
+  | --- | --- | --- |
+  | `webhook-dispatcher` | worker | payment, refund, payout → one `webhook_deliveries` row per (event, subscribed endpoint) |
+  | `notification-sender` | worker | notification → send that email now |
+  | `payout-processor` | API jobs | payout (`payout.queued`) → claim and send that payout now |
+
+- **Safety nets.** DB polling stays in place for deliveries (0.5 s), notifications (5 s) and payouts (5 s). If Kafka is down, work is delayed, never lost.
+- **Dead letters.** These are visible on **Admin → Webhooks**. A requeue writes a fresh outbox row with the same type, aggregate and payload. Consumers are idempotent on business keys (one delivery per event and endpoint; conditional payout claims).
+- **Retention.** `processed_events` rows are purged after 14 days, which is longer than Kafka's 7-day retention.
+- **Client.** kafkajs 2.2.4 (pure JS), wrapped behind `EventPublisher` / `runConsumer`, so moving to Confluent's maintained client only touches `packages/events/src/kafka.ts`.
+
+### Topics (initial design)
 
 `payment.created`, `payment.updated`, `payment.success`, `payout.created`, `payout.process`, `payout.updated`, `ledger.post`, `webhook.deliver`, `settlement.process`, `reconciliation.process`, `notification.send`, `risk.evaluate`, `report.generate`.
 

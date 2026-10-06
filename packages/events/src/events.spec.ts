@@ -24,6 +24,9 @@ describe('webhook signatures', () => {
     const t = 1_760_000_000;
     const old = signWebhook('whsec_old', body, t).split(',')[1];
     expect(verifyWebhookSignature('whsec_old', `${signWebhook('whsec_new', body, t)},${old}`, body, t)).toBe(true);
+    const both = signWebhook(['whsec_new', 'whsec_old'], body, t);
+    expect(verifyWebhookSignature('whsec_new', both, body, t)).toBe(true);
+    expect(verifyWebhookSignature('whsec_old', both, body, t)).toBe(true);
   });
 });
 

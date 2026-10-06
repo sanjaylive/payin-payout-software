@@ -17,6 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/actor';
 
 const MAX_ENDPOINTS = 10;
+export const ROTATION_OVERLAP_MS = 24 * 3600_000;
 export const endpointSecretAad = (endpointId: string) => `webhook-endpoint:${endpointId}`;
 
 function presentEndpoint(e: WebhookEndpoint) {
@@ -29,6 +30,7 @@ function presentEndpoint(e: WebhookEndpoint) {
     status: e.status,
     disabled_reason: e.disabledReason,
     secret_hint: e.secretHint,
+    previous_secret_valid_until: e.previousSecretExpiresAt && e.previousSecretExpiresAt > new Date() ? e.previousSecretExpiresAt : null,
     consecutive_failures: e.consecutiveFailures,
     last_success_at: e.lastSuccessAt,
     created_at: e.createdAt,
@@ -143,7 +145,11 @@ export class WebhooksService {
     this.assertMerchant(actor);
     const e = await this.requireEndpoint(actor, id);
     const { secret, hint } = this.newSecret();
-    const updated = await this.prisma.webhookEndpoint.update({ where: { id: e.id }, data: { secretEncrypted: this.encryptor.encrypt(secret, endpointSecretAad(e.id)), secretHint: hint, version: { increment: 1 } } });
+    // The old secret keeps signing (alongside the new one) for 24 h so the merchant can switch over.
+    const updated = await this.prisma.webhookEndpoint.update({
+      where: { id: e.id },
+      data: { secretEncrypted: this.encryptor.encrypt(secret, endpointSecretAad(e.id)), secretHint: hint, previousSecretEncrypted: e.secretEncrypted, previousSecretExpiresAt: new Date(Date.now() + ROTATION_OVERLAP_MS), version: { increment: 1 } },
+    });
     await this.audit.record({ action: 'webhook.endpoint.secret_rotated', resourceType: 'webhook_endpoint', resourceId: e.id, organizationId: e.merchantId, metadata: { secret_hint: hint, severity: 'MEDIUM' } });
     return { ...presentEndpoint(updated), secret };
   }
