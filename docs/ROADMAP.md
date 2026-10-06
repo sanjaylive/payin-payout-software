@@ -393,6 +393,8 @@ As in Phase 5, the new pages were compiled and fetched but not visually checked 
   - reconciliation classifies MATCHED / DUPLICATE / AMOUNT_MISMATCH / STATUS_MISMATCH / MISSING_INTERNAL / MISSING_PROVIDER; a duplicate import is refused; accepting a provider success captures the payment through the state machine; mismatch acceptance is refused; double resolution is refused.
 - **Mutation check:** dropping the post-cutoff reserve fails the settlement test.
 - **Unit tests:** engine tests for the bank settlement journal rules; IST schedule maths; statement parser and comparator.
-- **Fixed:** a providers health test that depended on suite order.
+- **Fixed:**
+  - a providers health test that depended on suite order;
+  - queue claims now use the application clock instead of Postgres `now()`, so a lagging DB/VM clock can't delay just-queued work (found through an intermittent worker test).
 
 **Notes:** deferrals are listed in SETTLEMENT.md §6.
