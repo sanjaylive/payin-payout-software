@@ -10,7 +10,7 @@ describe('payment state machine', () => {
   });
 
   it('allows late success only from FAILED/EXPIRED/CANCELLED and the normal path', () => {
-    expect(paymentSourcesFor('SUCCESS').sort()).toEqual(['CANCELLED', 'CREATED', 'DISPUTED', 'EXPIRED', 'FAILED', 'PENDING', 'REFUND_PENDING'].sort());
+    expect(paymentSourcesFor('SUCCESS').sort()).toEqual(['CANCELLED', 'CREATED', 'DISPUTED', 'EXPIRED', 'FAILED', 'PENDING', 'REFUND_PENDING', 'SETTLEMENT_PENDING'].sort());
   });
 
   it('only references known statuses and never self-loops', () => {

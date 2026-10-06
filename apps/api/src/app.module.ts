@@ -21,6 +21,8 @@ import { PayoutsModule } from './modules/payouts/payouts.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { ProviderEventsModule } from './modules/provider-events/provider-events.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
+import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
+import { SettlementsModule } from './modules/settlements/settlements.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
@@ -70,6 +72,8 @@ export class AppModule implements NestModule {
         PayoutsModule,
         ProviderEventsModule,
         WebhooksModule,
+        SettlementsModule,
+        ReconciliationModule,
       ],
       controllers: [HealthController],
       providers: [

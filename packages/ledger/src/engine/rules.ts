@@ -23,6 +23,11 @@ const RULES: Partial<Record<JournalType, Rule>> = {
   PAYIN_CAPTURE: { allowedMerchantLegs: [C('UNSETTLED'), C('PENDING')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
   HOLD_RELEASE: { exactMerchantLegs: [D('PENDING'), C('UNSETTLED')], allowedPlatform: [] },
   SETTLEMENT: { allowedMerchantLegs: [D('UNSETTLED'), C('AVAILABLE'), C('SETTLED')], allowedPlatform: ['platform:bank:', 'platform:memo:SETTLED_CONTRA'] },
+  // Bank settlement: out of UNSETTLED into transit at creation; to the bank (+ SETTLED memo) once paid;
+  // back to UNSETTLED if the transfer fails.
+  SETTLEMENT_TRANSFER: { exactMerchantLegs: [D('UNSETTLED')], allowedPlatform: ['platform:SETTLEMENT_CLEARING'] },
+  SETTLEMENT_PAID: { exactMerchantLegs: [C('SETTLED')], allowedPlatform: ['platform:SETTLEMENT_CLEARING', 'platform:bank:', 'platform:memo:SETTLED_CONTRA'] },
+  SETTLEMENT_RETURN: { exactMerchantLegs: [C('UNSETTLED')], allowedPlatform: ['platform:SETTLEMENT_CLEARING'] },
   PAYOUT_RESERVE: { exactMerchantLegs: [D('AVAILABLE'), C('RESERVED')], allowedPlatform: [] },
   PAYOUT_SETTLE: { exactMerchantLegs: [D('RESERVED')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
   PAYOUT_RELEASE: { exactMerchantLegs: [D('RESERVED'), C('AVAILABLE')], allowedPlatform: [] },

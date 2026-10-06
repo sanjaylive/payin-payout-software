@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   const notifications = new NotificationSender(prisma, encryptor, logger, { smtpUrl: env.SMTP_URL, from: env.MAIL_FROM });
   const webhooks = new WebhookSender(prisma, encryptor, logger, { allowPrivateTargets: env.WEBHOOK_ALLOW_PRIVATE_TARGETS });
   const consumers: Consumer[] = [
-    await runConsumer(kafka, { groupId: 'webhook-dispatcher', topics: ['payment', 'refund', 'payout'].map(topicFor), handle: async (e, tx) => void (await dispatchMerchantEvent(tx as TransactionClient, e)) }, { store, publisher, logger }),
+    await runConsumer(kafka, { groupId: 'webhook-dispatcher', topics: ['payment', 'refund', 'payout', 'settlement'].map(topicFor), handle: async (e, tx) => void (await dispatchMerchantEvent(tx as TransactionClient, e)) }, { store, publisher, logger }),
     await runConsumer(kafka, { groupId: 'notification-sender', topics: [topicFor('notification')], eventTypes: ['notification.send'], idempotency: 'handler', handle: async (e) => void (await notifications.sendDue(1, e.aggregate_id)) }, { store, publisher, logger }),
   ];
   // Safety nets: pick up anything a consumer missed (Kafka down, crash between steps, retries due).

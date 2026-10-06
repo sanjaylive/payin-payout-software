@@ -17,6 +17,8 @@ export const MERCHANT_EVENT_TYPES = [
   'payout.failed',
   'payout.rejected',
   'payout.reversed',
+  'settlement.processed',
+  'settlement.failed',
 ] as const;
 export type MerchantEventTypeValue = (typeof MERCHANT_EVENT_TYPES)[number];
 

@@ -26,6 +26,8 @@ const PLATFORM_FIXED: Record<string, Omit<AccountSpec, 'code' | 'currency' | 'ow
   'platform:ADJUSTMENT_SUSPENSE': { name: 'Adjustment suspense', type: 'CLEARING', normalBalance: 'DEBIT' },
   'platform:SUSPENSE': { name: 'Suspense (unidentified funds)', type: 'CLEARING', normalBalance: 'DEBIT' },
   'platform:memo:SETTLED_CONTRA': { name: 'Settled memo contra', type: 'CLEARING', normalBalance: 'DEBIT' },
+  /** Merchant settlements sent to the bank but not yet confirmed (money in transit, owed to merchants). */
+  'platform:SETTLEMENT_CLEARING': { name: 'Settlements in transit', type: 'CLEARING', normalBalance: 'CREDIT' },
 };
 
 const ID_PART = /^[a-z]{2,5}_[0-9A-Z]{26}$/;
@@ -43,6 +45,7 @@ export const Accounts = {
   ADJUSTMENT_SUSPENSE: 'platform:ADJUSTMENT_SUSPENSE',
   SUSPENSE: 'platform:SUSPENSE',
   SETTLED_CONTRA: 'platform:memo:SETTLED_CONTRA',
+  SETTLEMENT_CLEARING: 'platform:SETTLEMENT_CLEARING',
 } as const;
 
 export function accountSpec(code: string, currency: string): AccountSpec {

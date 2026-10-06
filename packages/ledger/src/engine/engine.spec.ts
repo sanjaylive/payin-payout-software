@@ -105,6 +105,27 @@ function reserve(id: string, amount: bigint): PostJournalInput {
   return { type: 'PAYOUT_RESERVE', idempotencyKey: `payout:${id}:reserve`, source: { type: 'PAYOUT', id }, actor, lines: [line(Accounts.merchant(M, 'AVAILABLE'), 'DEBIT', amount), line(Accounts.merchant(M, 'RESERVED'), 'CREDIT', amount)] };
 }
 
+describe('bank settlement lifecycle', () => {
+  const j = (type: PostJournalInput['type'], key: string, lines: PostingLine[]): PostJournalInput => ({ type, idempotencyKey: key, source: { type: 'SETTLEMENT', id: 'stl_1' }, actor, lines });
+  it('moves UNSETTLED into transit, then to the bank (+ memo) or back to UNSETTLED', async () => {
+    const store = new MemoryStore();
+    await postJournal(store, capture('pay_s1', 100000n, 180n, 32n)); // UNSETTLED 997.88
+    await postJournal(store, j('SETTLEMENT_TRANSFER', 'settlement:stl_1:transfer', [line(Accounts.merchant(M, 'UNSETTLED'), 'DEBIT', 99_788n), line(Accounts.SETTLEMENT_CLEARING, 'CREDIT', 99_788n)]));
+    expect(store.balance(Accounts.merchant(M, 'UNSETTLED'))).toBe(0n);
+    await postJournal(store, j('SETTLEMENT_PAID', 'settlement:stl_1:paid', [
+      line(Accounts.SETTLEMENT_CLEARING, 'DEBIT', 99_788n),
+      line(Accounts.bank('nodal'), 'CREDIT', 99_788n),
+      line(Accounts.SETTLED_CONTRA, 'DEBIT', 99_788n),
+      line(Accounts.merchant(M, 'SETTLED'), 'CREDIT', 99_788n),
+    ]));
+    expect(store.balance(Accounts.merchant(M, 'SETTLED'))).toBe(99_788n);
+    // A transfer can't come out of AVAILABLE, and a return can't credit AVAILABLE.
+    await expect(postJournal(store, j('SETTLEMENT_TRANSFER', 'x1', [line(Accounts.merchant(M, 'AVAILABLE'), 'DEBIT', 1n), line(Accounts.SETTLEMENT_CLEARING, 'CREDIT', 1n)]))).rejects.toThrow(LedgerValidationError);
+    await expect(postJournal(store, j('SETTLEMENT_RETURN', 'x2', [line(Accounts.SETTLEMENT_CLEARING, 'DEBIT', 1n), line(Accounts.merchant(M, 'AVAILABLE'), 'CREDIT', 1n)]))).rejects.toThrow(LedgerValidationError);
+    await expect(postJournal(store, j('SETTLEMENT_PAID', 'x3', [line(Accounts.SETTLEMENT_CLEARING, 'DEBIT', 1n), line(Accounts.FEE_REVENUE, 'CREDIT', 1n)]))).rejects.toThrow(LedgerValidationError);
+  });
+});
+
 describe('validation', () => {
   it('rejects unbalanced, single-line, zero and negative journals before any I/O', async () => {
     const store = new MemoryStore();

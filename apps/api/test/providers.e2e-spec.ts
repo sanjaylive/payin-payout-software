@@ -2,6 +2,7 @@ import { createHmac } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { newId } from '@pay2all/auth';
 import { ProviderRegistryService } from '../src/modules/providers/provider-registry.service';
 import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
 
@@ -99,7 +100,9 @@ describe('provider management', () => {
   });
 
   it('runs a live health check through the mock adapter and reports metrics', async () => {
-    const id = await providerId('mock-upi');
+    // A dedicated provider: shared sandbox providers accumulate samples from other suites.
+    const id = newId('provider');
+    await ctx.prisma.provider.create({ data: { id, code: `hm-${id.slice(-8).toLowerCase()}`, name: 'Health metrics test', kind: 'PAYIN', adapter: 'mock', status: 'ACTIVE', statusSource: 'AUTO', capabilities: { payin_methods: ['UPI_QR'] } } });
     const res = await ctx.http().post(`/v1/providers/${id}/test`).set(bearer(opsToken));
     expect(res.body.data.ok).toBe(true);
     const registry = ctx.app.get(ProviderRegistryService);
