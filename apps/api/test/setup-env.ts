@@ -14,3 +14,5 @@ process.env.LOG_LEVEL = 'silent';
 process.env.SWAGGER_ENABLED = 'false';
 process.env.AUTH_ENFORCE_MFA = 'true';
 process.env.SEED_PASSWORD = 'Test-Seed-Password-2026!';
+process.env.S3_BUCKET = 'pay2all-documents-test';
+process.env.MAX_DOCUMENT_BYTES = String(1024 * 1024);

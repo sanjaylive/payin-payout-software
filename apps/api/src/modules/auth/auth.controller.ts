@@ -7,6 +7,7 @@ import {
   idSchema,
   loginSchema,
   mfaVerifySchema,
+  regenerateRecoveryCodesSchema,
   resetPasswordSchema,
   totpDisableSchema,
   totpEnableSchema,
@@ -79,8 +80,8 @@ export class AuthController {
     @Body(new ZodValidationPipe(mfaVerifySchema)) body: z.output<typeof mfaVerifySchema>,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const session = await this.auth.completeMfaLogin(body.mfa_token, body.code, (userId, code) =>
-      this.mfa.verifyForLogin(userId, code),
+    const session = await this.auth.completeMfaLogin(body.mfa_token, (userId) =>
+      body.recovery_code ? this.mfa.verifyRecoveryCode(userId, body.recovery_code) : this.mfa.verifyForLogin(userId, body.code!),
     );
     setRefreshCookie(res, this.config, session.refreshToken);
     return presentSession(session);
@@ -232,7 +233,21 @@ export class AuthController {
     @Body(new ZodValidationPipe(totpEnableSchema)) body: z.output<typeof totpEnableSchema>,
   ) {
     const token = await this.mfa.enable(actor, body.code);
-    return { status: 'AUTHENTICATED', access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn };
+    // Recovery codes are returned exactly once; only their keyed hashes are stored.
+    return { status: 'AUTHENTICATED', access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn, recovery_codes: token.recoveryCodes };
+  }
+
+  @AuthenticatedOnly()
+  @Post('mfa/recovery-codes')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Regenerate recovery codes (invalidates previous ones; requires a current TOTP code)' })
+  @ApiZodBody(regenerateRecoveryCodesSchema)
+  async regenerateRecoveryCodes(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodValidationPipe(regenerateRecoveryCodesSchema)) body: z.output<typeof regenerateRecoveryCodesSchema>,
+  ) {
+    return { recovery_codes: await this.mfa.regenerateRecoveryCodes(actor, body.code) };
   }
 
   @AuthenticatedOnly()

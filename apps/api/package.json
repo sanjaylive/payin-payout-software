@@ -34,7 +34,10 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@pay2all/ledger": "workspace:*",
+    "multer": "^2.4.0"
   },
   "devDependencies": {
     "@nestjs/cli": "~11.0.24",
@@ -54,6 +57,7 @@
     "typescript": "~5.9.3",
     "unplugin-swc": "^1.5.7",
     "vitest": "^3.2.7",
-    "@types/pg": "^8.15.5"
+    "@types/pg": "^8.15.5",
+    "@types/multer": "^2.0.0"
   }
 }

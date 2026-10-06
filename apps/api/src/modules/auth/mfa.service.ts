@@ -1,9 +1,12 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { randomInt } from 'node:crypto';
 import { buildTotpUri, FieldEncryptor, generateTotpSecret, newId, verifyPassword, verifyTotp } from '@pay2all/auth';
+import type { DbClient } from '@pay2all/database';
 import type { PrismaClient } from '@pay2all/database';
 import { ErrorCode } from '@pay2all/types';
 import QRCode from 'qrcode';
 import { AppError } from '../../common/errors/app-error';
+import { MailService } from '../../infra/mail.service';
 import { ApiConfig } from '../../config/api-config';
 import { PRISMA } from '../../infra/tokens';
 import { AccessProfileService } from '../access/access-profile.service';
@@ -21,14 +24,89 @@ export class MfaService {
     private readonly profiles: AccessProfileService,
     private readonly audit: AuditService,
     private readonly config: ApiConfig,
+    private readonly mail: MailService,
   ) {}
 
-  async status(userId: string) {
-    const active = await this.prisma.mfaFactor.findFirst({
-      where: { userId, status: 'ACTIVE' },
-      select: { confirmedAt: true },
+  // ---- Recovery codes -------------------------------------------------------------------------
+
+  private static readonly RECOVERY_CODE_COUNT = 10;
+  private static readonly ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+
+  private hashRecoveryCode(code: string): string {
+    // Keyed hash: a leaked table alone can't be brute-forced offline (50-bit codes).
+    return this.encryptor.blindIndex(code.toUpperCase(), 'mfa-recovery-code');
+  }
+
+  /** Replace all recovery codes for a user; returns the plaintext codes exactly once. */
+  async issueRecoveryCodes(db: DbClient, userId: string): Promise<string[]> {
+    const codes = Array.from({ length: MfaService.RECOVERY_CODE_COUNT }, () => {
+      const chars = Array.from({ length: 10 }, () => MfaService.ALPHABET[randomInt(MfaService.ALPHABET.length)]).join('');
+      return `${chars.slice(0, 5)}-${chars.slice(5)}`;
     });
-    return { enabled: Boolean(active), confirmedAt: active?.confirmedAt ?? null };
+    await db.mfaRecoveryCode.deleteMany({ where: { userId } });
+    await db.mfaRecoveryCode.createMany({
+      data: codes.map((code) => ({ id: newId('recoveryCode'), userId, codeHash: this.hashRecoveryCode(code) })),
+    });
+    return codes;
+  }
+
+  /** Consume a recovery code (single use, race-safe) as the second factor. */
+  async verifyRecoveryCode(userId: string, code: string): Promise<boolean> {
+    const used = await this.prisma.mfaRecoveryCode.updateMany({
+      where: { userId, codeHash: this.hashRecoveryCode(code), usedAt: null },
+      data: { usedAt: new Date() },
+    });
+    if (used.count !== 1) return false;
+    const remaining = await this.prisma.mfaRecoveryCode.count({ where: { userId, usedAt: null } });
+    await this.audit.record({ action: 'auth.mfa.recovery_code_used', resourceType: 'user', resourceId: userId, organizationId: null, actor: { type: 'USER', id: userId }, metadata: { remaining, severity: 'MEDIUM' } });
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (user) {
+      this.mail.sendInBackground({
+        to: user.email,
+        subject: 'A Pay2All recovery code was used',
+        text: `A recovery code was just used to sign in to your account. ${remaining} codes remain. If this wasn't you, reset your password and contact support immediately.`,
+      });
+    }
+    return true;
+  }
+
+  async regenerateRecoveryCodes(actor: Actor, code: string): Promise<string[]> {
+    if (!(await this.verifyForLogin(actor.userId, code))) throw new AppError(ErrorCode.MFA_INVALID_CODE);
+    return this.prisma.$transaction(async (tx) => {
+      const codes = await this.issueRecoveryCodes(tx, actor.userId);
+      await this.audit.record({ action: 'auth.mfa.recovery_codes_regenerated', resourceType: 'user', resourceId: actor.userId }, tx);
+      return codes;
+    });
+  }
+
+  /**
+   * Platform-staff reset for a user who lost their authenticator and recovery codes. Disables all
+   * factors and codes and signs the user out everywhere; they must re-enroll at next sign-in.
+   */
+  async adminReset(actor: Actor, userId: string, reason: string): Promise<void> {
+    if (actor.organizationType !== 'PLATFORM') throw new AppError(ErrorCode.FORBIDDEN);
+    if (actor.userId === userId) throw new AppError(ErrorCode.FORBIDDEN, 'You cannot reset your own two-factor authentication');
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    if (!user) throw new AppError(ErrorCode.NOT_FOUND, 'User not found');
+    await this.prisma.$transaction(async (tx) => {
+      await tx.mfaFactor.updateMany({ where: { userId, status: { in: ['ACTIVE', 'PENDING'] } }, data: { status: 'DISABLED', disabledAt: new Date() } });
+      await tx.mfaRecoveryCode.deleteMany({ where: { userId } });
+      await this.audit.record({ action: 'auth.mfa.admin_reset', resourceType: 'user', resourceId: userId, organizationId: null, metadata: { reason, severity: 'HIGH' } }, tx);
+    });
+    await this.sessions.revokeAllForUser(userId, 'ADMIN_REVOKED');
+    this.mail.sendInBackground({
+      to: user.email,
+      subject: 'Your Pay2All two-factor authentication was reset',
+      text: 'An administrator reset two-factor authentication on your account. You will be asked to set it up again at your next sign-in. If you did not request this, contact support immediately.',
+    });
+  }
+
+  async status(userId: string) {
+    const [active, recoveryCodesRemaining] = await Promise.all([
+      this.prisma.mfaFactor.findFirst({ where: { userId, status: 'ACTIVE' }, select: { confirmedAt: true } }),
+      this.prisma.mfaRecoveryCode.count({ where: { userId, usedAt: null } }),
+    ]);
+    return { enabled: Boolean(active), confirmedAt: active?.confirmedAt ?? null, recoveryCodesRemaining };
   }
 
   /** Start enrollment. Returns the secret/QR exactly once; a previous pending enrollment is discarded. */
@@ -70,7 +148,7 @@ export class MfaService {
     if (!result.valid) throw new AppError(ErrorCode.MFA_INVALID_CODE);
 
     const now = new Date();
-    await this.prisma.$transaction(async (tx) => {
+    const recoveryCodes = await this.prisma.$transaction(async (tx) => {
       const activated = await tx.mfaFactor.updateMany({
         where: { id: pending.id, status: 'PENDING' },
         data: { status: 'ACTIVE', confirmedAt: now, lastUsedStep: result.timeStep ?? null },
@@ -81,8 +159,9 @@ export class MfaService {
         data: { mfaVerifiedAt: now, mfaEnrollmentRequired: false },
       });
       await this.audit.record({ action: 'auth.mfa.enabled', resourceType: 'user', resourceId: actor.userId }, tx);
+      return this.issueRecoveryCodes(tx, actor.userId);
     });
-    return this.sessions.reissueAccessToken(actor.sessionId);
+    return { ...(await this.sessions.reissueAccessToken(actor.sessionId)), recoveryCodes };
   }
 
   /** Verify a login code for the user's ACTIVE factor, atomically advancing the replay watermark. */
@@ -120,6 +199,7 @@ export class MfaService {
         where: { userId: actor.userId, status: 'ACTIVE' },
         data: { status: 'DISABLED', disabledAt: new Date() },
       });
+      await tx.mfaRecoveryCode.deleteMany({ where: { userId: actor.userId } });
       await this.audit.record({ action: 'auth.mfa.disabled', resourceType: 'user', resourceId: actor.userId }, tx);
     });
   }

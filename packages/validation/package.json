@@ -10,7 +10,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput",
@@ -18,7 +20,10 @@
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests"
   },
-  "dependencies": { "zod": "^4.6.5" },
+  "dependencies": {
+    "zod": "^4.6.5",
+    "@pay2all/ledger": "workspace:*"
+  },
   "devDependencies": {
     "@pay2all/config": "workspace:*",
     "@types/node": "^24.0.0",

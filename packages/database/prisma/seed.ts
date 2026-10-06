@@ -13,6 +13,7 @@ import { randomBytes } from 'node:crypto';
 import { config as loadDotenv } from 'dotenv';
 import { checkPasswordPolicy, hashPassword, newId, PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@pay2all/auth';
 import { createPrismaClient, type OrganizationType, type PrismaClient } from '../src/index';
+import { ensureMerchantAggregates, seedMerchantOnboarding } from './seed-merchants';
 
 loadDotenv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
@@ -126,6 +127,7 @@ async function main() {
     { name: 'Platform Admin', email: 'admin@pay2all.local', roleKey: 'ADMIN', organizationId: platform.id },
     { name: 'Compliance Officer', email: 'compliance@pay2all.local', roleKey: 'COMPLIANCE', organizationId: platform.id },
     { name: 'Finance Officer', email: 'finance@pay2all.local', roleKey: 'FINANCE', organizationId: platform.id },
+    { name: 'Sales Executive', email: 'sales@pay2all.local', roleKey: 'SALES', organizationId: platform.id },
     { name: 'Acme Reseller Admin', email: 'admin@acme-partners.local', roleKey: 'RESELLER', organizationId: reseller.id },
     { name: 'Rohit Sharma', email: 'owner@sharma-electronics.local', mobile: '+919876500001', roleKey: 'MERCHANT_OWNER', organizationId: m1.id },
     { name: 'Priya Verma', email: 'finance@sharma-electronics.local', roleKey: 'MERCHANT_FINANCE', organizationId: m1.id },
@@ -133,7 +135,29 @@ async function main() {
     { name: 'Vikram Rao', email: 'owner@nimbus-software.local', roleKey: 'MERCHANT_OWNER', organizationId: m3.id },
     { name: 'Nimbus Developer', email: 'dev@nimbus-software.local', roleKey: 'MERCHANT_DEVELOPER', organizationId: m3.id },
   ];
-  for (const u of users) await upsertUser(prisma, roleIds, u, passwordHash);
+  const created = new Map<string, string>();
+  for (const u of users) created.set(u.email, (await upsertUser(prisma, roleIds, u, passwordHash)).id);
+
+  await ensureMerchantAggregates(prisma);
+  await seedMerchantOnboarding(prisma, {
+    sharma: m1.id,
+    kirana: m2.id,
+    nimbus: m3.id,
+    complianceUserId: created.get('compliance@pay2all.local')!,
+    resellerUserId: created.get('admin@acme-partners.local')!,
+    nimbusOwnerId: created.get('owner@nimbus-software.local')!,
+  });
+  const salesId = created.get('sales@pay2all.local')!;
+  await prisma.organization.updateMany({ where: { id: { in: [reseller.id, m1.id, m2.id] } }, data: { assignedSalesUserId: salesId } });
+  if ((await prisma.salesLead.count()) === 0) {
+    const now = new Date();
+    await prisma.salesLead.createMany({
+      data: [
+        { id: newId('salesLead'), companyName: 'Chai Point Cafes', contactName: 'Kabir Mehta', contactEmail: 'kabir@chaipoint.example', source: 'website', expectedMonthlyVolume: '₹25 lakh', status: 'QUALIFIED', assignedSalesUserId: salesId, followUpDate: new Date(now.getTime() + 2 * 86_400_000), notes: [{ at: now.toISOString(), by: salesId, text: 'Wants UPI QR for 12 outlets.' }] },
+        { id: newId('salesLead'), companyName: 'Velocity Logistics', contactName: 'Sana Iqbal', contactEmail: 'sana@velocity.example', source: 'referral', expectedMonthlyVolume: '₹1.2 crore', status: 'NEW', assignedSalesUserId: salesId, followUpDate: new Date(now.getTime() + 86_400_000) },
+      ],
+    });
+  }
 
   await prisma.auditLog.create({
     data: {

@@ -6,17 +6,22 @@ import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
 import { CurrentActor, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
+import { MfaService } from '../auth/mfa.service';
 import { UsersService } from './users.service';
 
 const userIdPipe = new ZodValidationPipe(idSchema('usr'));
 const roleKeyPipe = new ZodValidationPipe(z.string().regex(/^[A-Z_]{3,40}$/));
 const revokeQuerySchema = z.strictObject({ organization_id: idSchema('org').optional() });
+const mfaResetSchema = z.strictObject({ reason: z.string().trim().min(5).max(500) });
 
 @ApiTags('Users')
 @ApiBearerAuth()
 @Controller('v1/users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly mfa: MfaService,
+  ) {}
 
   @Get()
   @RequirePermissions('user.read')
@@ -52,6 +57,20 @@ export class UsersController {
     @Body(new ZodValidationPipe(updateUserStatusSchema)) body: z.output<typeof updateUserStatusSchema>,
   ) {
     return this.users.updateStatus(actor, id, body);
+  }
+
+  @Post(':id/mfa/reset')
+  @RequirePermissions('user.manage')
+  @ApiOperation({ summary: 'Reset a user\'s two-factor authentication (platform staff; audited; signs the user out)' })
+  @ApiZodBody(mfaResetSchema)
+  async resetMfa(
+    @CurrentActor() actor: Actor,
+    @Param('id', userIdPipe) id: string,
+    @Body(new ZodValidationPipe(mfaResetSchema)) body: z.output<typeof mfaResetSchema>,
+  ) {
+    await this.users.get(actor, id); // scope check (404 outside scope)
+    await this.mfa.adminReset(actor, id, body.reason);
+    return { mfa_reset: true };
   }
 
   @Post(':id/roles')

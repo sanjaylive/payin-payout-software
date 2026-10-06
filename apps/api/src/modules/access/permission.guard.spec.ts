@@ -3,13 +3,14 @@ import { Reflector } from '@nestjs/core';
 import { describe, expect, it } from 'vitest';
 import { AppError } from '../../common/errors/app-error';
 import type { Actor } from '../auth/actor';
-import { AuthenticatedOnly, Public, RequirePermissions } from './decorators';
+import { AuthenticatedOnly, Public, RequireAnyPermission, RequirePermissions } from './decorators';
 import { PermissionGuard } from './permission.guard';
 
 class Handlers {
   @Public() publicRoute() {}
   @RequirePermissions('payout.approve') approve() {}
   @AuthenticatedOnly() me() {}
+  @RequireAnyPermission('merchant.update', 'compliance.approve') upload() {}
   undecorated() {}
 }
 
@@ -50,6 +51,11 @@ describe('PermissionGuard', () => {
 
   it('fails closed for routes without any authorization metadata', () => {
     expect(() => guard.canActivate(contextFor('undecorated', actor(['payout.approve'])))).toThrow(AppError);
+  });
+
+  it('supports any-of permissions', () => {
+    expect(guard.canActivate(contextFor('upload', actor(['compliance.approve'])))).toBe(true);
+    expect(() => guard.canActivate(contextFor('upload', actor(['payin.read'])))).toThrow(AppError);
   });
 
   it('allows explicit authenticated-only routes', () => {

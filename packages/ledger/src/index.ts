@@ -1,5 +1,5 @@
 /**
- * @pay2all/ledger — double-entry ledger domain (money helpers, posting service, balance service).
- * Implemented in Phase 3; see docs/LEDGER.md for the design this package must follow.
+ * @pay2all/ledger — money helpers (Phase 2) and the double-entry posting domain (Phase 3).
+ * See docs/LEDGER.md.
  */
-export const LEDGER_PACKAGE_PHASE = 3;
+export * from './money';

@@ -16,10 +16,25 @@ export const loginSchema = z.strictObject({
 });
 export type LoginInput = z.input<typeof loginSchema>;
 
-export const mfaVerifySchema = z.strictObject({
-  mfa_token: z.string().min(10).max(2048),
-  code: totpCodeSchema,
-});
+export const recoveryCodeSchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z2-7]{5}-[A-Z2-7]{5}$/, 'Recovery codes look like ABCDE-FGH23');
+
+/** Second login factor: a TOTP code or a single-use recovery code (exactly one). */
+export const mfaVerifySchema = z
+  .strictObject({
+    mfa_token: z.string().min(10).max(2048),
+    code: totpCodeSchema.optional(),
+    recovery_code: recoveryCodeSchema.optional(),
+  })
+  .refine((v) => Boolean(v.code) !== Boolean(v.recovery_code), {
+    path: ['code'],
+    message: 'Provide either a 6-digit code or a recovery code',
+  });
+
+export const regenerateRecoveryCodesSchema = z.strictObject({ code: totpCodeSchema });
 export type MfaVerifyInput = z.input<typeof mfaVerifySchema>;
 
 export const totpEnableSchema = z.strictObject({ code: totpCodeSchema });

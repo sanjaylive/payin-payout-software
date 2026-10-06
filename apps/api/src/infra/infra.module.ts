@@ -4,6 +4,8 @@ import Redis from 'ioredis';
 import { ApiConfig } from '../config/api-config';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { MailService } from './mail.service';
+import { OutboxService } from './outbox.service';
+import { StorageService } from './storage.service';
 import { PRISMA, REDIS } from './tokens';
 
 @Global()
@@ -31,8 +33,10 @@ import { PRISMA, REDIS } from './tokens';
     },
     RateLimitService,
     MailService,
+    StorageService,
+    OutboxService,
   ],
-  exports: [PRISMA, REDIS, RateLimitService, MailService],
+  exports: [PRISMA, REDIS, RateLimitService, MailService, StorageService, OutboxService],
 })
 export class InfraModule implements OnApplicationShutdown {
   private readonly logger = new Logger(InfraModule.name);

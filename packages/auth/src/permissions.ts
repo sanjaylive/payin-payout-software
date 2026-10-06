@@ -66,6 +66,10 @@ export const PERMISSIONS = {
 
   'limit.read': { description: 'View transaction limits', scopes: ALL },
   'limit.manage': { description: 'Change transaction limits', scopes: ['PLATFORM', 'RESELLER'] },
+  'approval_policy.manage': {
+    description: 'Configure payout maker-checker approval tiers',
+    scopes: ['PLATFORM', 'RESELLER', 'API_PARTNER', 'MERCHANT'],
+  },
 
   'risk.read': { description: 'View risk rules and events', scopes: P },
   'risk.manage': { description: 'Configure risk rules', scopes: P },

@@ -14,6 +14,9 @@ import { AuthGuard } from './modules/auth/auth.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthController } from './modules/health/health.controller';
 import { IamModule } from './modules/iam/iam.module';
+import { LimitsModule } from './modules/limits/limits.module';
+import { MerchantsModule } from './modules/merchants/merchants.module';
+import { SalesModule } from './modules/sales/sales.module';
 
 @Module({})
 export class AppModule implements NestModule {
@@ -50,6 +53,9 @@ export class AppModule implements NestModule {
         AuditModule,
         AuthModule,
         IamModule,
+        MerchantsModule,
+        LimitsModule,
+        SalesModule,
       ],
       controllers: [HealthController],
       providers: [

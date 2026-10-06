@@ -109,7 +109,7 @@ export class AuthService {
   }
 
   /** Second login step: verify the TOTP code against the challenge and create the session. */
-  async completeMfaLogin(mfaToken: string, code: string, verifyCode: (userId: string, code: string) => Promise<boolean>): Promise<IssuedSession> {
+  async completeMfaLogin(mfaToken: string, verifySecondFactor: (userId: string) => Promise<boolean>): Promise<IssuedSession> {
     const ip = RequestContextStore.get()?.ipAddress ?? 'unknown';
     await this.rateLimit.enforce(RATE_LIMITS.mfaByIp, ip);
     const claims = await this.tokens.verifyMfaChallenge(mfaToken);
@@ -119,7 +119,7 @@ export class AuthService {
     if (attempts === 1) await this.redis.expire(attemptsKey, MFA_CHALLENGE_TTL_SECONDS);
     if (attempts > MAX_MFA_ATTEMPTS) throw new AppError(ErrorCode.UNAUTHORIZED, 'Too many attempts. Sign in again');
 
-    if (!(await verifyCode(claims.sub, code))) {
+    if (!(await verifySecondFactor(claims.sub))) {
       await this.audit.record({
         action: 'auth.mfa.failed',
         resourceType: 'user',

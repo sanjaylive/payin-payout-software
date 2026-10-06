@@ -84,13 +84,13 @@ export class OrganizationsService {
 
   /** Platform-only (organization.manage is PLATFORM-scoped). Merchants may hang off a reseller. */
   async create(actor: Actor, input: z.output<typeof createOrganizationSchema>) {
-    let parentId = actor.organizationId;
+    if (input.type === 'MERCHANT') {
+      // Merchants have an onboarding aggregate; creating a bare organization would leave it incomplete.
+      throw new AppError(ErrorCode.INVALID_REQUEST, 'Create merchants with POST /v1/merchants');
+    }
+    const parentId = actor.organizationId;
     if (input.parent_id) {
-      const parent = await this.scope.requireOrganization(actor, input.parent_id);
-      if (input.type !== 'MERCHANT' || parent.type !== 'RESELLER') {
-        throw new AppError(ErrorCode.INVALID_REQUEST, 'Only merchants can be created under a reseller');
-      }
-      parentId = parent.id;
+      throw new AppError(ErrorCode.INVALID_REQUEST, 'Only merchants can be created under a reseller');
     }
     return this.prisma.$transaction(async (tx) => {
       const org = await tx.organization.create({

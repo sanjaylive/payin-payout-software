@@ -3,7 +3,7 @@ import { Reflector } from '@nestjs/core';
 import type { PermissionKey } from '@pay2all/auth';
 import { ErrorCode } from '@pay2all/types';
 import { AppError } from '../../common/errors/app-error';
-import { AUTHENTICATED_ONLY, IS_PUBLIC, REQUIRED_PERMISSIONS, type RequestWithActor } from './decorators';
+import { ANY_PERMISSIONS, AUTHENTICATED_ONLY, IS_PUBLIC, REQUIRED_PERMISSIONS, type RequestWithActor } from './decorators';
 
 /**
  * Enforces @RequirePermissions. Fails closed: a non-public route that declares neither
@@ -21,9 +21,15 @@ export class PermissionGuard implements CanActivate {
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, targets)) return true;
 
     const required = this.reflector.getAllAndOverride<PermissionKey[] | undefined>(REQUIRED_PERMISSIONS, targets);
+    const anyOf = this.reflector.getAllAndOverride<PermissionKey[] | undefined>(ANY_PERMISSIONS, targets);
     const authenticatedOnly = this.reflector.getAllAndOverride<boolean>(AUTHENTICATED_ONLY, targets);
     const actor = context.switchToHttp().getRequest<RequestWithActor>().actor;
     if (!actor) throw new AppError(ErrorCode.UNAUTHORIZED);
+
+    if (anyOf?.length) {
+      if (!anyOf.some((p) => actor.permissions.has(p))) throw new AppError(ErrorCode.FORBIDDEN);
+      if (!required?.length) return true;
+    }
 
     if (!required?.length) {
       if (authenticatedOnly) return true;

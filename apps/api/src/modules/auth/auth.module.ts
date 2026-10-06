@@ -33,6 +33,6 @@ import { TokenService } from './token.service';
     MeService,
     AuthGuard,
   ],
-  exports: [AuthGuard, SessionService, PasswordService, TokenService, FieldEncryptor],
+  exports: [AuthGuard, SessionService, PasswordService, TokenService, FieldEncryptor, MfaService],
 })
 export class AuthModule {}

@@ -4,6 +4,8 @@
 // declared in migration SQL.
 //
 // Phase 1 scope: identity & access, sessions, MFA, audit, outbox, notifications.
+// Phase 2 scope: merchants, onboarding/KYC, documents, bank accounts, compliance reviews, limits,
+// approval policies, sales leads, MFA recovery codes.
 // Later phases add their models in their own migrations (see docs/ROADMAP.md).
 
 generator client {
@@ -74,15 +76,20 @@ enum NotificationStatus {
 
 /// Tenant root. Hierarchy PLATFORM -> RESELLER -> MERCHANT via parentId.
 model Organization {
-  id        String             @id
-  type      OrganizationType
-  status    OrganizationStatus @default(ACTIVE)
-  name      String             @db.VarChar(160)
-  slug      String             @unique @db.VarChar(80)
-  parentId  String?            @map("parent_id")
-  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                  String             @id
+  type                OrganizationType
+  status              OrganizationStatus @default(ACTIVE)
+  name                String             @db.VarChar(160)
+  slug                String             @unique @db.VarChar(80)
+  parentId            String?            @map("parent_id")
+  /// Sales owner for resellers and merchants (CRM, Phase 2).
+  assignedSalesUserId String?            @map("assigned_sales_user_id")
+  /// Acquisition source (e.g. "referral", "website", lead id).
+  source              String?            @db.VarChar(80)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  merchant Merchant?
   parent   Organization?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
   children Organization[] @relation("OrganizationHierarchy")
   members  UserRole[]
@@ -91,6 +98,7 @@ model Organization {
 
   @@index([parentId])
   @@index([type, status, createdAt(sort: Desc)])
+  @@index([assignedSalesUserId])
   @@map("organizations")
 }
 
@@ -117,6 +125,7 @@ model User {
   sessions            Session[]
   mfaFactors          MfaFactor[]
   passwordResetTokens PasswordResetToken[]
+  mfaRecoveryCodes    MfaRecoveryCode[]
 
   @@index([status, createdAt(sort: Desc)])
   @@map("users")
@@ -337,4 +346,378 @@ model Notification {
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, createdAt])
   @@map("notifications")
+}
+
+/// Single-use MFA recovery codes. Stored as keyed HMAC (blind index) — useless without the server key.
+model MfaRecoveryCode {
+  id        String    @id
+  userId    String    @map("user_id")
+  codeHash  String    @unique @map("code_hash") @db.Char(64)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, usedAt])
+  @@map("mfa_recovery_codes")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 2 — Merchants & compliance
+// ---------------------------------------------------------------------------------------------
+
+enum MerchantStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  MORE_INFORMATION_REQUIRED
+  APPROVED
+  REJECTED
+  SUSPENDED
+}
+
+enum EntityType {
+  PROPRIETORSHIP
+  PARTNERSHIP
+  LLP
+  PRIVATE_LIMITED
+  PUBLIC_LIMITED
+  ONE_PERSON_COMPANY
+  TRUST
+  SOCIETY
+  HUF
+  GOVERNMENT
+}
+
+enum RiskCategory {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum SettlementCycle {
+  T0
+  T1
+  T2
+  CUSTOM
+}
+
+enum ScreeningStatus {
+  NOT_STARTED
+  PENDING
+  CLEAR
+  MATCH_FOUND
+  FALSE_POSITIVE
+}
+
+enum DocumentType {
+  PAN
+  GST_CERTIFICATE
+  CIN_CERTIFICATE
+  ADDRESS_PROOF
+  BANK_PROOF
+  CANCELLED_CHEQUE
+  DIRECTOR_KYC
+  AGREEMENT
+  OTHER
+}
+
+enum DocumentStatus {
+  UPLOADED
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+enum BankAccountType {
+  CURRENT
+  SAVINGS
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+}
+
+enum ComplianceAction {
+  CREATED
+  SUBMITTED
+  REVIEW_STARTED
+  INFORMATION_REQUESTED
+  APPROVED
+  REJECTED
+  SUSPENDED
+  REACTIVATED
+}
+
+enum LimitLevel {
+  SYSTEM
+  RESELLER
+  MERCHANT
+}
+
+enum ServiceType {
+  PAYIN
+  PAYOUT
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  LOST
+}
+
+/// Merchant aggregate. Shares its primary key with its Organization (merchantId == organizationId).
+model Merchant {
+  id            String         @id
+  /// Denormalised parent reseller (null = direct Pay2All merchant) for single-index reseller scoping.
+  resellerId    String?        @map("reseller_id")
+  status        MerchantStatus @default(DRAFT)
+  payinEnabled  Boolean        @default(false) @map("payin_enabled")
+  payoutEnabled Boolean        @default(false) @map("payout_enabled")
+  riskCategory  RiskCategory?  @map("risk_category")
+  submittedAt   DateTime?      @map("submitted_at") @db.Timestamptz(3)
+  approvedAt    DateTime?      @map("approved_at") @db.Timestamptz(3)
+  /// Optimistic concurrency for status transitions.
+  version       Int            @default(1)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization          @relation(fields: [id], references: [id], onDelete: Restrict)
+  profile      MerchantProfile?
+  kyc          MerchantKyc?
+  persons      MerchantPerson[]
+  documents    MerchantDocument[]
+  bankAccounts MerchantBankAccount[]
+  reviews      ComplianceReview[]
+
+  @@index([status, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([resellerId, createdAt(sort: Desc)])
+  @@map("merchants")
+}
+
+model MerchantProfile {
+  merchantId                 String           @id @map("merchant_id")
+  legalName                  String?          @map("legal_name") @db.VarChar(200)
+  displayName                String?          @map("display_name") @db.VarChar(120)
+  entityType                 EntityType?      @map("entity_type")
+  /// Business PAN (public registry data for companies/firms; proprietors' PAN is personal but required).
+  pan                        String?          @db.Char(10)
+  gstin                      String?          @db.Char(15)
+  cin                        String?          @db.Char(21)
+  llpin                      String?          @db.VarChar(8)
+  registeredAddress          Json?            @map("registered_address")
+  operationalAddress         Json?            @map("operational_address")
+  website                    String?          @db.VarChar(300)
+  appUrl                     String?          @map("app_url") @db.VarChar(300)
+  businessCategory           String?          @map("business_category") @db.VarChar(100)
+  mcc                        String?          @db.Char(4)
+  businessDescription        String?          @map("business_description") @db.VarChar(2000)
+  expectedMonthlyVolumeMinor BigInt?          @map("expected_monthly_volume_minor")
+  averageTicketMinor         BigInt?          @map("average_ticket_minor")
+  maximumTicketMinor         BigInt?          @map("maximum_ticket_minor")
+  payinRequired              Boolean          @default(false) @map("payin_required")
+  payoutRequired             Boolean          @default(false) @map("payout_required")
+  settlementPreference       SettlementCycle? @map("settlement_preference")
+  contactName                String?          @map("contact_name") @db.VarChar(120)
+  contactEmail               String?          @map("contact_email") @db.VarChar(254)
+  contactMobile              String?          @map("contact_mobile") @db.VarChar(16)
+  updatedById                String?          @map("updated_by_id")
+  updatedAt                  DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  @@index([pan])
+  @@index([gstin])
+  @@map("merchant_profiles")
+}
+
+/// Screening and risk assessment state (provider integrations later; statuses recorded now).
+model MerchantKyc {
+  merchantId         String          @id @map("merchant_id")
+  sanctionsStatus    ScreeningStatus @default(NOT_STARTED) @map("sanctions_status")
+  pepStatus          ScreeningStatus @default(NOT_STARTED) @map("pep_status")
+  adverseMediaStatus ScreeningStatus @default(NOT_STARTED) @map("adverse_media_status")
+  screenedAt         DateTime?       @map("screened_at") @db.Timestamptz(3)
+  screenedById       String?         @map("screened_by_id")
+  riskNotes          String?         @map("risk_notes") @db.VarChar(2000)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  @@map("merchant_kyc")
+}
+
+/// Directors, partners, proprietors, UBOs and signatories (one person may hold several roles).
+model MerchantPerson {
+  id                    String             @id
+  merchantId            String             @map("merchant_id")
+  fullName              String             @map("full_name") @db.VarChar(120)
+  designation           String?            @db.VarChar(80)
+  panEncrypted          String             @map("pan_encrypted")
+  panMasked             String             @map("pan_masked") @db.VarChar(10)
+  panHash               String             @map("pan_hash") @db.Char(64)
+  din                   String?            @db.Char(8)
+  email                 String?            @db.VarChar(254)
+  mobile                String?            @db.VarChar(16)
+  isDirector            Boolean            @default(false) @map("is_director")
+  isUbo                 Boolean            @default(false) @map("is_ubo")
+  isAuthorizedSignatory Boolean            @default(false) @map("is_authorized_signatory")
+  ownershipPercent      Decimal?           @map("ownership_percent") @db.Decimal(5, 2)
+  kycStatus             VerificationStatus @default(PENDING) @map("kyc_status")
+  createdAt             DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  merchant  Merchant           @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  documents MerchantDocument[]
+
+  @@index([merchantId])
+  @@index([panHash])
+  @@map("merchant_persons")
+}
+
+/// Document metadata only; the file lives in S3-compatible storage under `storageKey`.
+model MerchantDocument {
+  id              String         @id
+  merchantId      String         @map("merchant_id")
+  personId        String?        @map("person_id")
+  type            DocumentType
+  status          DocumentStatus @default(UPLOADED)
+  fileName        String         @map("file_name") @db.VarChar(200)
+  mimeType        String         @map("mime_type") @db.VarChar(100)
+  sizeBytes       Int            @map("size_bytes")
+  sha256          String         @db.Char(64)
+  storageKey      String         @unique @map("storage_key") @db.VarChar(300)
+  description     String?        @db.VarChar(200)
+  expiresAt       DateTime?      @map("expires_at") @db.Date
+  uploadedById    String?        @map("uploaded_by_id")
+  reviewedById    String?        @map("reviewed_by_id")
+  reviewedAt      DateTime?      @map("reviewed_at") @db.Timestamptz(3)
+  rejectionReason String?        @map("rejection_reason") @db.VarChar(500)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  merchant Merchant        @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  person   MerchantPerson? @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, type, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("merchant_documents")
+}
+
+/// Settlement bank account. Full number encrypted; masked copy for display; HMAC for duplicate detection.
+model MerchantBankAccount {
+  id                     String             @id
+  merchantId             String             @map("merchant_id")
+  accountHolderName      String             @map("account_holder_name") @db.VarChar(120)
+  accountNumberEncrypted String             @map("account_number_encrypted")
+  accountNumberMasked    String             @map("account_number_masked") @db.VarChar(18)
+  accountNumberHash      String             @map("account_number_hash") @db.Char(64)
+  ifsc                   String             @db.Char(11)
+  bankName               String?            @map("bank_name") @db.VarChar(120)
+  accountType            BankAccountType    @default(CURRENT) @map("account_type")
+  verificationStatus     VerificationStatus @default(PENDING) @map("verification_status")
+  verificationReference  String?            @map("verification_reference") @db.VarChar(100)
+  verifiedById           String?            @map("verified_by_id")
+  verifiedAt             DateTime?          @map("verified_at") @db.Timestamptz(3)
+  isPrimary              Boolean            @default(false) @map("is_primary")
+  isActive               Boolean            @default(true) @map("is_active")
+  createdById            String?            @map("created_by_id")
+  createdAt              DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, isActive])
+  @@index([accountNumberHash])
+  @@map("merchant_bank_accounts")
+}
+
+/// Append-only compliance history (UPDATE/DELETE blocked by trigger). Never deleted.
+model ComplianceReview {
+  id           String           @id
+  merchantId   String           @map("merchant_id")
+  action       ComplianceAction
+  fromStatus   MerchantStatus?  @map("from_status")
+  toStatus     MerchantStatus   @map("to_status")
+  reviewedById String?          @map("reviewed_by_id")
+  reviewedAt   DateTime         @default(now()) @map("reviewed_at") @db.Timestamptz(3)
+  reason       String?          @db.VarChar(500)
+  notes        String?          @db.VarChar(4000)
+  /// Snapshot of what the reviewer saw/decided (risk category, enabled services, checklist).
+  details      Json?
+  requestId    String?          @map("request_id") @db.VarChar(40)
+
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, reviewedAt(sort: Desc)])
+  @@map("compliance_reviews")
+}
+
+/// Transaction limits. A null field inherits from the broader level (MERCHANT → RESELLER → SYSTEM).
+model LimitConfig {
+  id                 String      @id
+  level              LimitLevel
+  /// Organization id for RESELLER/MERCHANT; null for SYSTEM.
+  subjectId          String?     @map("subject_id")
+  service            ServiceType
+  perTxnMinMinor     BigInt?     @map("per_txn_min_minor")
+  perTxnMaxMinor     BigInt?     @map("per_txn_max_minor")
+  dailyAmountMinor   BigInt?     @map("daily_amount_minor")
+  dailyCount         Int?        @map("daily_count")
+  monthlyAmountMinor BigInt?     @map("monthly_amount_minor")
+  monthlyCount       Int?        @map("monthly_count")
+  updatedById        String?     @map("updated_by_id")
+  version            Int         @default(1)
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([level, subjectId, service])
+  @@map("limit_configs")
+}
+
+/// Maker-checker tiers for payouts: [{ up_to_minor: "1000000" | null, approvals_required: 0..3 }].
+model ApprovalPolicy {
+  id                  String      @id
+  level               LimitLevel
+  subjectId           String?     @map("subject_id")
+  service             ServiceType @default(PAYOUT)
+  makerCheckerEnabled Boolean     @default(true) @map("maker_checker_enabled")
+  tiers               Json
+  updatedById         String?     @map("updated_by_id")
+  version             Int         @default(1)
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([level, subjectId, service])
+  @@map("approval_policies")
+}
+
+/// Basic onboarding CRM.
+model SalesLead {
+  id                    String     @id
+  companyName           String     @map("company_name") @db.VarChar(160)
+  contactName           String     @map("contact_name") @db.VarChar(120)
+  contactEmail          String?    @map("contact_email") @db.VarChar(254)
+  contactMobile         String?    @map("contact_mobile") @db.VarChar(16)
+  source                String     @db.VarChar(80)
+  expectedMonthlyVolume String?    @map("expected_monthly_volume") @db.VarChar(40)
+  status                LeadStatus @default(NEW)
+  assignedSalesUserId   String?    @map("assigned_sales_user_id")
+  followUpDate          DateTime?  @map("follow_up_date") @db.Date
+  /// Append-only notes log: [{ at, by, text }].
+  notes                 Json       @default("[]")
+  convertedMerchantId   String?    @unique @map("converted_merchant_id")
+  convertedAt           DateTime?  @map("converted_at") @db.Timestamptz(3)
+  createdById           String?    @map("created_by_id")
+  createdAt             DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([status, followUpDate])
+  @@index([assignedSalesUserId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@map("sales_leads")
 }

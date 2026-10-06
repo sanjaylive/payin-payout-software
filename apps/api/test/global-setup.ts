@@ -19,7 +19,7 @@ export default async function globalSetup(): Promise<void> {
   await client.end();
 
   const dbPackage = path.resolve(__dirname, '../../../packages/database');
-  const env = { ...process.env, DATABASE_URL: url, NODE_ENV: 'test', SEED_PASSWORD: 'Test-Seed-Password-2026!' };
+  const env = { ...process.env, DATABASE_URL: url, NODE_ENV: 'test', SEED_PASSWORD: 'Test-Seed-Password-2026!', S3_BUCKET: 'pay2all-documents-test' };
   execSync('pnpm exec prisma migrate deploy', { cwd: dbPackage, env, stdio: 'pipe' });
   execSync('pnpm exec tsx prisma/seed.ts', { cwd: dbPackage, env, stdio: 'pipe' });
 

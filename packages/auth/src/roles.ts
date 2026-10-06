@@ -46,7 +46,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     permissions: [
       'organization.read', 'user.read', 'audit.read', 'merchant.read', 'merchant.approve',
       'merchant.suspend', 'compliance.read', 'compliance.approve', 'risk.read', 'risk.review',
-      'payin.read', 'payout.read', 'settlement.read', 'settlement.hold', 'report.read',
+      'payin.read', 'payout.read', 'settlement.read', 'settlement.hold', 'limit.read', 'report.read',
     ],
   },
   {
@@ -94,8 +94,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Merchant acquisition and lead management',
     permissions: [
-      'organization.read', 'merchant.read', 'merchant.create', 'sales.read', 'sales.manage',
-      'reseller.read', 'pricing.read',
+      'organization.read', 'merchant.read', 'merchant.create', 'merchant.update', 'sales.read',
+      'sales.manage', 'reseller.read', 'pricing.read', 'user.read',
     ],
   },
 
@@ -110,8 +110,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'organization.read', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read',
       'merchant.create', 'merchant.update', 'compliance.read', 'payin.read', 'payout.read',
       'ledger.read', 'settlement.read', 'pricing.read', 'pricing.manage', 'limit.read',
-      'limit.manage', 'reseller.read', 'webhook.read', 'api_key.read', 'report.read',
-      'report.export',
+      'limit.manage', 'approval_policy.manage', 'reseller.read', 'webhook.read', 'api_key.read',
+      'report.read', 'report.export',
     ],
   },
   {
@@ -124,8 +124,8 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'organization.read', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read',
       'payin.read', 'payin.create', 'payin.refund', 'payout.read', 'payout.create',
       'payout.approve', 'beneficiary.read', 'beneficiary.manage', 'ledger.read', 'settlement.read',
-      'pricing.read', 'limit.read', 'webhook.read', 'webhook.manage', 'api_key.read',
-      'api_key.manage', 'api_partner.read', 'report.read', 'report.export',
+      'pricing.read', 'limit.read', 'approval_policy.manage', 'webhook.read', 'webhook.manage',
+      'api_key.read', 'api_key.manage', 'api_partner.read', 'report.read', 'report.export',
     ],
   },
 

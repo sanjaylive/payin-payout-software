@@ -66,6 +66,15 @@ export const apiEnvSchema = z
     AUTH_MAX_FAILED_LOGINS: int(5, 1),
     AUTH_LOCKOUT_SECONDS: int(900, 60),
     SMTP_URL: z.string().default(''),
+    S3_ENDPOINT: z.string().default(''),
+    S3_REGION: z.string().default('ap-south-1'),
+    S3_BUCKET: z.string().min(3).default('pay2all-documents'),
+    S3_ACCESS_KEY: z.string().default(''),
+    S3_SECRET_KEY: z.string().default(''),
+    S3_FORCE_PATH_STYLE: bool(false),
+    /** Server-side encryption header for uploads (e.g. AES256 or aws:kms). Empty = bucket default. */
+    S3_SSE: z.string().default(''),
+    MAX_DOCUMENT_BYTES: int(10 * 1024 * 1024, 1024),
     MAIL_FROM: z.string().default('Pay2All Payments <no-reply@pay2all.local>'),
   })
   .superRefine((env, ctx) => {
@@ -88,6 +97,9 @@ export const apiEnvSchema = z
         path: ['SWAGGER_ENABLED'],
         message: 'public Swagger UI must be disabled in production (serve docs separately)',
       });
+    }
+    if (!env.S3_SSE) {
+      ctx.addIssue({ code: 'custom', path: ['S3_SSE'], message: 'KYC documents must be encrypted at rest in production' });
     }
     if (!env.SMTP_URL) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required in production' });

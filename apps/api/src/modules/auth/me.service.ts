@@ -50,6 +50,7 @@ export class MeService {
       session: { id: actor.sessionId, restricted: actor.restricted },
       mfa: {
         enabled: mfa.enabled,
+        recovery_codes_remaining: mfa.recoveryCodesRemaining,
         required: this.config.env.AUTH_ENFORCE_MFA && (profile?.requiresMfa ?? false),
       },
       memberships: memberships.map((m) => ({

@@ -164,10 +164,10 @@ describe('role assignment and privilege escalation', () => {
 
 describe('organization lifecycle', () => {
   it('suspending an organization blocks its members immediately and is audited with a reason', async () => {
-    const created = await ctx.http().post('/v1/organizations').set(bearer(adminToken)).send({ name: 'Suspend Me Traders', type: 'MERCHANT', parent_id: reseller.id });
+    const created = await ctx.http().post('/v1/merchants').set(bearer(adminToken)).send({ display_name: 'Suspend Me Traders', reseller_id: reseller.id });
     expect(created.status).toBe(201);
     const orgId = created.body.data.id as string;
-    expect(created.body.data.parent_id).toBe(reseller.id);
+    expect(created.body.data.reseller?.id).toBe(reseller.id);
 
     const owner = await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: orgId });
     const ownerToken = (await login(ctx, owner.email)).accessToken!;
@@ -184,8 +184,10 @@ describe('organization lifecycle', () => {
     expect(audit.requestId).toBe(suspend.headers['x-request-id']);
   });
 
-  it('cannot create a merchant under another merchant', async () => {
-    const res = await ctx.http().post('/v1/organizations').set(bearer(adminToken)).send({ name: 'Nested Merchant', type: 'MERCHANT', parent_id: sharma.id });
+  it('cannot create a merchant under another merchant, or a bare merchant organization', async () => {
+    const res = await ctx.http().post('/v1/merchants').set(bearer(adminToken)).send({ display_name: 'Nested Merchant', reseller_id: sharma.id });
     expect(res.status).toBe(400);
+    const bare = await ctx.http().post('/v1/organizations').set(bearer(adminToken)).send({ name: 'Bare Merchant', type: 'MERCHANT' });
+    expect(bare.status).toBe(400);
   });
 });
