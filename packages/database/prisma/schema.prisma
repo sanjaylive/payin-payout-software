@@ -772,6 +772,9 @@ enum JournalType {
   PAYIN_CAPTURE
   PROVIDER_SETTLEMENT
   SETTLEMENT
+  SETTLEMENT_TRANSFER
+  SETTLEMENT_PAID
+  SETTLEMENT_RETURN
   HOLD_RELEASE
   REFUND
   REFUND_REVERSAL
@@ -1800,4 +1803,198 @@ model WebhookDeliveryAttempt {
 
   @@unique([deliveryId, attemptNo])
   @@map("webhook_delivery_attempts")
+}
+
+// ------------------------------------------------------------------------------------------------
+// Settlement & reconciliation (Phase 8) — docs/SETTLEMENT.md
+// ------------------------------------------------------------------------------------------------
+
+enum SettlementDestination {
+  /// Credit the merchant's AVAILABLE balance (usable for payouts).
+  WALLET
+  /// Transfer to the merchant's verified settlement bank account.
+  BANK
+}
+
+model SettlementConfig {
+  merchantId     String                @id @map("merchant_id")
+  cycle          SettlementCycle       @default(T1)
+  /// Days after capture for CUSTOM (3–7).
+  customDays     Int?                  @map("custom_days")
+  /// Daily cutoff, minutes after IST midnight (default 18:00).
+  cutoffMinute   Int                   @default(1080) @map("cutoff_minute")
+  minAmountMinor BigInt                @default(100) @map("min_amount_minor")
+  destination    SettlementDestination @default(BANK)
+  autoSettle     Boolean               @default(true) @map("auto_settle")
+  updatedById    String?               @map("updated_by_id")
+  version        Int                   @default(1)
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("settlement_configs")
+}
+
+enum SettlementStatus {
+  /// Bank transfer instructed, waiting for confirmation (funds in SETTLEMENT_CLEARING).
+  PROCESSING
+  /// Wallet credited, or bank transfer confirmed with a UTR.
+  PROCESSED
+  /// Bank transfer failed or was returned; funds went back to UNSETTLED.
+  FAILED
+}
+
+model Settlement {
+  id                String                @id
+  merchantId        String                @map("merchant_id")
+  resellerId        String?               @map("reseller_id")
+  /// IST business date the settlement belongs to (one per merchant per date).
+  settlementDate    String                @map("settlement_date") @db.Char(10)
+  cycle             SettlementCycle
+  destination       SettlementDestination
+  periodStart       DateTime?             @map("period_start") @db.Timestamptz(3)
+  /// Payments captured before this instant are included.
+  periodEnd         DateTime              @map("period_end") @db.Timestamptz(3)
+  status            SettlementStatus
+  paymentCount      Int                   @map("payment_count")
+  grossMinor        BigInt                @map("gross_minor")
+  feeMinor          BigInt                @map("fee_minor")
+  taxMinor          BigInt                @map("tax_minor")
+  refundMinor       BigInt                @map("refund_minor")
+  /// Amount actually moved out of UNSETTLED.
+  netMinor          BigInt                @map("net_minor")
+  bankAccountId     String?               @map("bank_account_id")
+  /// Masked destination (account tail, IFSC, bank) — never the full number.
+  bankSnapshot      Json?                 @map("bank_snapshot")
+  utr               String?               @db.VarChar(40)
+  bankReference     String?               @map("bank_reference") @db.VarChar(80)
+  failureReason     String?               @map("failure_reason") @db.VarChar(300)
+  journalId         String?               @map("journal_id")
+  transferJournalId String?               @map("transfer_journal_id")
+  paidJournalId     String?               @map("paid_journal_id")
+  returnJournalId   String?               @map("return_journal_id")
+  processedAt       DateTime?             @map("processed_at") @db.Timestamptz(3)
+  processedById     String?               @map("processed_by_id")
+  createdById       String?               @map("created_by_id")
+  version           Int                   @default(1)
+  createdAt         DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([merchantId, settlementDate])
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("settlements")
+}
+
+model SettlementHold {
+  id            String    @id
+  merchantId    String    @map("merchant_id")
+  reason        String    @db.VarChar(300)
+  placedById    String?   @map("placed_by_id")
+  placedAt      DateTime  @default(now()) @map("placed_at") @db.Timestamptz(3)
+  releasedById  String?   @map("released_by_id")
+  releasedAt    DateTime? @map("released_at") @db.Timestamptz(3)
+  releaseReason String?   @map("release_reason") @db.VarChar(300)
+
+  @@index([merchantId, releasedAt])
+  @@map("settlement_holds")
+}
+
+/// Provider remittance to our bank (clears the provider clearing account; docs/LEDGER.md §4.2).
+model ProviderRemittance {
+  id          String   @id
+  providerId  String   @map("provider_id")
+  reference   String   @db.VarChar(80)
+  valueDate   String   @map("value_date") @db.Char(10)
+  amountMinor BigInt   @map("amount_minor")
+  costMinor   BigInt   @map("cost_minor")
+  bankRef     String   @map("bank_ref") @db.VarChar(40)
+  journalId   String   @map("journal_id")
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([providerId, reference])
+  @@map("provider_remittances")
+}
+
+enum ReconKind {
+  PAYIN
+  PAYOUT
+}
+
+enum ReconRunStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model ReconciliationRun {
+  id              String         @id
+  providerId      String         @map("provider_id")
+  kind            ReconKind
+  fileName        String         @map("file_name") @db.VarChar(200)
+  fileHash        String         @map("file_hash") @db.Char(64)
+  storageKey      String         @map("storage_key") @db.VarChar(300)
+  status          ReconRunStatus @default(QUEUED)
+  periodFrom      DateTime?      @map("period_from") @db.Timestamptz(3)
+  periodTo        DateTime?      @map("period_to") @db.Timestamptz(3)
+  totalRows       Int            @default(0) @map("total_rows")
+  matched         Int            @default(0)
+  mismatched      Int            @default(0)
+  missingInternal Int            @default(0) @map("missing_internal")
+  missingProvider Int            @default(0) @map("missing_provider")
+  duplicates      Int            @default(0)
+  error           String?        @db.VarChar(1000)
+  createdById     String?        @map("created_by_id")
+  startedAt       DateTime?      @map("started_at") @db.Timestamptz(3)
+  completedAt     DateTime?      @map("completed_at") @db.Timestamptz(3)
+  createdAt       DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  entries ReconciliationEntry[]
+
+  @@unique([providerId, fileHash])
+  @@index([createdAt(sort: Desc)])
+  @@map("reconciliation_runs")
+}
+
+enum ReconResult {
+  MATCHED
+  AMOUNT_MISMATCH
+  STATUS_MISMATCH
+  MISSING_INTERNAL
+  MISSING_PROVIDER
+  DUPLICATE
+}
+
+enum ReconResolution {
+  NOT_REQUIRED
+  OPEN
+  RESOLVED
+}
+
+model ReconciliationEntry {
+  id                  String          @id
+  runId               String          @map("run_id")
+  lineNo              Int?            @map("line_no")
+  result              ReconResult
+  externalRef         String?         @map("external_ref") @db.VarChar(120)
+  externalUtr         String?         @map("external_utr") @db.VarChar(40)
+  externalAmountMinor BigInt?         @map("external_amount_minor")
+  externalStatus      String?         @map("external_status") @db.VarChar(30)
+  internalType        String?         @map("internal_type") @db.VarChar(10)
+  internalId          String?         @map("internal_id")
+  internalAmountMinor BigInt?         @map("internal_amount_minor")
+  internalStatus      String?         @map("internal_status") @db.VarChar(30)
+  resolution          ReconResolution
+  resolutionNote      String?         @map("resolution_note") @db.VarChar(500)
+  resolvedById        String?         @map("resolved_by_id")
+  resolvedAt          DateTime?       @map("resolved_at") @db.Timestamptz(3)
+  createdAt           DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  run ReconciliationRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+
+  @@index([runId, result])
+  @@index([resolution, createdAt])
+  @@index([internalId])
+  @@map("reconciliation_entries")
 }

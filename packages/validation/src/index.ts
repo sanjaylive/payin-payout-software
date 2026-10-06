@@ -11,3 +11,4 @@ export * from './payments';
 export * from './pricing';
 export * from './payouts';
 export * from './webhooks';
+export * from './settlements';

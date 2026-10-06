@@ -40,8 +40,8 @@ export class NotificationSender {
   async sendDue(limit = 20, onlyId?: string): Promise<number> {
     const ids = await this.prisma.$transaction(async (tx) => {
       const rows = onlyId
-        ? await tx.$queryRaw<{ id: string }[]>`SELECT id FROM notifications WHERE id = ${onlyId} AND status = 'QUEUED' AND next_attempt_at <= now() FOR UPDATE SKIP LOCKED`
-        : await tx.$queryRaw<{ id: string }[]>`SELECT id FROM notifications WHERE status = 'QUEUED' AND next_attempt_at <= now() ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
+        ? await tx.$queryRaw<{ id: string }[]>`SELECT id FROM notifications WHERE id = ${onlyId} AND status = 'QUEUED' AND next_attempt_at <= ${new Date()} FOR UPDATE SKIP LOCKED`
+        : await tx.$queryRaw<{ id: string }[]>`SELECT id FROM notifications WHERE status = 'QUEUED' AND next_attempt_at <= ${new Date()} ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       if (rows.length) await tx.notification.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { nextAttemptAt: new Date(Date.now() + 2 * 60_000) } });
       return rows.map((r) => r.id);
     });

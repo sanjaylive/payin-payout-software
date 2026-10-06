@@ -206,6 +206,7 @@ worker: outbox relay
 
 - **Safety nets.** DB polling stays in place for deliveries (0.5 s), notifications (5 s) and payouts (5 s). If Kafka is down, work is delayed, never lost.
 - **Dead letters.** These are visible on **Admin → Webhooks**. A requeue writes a fresh outbox row with the same type, aggregate and payload. Consumers are idempotent on business keys (one delivery per event and endpoint; conditional payout claims).
+- **One clock.** Queue claims (`next_attempt_at <= $now`) compare against the application's clock, the same clock that wrote `next_attempt_at`, never the database's `now()`. Clock skew between app servers and Postgres therefore can't delay or starve work.
 - **Retention.** `processed_events` rows are purged after 14 days, which is longer than Kafka's 7-day retention.
 - **Client.** kafkajs 2.2.4 (pure JS), wrapped behind `EventPublisher` / `runConsumer`, so moving to Confluent's maintained client only touches `packages/events/src/kafka.ts`.
 

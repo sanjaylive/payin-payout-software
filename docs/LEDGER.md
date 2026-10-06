@@ -182,6 +182,8 @@ The provider remits ₹999.00 after keeping its 0.10 % cost (₹1.00).
 | Dr | `platform:memo:SETTLED_CONTRA` | 997.88 |
 | Cr | `merchant:<id>:SETTLED` (memo) | 997.88 |
 
+**(c) As implemented (Phase 8), bank settlements go through transit,** so funds can't be refunded while the transfer is in flight: `SETTLEMENT_TRANSFER` (Dr UNSETTLED / Cr `platform:SETTLEMENT_CLEARING`) at creation, then `SETTLEMENT_PAID` (Dr SETTLEMENT_CLEARING / Cr bank, plus the SETTLED memo pair) with the UTR, or `SETTLEMENT_RETURN` (Dr SETTLEMENT_CLEARING / Cr UNSETTLED) if the transfer fails. See [SETTLEMENT.md](./SETTLEMENT.md).
+
 Release from hold (PENDING → UNSETTLED) is a two-line journal, `HOLD_RELEASE`.
 
 ### 4.4 Refund: `REFUND`, key `refund:<rfnd>`

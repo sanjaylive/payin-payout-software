@@ -9,6 +9,8 @@ import { PayinJobsService } from '../modules/payments/payin-jobs.service';
 import { BulkPayoutsService } from '../modules/payouts/bulk-payouts.service';
 import { PayoutProcessorService } from '../modules/payouts/payout-processor.service';
 import { InboundEventsService } from '../modules/provider-events/inbound-events.service';
+import { ReconciliationService } from '../modules/reconciliation/reconciliation.service';
+import { SettlementsService } from '../modules/settlements/settlements.service';
 
 const job = (name: string, seconds: number, run: () => Promise<unknown>): ScheduledJob => ({
   name,
@@ -32,6 +34,8 @@ export class JobsRunner implements OnApplicationShutdown {
     private readonly payouts: PayoutProcessorService,
     private readonly bulk: BulkPayoutsService,
     private readonly inbound: InboundEventsService,
+    private readonly settlements: SettlementsService,
+    private readonly recon: ReconciliationService,
   ) {}
 
   async start(): Promise<void> {
@@ -53,6 +57,8 @@ export class JobsRunner implements OnApplicationShutdown {
         job('payout-poller', 15, () => this.payouts.pollInFlight()),
         job('payout-approval-expiry', 300, () => this.payouts.expireApprovals()),
         job('bulk-payouts', 10, () => this.bulk.processConfirmed()),
+        job('settlement-generator', 300, () => this.settlements.generateDue()),
+        job('reconciliation-matcher', 15, () => this.recon.processQueued()),
         job('idempotency-sweeper', 60, () => this.payin.sweepIdempotency()),
       ],
       5_000,

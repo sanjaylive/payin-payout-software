@@ -101,11 +101,13 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Move all API email (password reset, invites, alerts) to the outbox with encrypted content
 - [x] Payout `payout.queued` Kafka fast path (polling kept as the safety net)
 
-## Phase 8 — Settlement & reconciliation ⬜
+## Phase 8 — Settlement & reconciliation ✅
 
-- [ ] Settlement configs (T0/T1/T2/CUSTOM), generation job, holds
-- [ ] Settlement postings and reports
-- [ ] Recon runs: CSV import (S3), parsers, matching engine, mismatch dashboard, manual resolution
+- [x] Settlement configs (T0/T1/T2/CUSTOM), generation job, holds
+- [x] Settlement postings (wallet; bank via transit with UTR confirmation or return) and statements
+- [x] Provider remittances (`PROVIDER_SETTLEMENT`)
+- [x] Recon runs: CSV import (S3), generic parser, matching engine, exceptions dashboard, manual resolution
+- [x] Merchant fees page (monthly fees and GST)
 
 ## Phase 9 — Reseller & API partner ⬜
 
@@ -360,3 +362,39 @@ As in Phase 5, the new pages were compiled and fetched but not visually checked 
 - SMS notifications are still deferred.
 - The DLQ requeue republishes through the outbox rather than replaying the Kafka offset.
 - As before, the new pages were compiled and fetched but not checked visually in a browser.
+
+### Phase 8 — Settlement & reconciliation (completed 2026-10-07)
+
+**Delivered:**
+- **Ledger:** `SETTLEMENT_TRANSFER`, `SETTLEMENT_PAID` and `SETTLEMENT_RETURN` journal types, plus a `SETTLEMENT_CLEARING` account.
+- **Settlements:**
+  - a generator in the jobs process, using the balance-based amount (SETTLEMENT.md §2);
+  - wallet and bank settlements; mark paid (UTR) or failed;
+  - holds, minimum carry-forward, config with onboarding defaults;
+  - an audited, MFA-only bank transfer file; statements CSV;
+  - `settlement.*` webhooks.
+- **Provider remittances.**
+- **Reconciliation:** upload to S3, asynchronous matching, six result classes, resolution by note or by accepting a provider success through the state machine.
+- **UI:**
+  - merchant Settlements (schedule and history with statements) and Fees;
+  - admin Settlements (in transit, all, schedules, holds, remittances, run now, transfer file) and Reconciliation (import, runs, exceptions with resolution);
+  - settlements in transit on the admin dashboard.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- **API:** 147 integration tests (8 new), covering:
+  - balance-based wallet settlement keeps later payments' share, and the second run on the same date is skipped;
+  - a later payment's refund drawing on the pool never makes it negative;
+  - cutoff, hold, minimum and nothing-due skips;
+  - bank lifecycle (transit, transfer file with full account number for finance only, paid with UTR and SETTLED memo, double pay refused);
+  - a failed transfer returns funds and payments, which re-settle the next day;
+  - merchant tenancy and permissions; statement CSV;
+  - remittance journal exact, once per reference;
+  - reconciliation classifies MATCHED / DUPLICATE / AMOUNT_MISMATCH / STATUS_MISMATCH / MISSING_INTERNAL / MISSING_PROVIDER; a duplicate import is refused; accepting a provider success captures the payment through the state machine; mismatch acceptance is refused; double resolution is refused.
+- **Mutation check:** dropping the post-cutoff reserve fails the settlement test.
+- **Unit tests:** engine tests for the bank settlement journal rules; IST schedule maths; statement parser and comparator.
+- **Fixed:**
+  - a providers health test that depended on suite order;
+  - queue claims now use the application clock instead of Postgres `now()`, so a lagging DB/VM clock can't delay just-queued work (found through an intermittent worker test).
+
+**Notes:** deferrals are listed in SETTLEMENT.md §6.

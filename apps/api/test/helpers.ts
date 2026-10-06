@@ -126,3 +126,15 @@ export async function queuedMail(ctx: TestContext, to?: string): Promise<QueuedM
     .map((r) => ({ id: r.id, template: r.template, ...(JSON.parse(enc.decrypt(r.contentEncrypted!, notificationAad(r.id))) as { to: string; subject: string; text: string }) }))
     .filter((m) => !to || m.to === to);
 }
+
+/** A fresh APPROVED merchant (direct, no reseller) with an owner session — isolates money tests. */
+export async function createApprovedMerchant(ctx: TestContext, opts: { payoutEnabled?: boolean } = {}) {
+  const platform = await orgBySlug(ctx, 'pay2all');
+  const id = newId('organization');
+  await ctx.prisma.organization.create({ data: { id, slug: `m-${id.slice(-10).toLowerCase()}`, name: `Merchant ${id.slice(-6)}`, type: 'MERCHANT', parentId: platform.id } });
+  await ctx.prisma.merchant.create({ data: { id, status: 'APPROVED', payinEnabled: true, payoutEnabled: opts.payoutEnabled ?? true, approvedAt: new Date() } });
+  await ctx.prisma.merchantProfile.create({ data: { merchantId: id, displayName: 'Test merchant' } });
+  await ctx.prisma.merchantKyc.create({ data: { merchantId: id } });
+  const owner = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id })).email)).accessToken!;
+  return { id, owner };
+}

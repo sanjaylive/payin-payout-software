@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@pay2all/ui/components
 import { ArrowDownToLine, ArrowUpFromLine, Banknote, CircleAlert, Clock, FileWarning, Gauge, Hourglass, Landmark, Wallet } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
-import { fmt } from '@/features/ledger/format';
+import { formatMinor } from '@pay2all/ui/lib/money';
+import { fmt, majorToMinor } from '@/features/ledger/format';
 import { api } from '@/lib/api/client';
 import { useCan } from '@/lib/auth/use-me';
 import { PageHeader } from '@/components/common/page-header';
@@ -21,7 +22,7 @@ const CARDS = [
   { label: 'Total Revenue', icon: Banknote, phase: 9 },
   { label: 'Total Merchant Balance', icon: Wallet, phase: 3 },
   { label: 'Unsettled Amount', icon: Hourglass, phase: 3 },
-  { label: 'Settlement Due', icon: Landmark, phase: 8 },
+  { label: 'Settlements in Transit', icon: Landmark, phase: 8 },
   { label: 'Failed Payins Today', icon: CircleAlert, phase: 5 },
   { label: 'Pending Compliance', icon: FileWarning, phase: 2 },
   { label: 'Provider Health', icon: Gauge, phase: 4 },
@@ -43,6 +44,7 @@ export default function AdminDashboard() {
   const providers = useQuery({ queryKey: ['providers', 'all'], queryFn: () => api.get<ProviderBrief[]>('/v1/providers'), enabled: can('provider.read') });
   const payin = usePaymentStats(todayRange, undefined, can('payin.read'));
   const payout = usePayoutStats(todayRange, undefined, can('payout.read'));
+  const transit = useQuery({ queryKey: ['settlements', 'transit-summary'], queryFn: () => api.list<{ net: string }>('/v1/settlements', { status: 'PROCESSING', limit: 100 }), enabled: can('settlement.read') });
   const healthy = providers.data?.filter((p) => p.status === 'ACTIVE').length;
   const live: Record<string, string | undefined> = {
     'Provider Health': providers.data ? `${healthy}/${providers.data.filter((p) => p.status !== 'DISABLED').length} healthy` : undefined,
@@ -51,6 +53,7 @@ export default function AdminDashboard() {
     "Today's Payin": payin.data ? fmt(payin.data.totals.success_amount) : undefined,
     'Failed Payins Today': payin.data ? payin.data.totals.failed_count.toLocaleString('en-IN') : undefined,
     "Today's Payout": payout.data ? fmt(payout.data.totals.success_amount) : undefined,
+    'Settlements in Transit': transit.data ? formatMinor(transit.data.data.reduce((s, r) => s + majorToMinor(r.net), 0n)) : undefined,
   };
   const PAYIN_CARDS = ["Today's Payin", 'Failed Payins Today'];
   return (
@@ -62,9 +65,9 @@ export default function AdminDashboard() {
             key={c.label}
             label={c.label}
             value={live[c.label] ?? '—'}
-            loading={c.label === 'Provider Health' ? providers.isPending && can('provider.read') : PAYIN_CARDS.includes(c.label) ? payin.isPending && can('payin.read') : c.label === "Today's Payout" ? payout.isPending && can('payout.read') : c.label in live && summary.isPending && can('ledger.platform.read')}
+            loading={c.label === 'Provider Health' ? providers.isPending && can('provider.read') : PAYIN_CARDS.includes(c.label) ? payin.isPending && can('payin.read') : c.label === "Today's Payout" ? payout.isPending && can('payout.read') : c.label === 'Settlements in Transit' ? transit.isPending && can('settlement.read') : c.label in live && summary.isPending && can('ledger.platform.read')}
             icon={c.icon}
-            hint={c.label === 'Provider Health' && providers.data ? <Link href="/admin/providers/health" className="hover:underline">View health</Link> : PAYIN_CARDS.includes(c.label) && payin.data ? <Link href="/admin/transactions/payin" className="hover:underline">View payins</Link> : c.label === "Today's Payout" && payout.data ? <Link href="/admin/transactions/payout" className="hover:underline">View payouts</Link> : c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
+            hint={c.label === 'Provider Health' && providers.data ? <Link href="/admin/providers/health" className="hover:underline">View health</Link> : PAYIN_CARDS.includes(c.label) && payin.data ? <Link href="/admin/transactions/payin" className="hover:underline">View payins</Link> : c.label === "Today's Payout" && payout.data ? <Link href="/admin/transactions/payout" className="hover:underline">View payouts</Link> : c.label === 'Settlements in Transit' && transit.data ? <Link href="/admin/settlements" className="hover:underline">{transit.data.data.length} awaiting bank confirmation</Link> : c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
           />
         ))}
       </div>

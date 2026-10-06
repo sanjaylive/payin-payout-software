@@ -34,7 +34,7 @@ export default function MerchantDashboard() {
         {isMerchant && <PayinStatCards range={range} />}
         {isMerchant && <PayoutStatCards range={range} approvalsHref="/payout/approvals" />}
         <StatCard label="Available Balance" value={isMerchant ? fmt(balances.data?.available) : '—'} loading={isMerchant && balances.isPending} icon={Wallet} hint={<Link href="/accounts/balance" className="hover:underline">View balances</Link>} />
-        <StatCard label="Unsettled Balance" value={isMerchant ? fmt(balances.data?.unsettled) : '—'} loading={isMerchant && balances.isPending} icon={Hourglass} hint="Settles on your cycle" />
+        <StatCard label="Unsettled Balance" value={isMerchant ? fmt(balances.data?.unsettled) : '—'} loading={isMerchant && balances.isPending} icon={Hourglass} hint={<Link href="/settlements" className="hover:underline">Settlement schedule</Link>} />
       </div>
       {isMerchant && <div className="mt-6"><PayinCharts range={range} /></div>}
       {isMerchant && <div className="mt-6"><PayoutChart range={range} /></div>}

@@ -6,6 +6,8 @@ import { InfraModule } from '../infra/infra.module';
 import { PaymentsModule } from '../modules/payments/payments.module';
 import { PayoutsModule } from '../modules/payouts/payouts.module';
 import { ProviderEventsModule } from '../modules/provider-events/provider-events.module';
+import { ReconciliationModule } from '../modules/reconciliation/reconciliation.module';
+import { SettlementsModule } from '../modules/settlements/settlements.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -25,6 +27,8 @@ export class JobsModule {
         PaymentsModule,
         PayoutsModule,
         ProviderEventsModule,
+        SettlementsModule,
+        ReconciliationModule,
       ],
       providers: [JobsRunner],
     };

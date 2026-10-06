@@ -48,7 +48,7 @@ export class PayinJobsService {
     const claimed = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string; poll_count: number }[]>`
         SELECT id, poll_count FROM payments
-         WHERE status IN ('CREATED', 'PENDING') AND next_poll_at <= now() AND provider_order_id IS NOT NULL
+         WHERE status IN ('CREATED', 'PENDING') AND next_poll_at <= ${new Date()} AND provider_order_id IS NOT NULL
          ORDER BY next_poll_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       for (const r of rows) {
         const delay = POLL_BACKOFF_MS[Math.min(r.poll_count + 1, POLL_BACKOFF_MS.length - 1)]!;
