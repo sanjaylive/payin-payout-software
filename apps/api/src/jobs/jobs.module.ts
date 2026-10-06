@@ -8,6 +8,7 @@ import { PayoutsModule } from '../modules/payouts/payouts.module';
 import { ProviderEventsModule } from '../modules/provider-events/provider-events.module';
 import { ReconciliationModule } from '../modules/reconciliation/reconciliation.module';
 import { SettlementsModule } from '../modules/settlements/settlements.module';
+import { CommissionsModule } from '../modules/commissions/commissions.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -29,6 +30,7 @@ export class JobsModule {
         ProviderEventsModule,
         SettlementsModule,
         ReconciliationModule,
+        CommissionsModule,
       ],
       providers: [JobsRunner],
     };

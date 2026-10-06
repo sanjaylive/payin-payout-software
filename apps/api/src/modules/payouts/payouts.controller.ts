@@ -17,7 +17,7 @@ import { memoryStorage } from 'multer';
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequireAnyPermission, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequireAnyPermission, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { BeneficiariesService } from './beneficiaries.service';
 import { BULK_MAX_BYTES, BulkPayoutsService } from './bulk-payouts.service';
@@ -37,6 +37,7 @@ export class PayoutsController {
   ) {}
 
   @Post('payouts')
+  @ApiKeyAccess()
   @HttpCode(202)
   @RequirePermissions('payout.create')
   @ApiOperation({ summary: 'Create a payout. Funds are reserved immediately; completion is asynchronous. Idempotent per Idempotency-Key.' })
@@ -47,6 +48,7 @@ export class PayoutsController {
   }
 
   @Get('payouts')
+  @ApiKeyAccess()
   @RequirePermissions('payout.read')
   @ApiZodQuery(listPayoutsQuerySchema)
   list(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(listPayoutsQuerySchema)) q: z.output<typeof listPayoutsQuerySchema>) {
@@ -54,6 +56,7 @@ export class PayoutsController {
   }
 
   @Get('payouts/stats')
+  @ApiKeyAccess()
   @RequirePermissions('payout.read')
   @ApiZodQuery(paymentStatsQuerySchema)
   stats(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(paymentStatsQuerySchema)) q: z.output<typeof paymentStatsQuerySchema>) {
@@ -116,6 +119,7 @@ export class PayoutsController {
   // ---- Single payout ----
 
   @Get('payouts/:id')
+  @ApiKeyAccess()
   @RequirePermissions('payout.read')
   get(@CurrentActor() actor: Actor, @Param('id', payoutIdPipe) id: string) {
     return this.payouts.get(actor, id);
@@ -156,6 +160,7 @@ export class BeneficiariesController {
   constructor(private readonly beneficiaries: BeneficiariesService) {}
 
   @Post()
+  @ApiKeyAccess()
   @RequirePermissions('beneficiary.manage')
   @ApiZodBody(createBeneficiarySchema)
   create(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(createBeneficiarySchema)) body: z.output<typeof createBeneficiarySchema>) {
@@ -163,6 +168,7 @@ export class BeneficiariesController {
   }
 
   @Get()
+  @ApiKeyAccess()
   @RequirePermissions('beneficiary.read')
   @ApiZodQuery(listBeneficiariesQuerySchema)
   list(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(listBeneficiariesQuerySchema)) q: z.output<typeof listBeneficiariesQuerySchema>) {
@@ -170,12 +176,14 @@ export class BeneficiariesController {
   }
 
   @Get(':id')
+  @ApiKeyAccess()
   @RequirePermissions('beneficiary.read')
   get(@CurrentActor() actor: Actor, @Param('id', beneficiaryIdPipe) id: string) {
     return this.beneficiaries.get(actor, id);
   }
 
   @Post(':id/verify')
+  @ApiKeyAccess()
   @HttpCode(200)
   @RequirePermissions('beneficiary.manage')
   @ApiOperation({ summary: 'Verify via penny-drop / VPA lookup and compare the bank-registered name' })

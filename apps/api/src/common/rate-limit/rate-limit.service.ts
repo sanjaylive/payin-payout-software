@@ -71,6 +71,16 @@ export class RateLimitService {
     }
   }
 
+  /** Current (weighted) count without consuming — e.g. "is this IP already over its failure budget?". */
+  async peek(rule: RateLimitRule, subject: string, nowMs = Date.now()): Promise<number> {
+    const windowMs = rule.windowSeconds * 1000;
+    const windowIndex = Math.floor(nowMs / windowMs);
+    const elapsed = nowMs - windowIndex * windowMs;
+    const base = `rl:${rule.name}:${subject}`;
+    const [current, previous] = await this.redis.mget(`${base}:${windowIndex}`, `${base}:${windowIndex - 1}`);
+    return Math.floor(Number(previous ?? 0) * ((windowMs - elapsed) / windowMs) + Number(current ?? 0));
+  }
+
   /** Clear a bucket (e.g. per-identifier login counter after a successful login). */
   async reset(rule: RateLimitRule, subject: string, nowMs = Date.now()): Promise<void> {
     const windowIndex = Math.floor(nowMs / (rule.windowSeconds * 1000));

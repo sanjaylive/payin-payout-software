@@ -126,6 +126,21 @@ describe('bank settlement lifecycle', () => {
   });
 });
 
+describe('reseller commissions', () => {
+  const R = 'org_01JA9C2D4F6G8H0J2K4M6N8P0R';
+  const j = (type: PostJournalInput['type'], key: string, lines: PostingLine[]): PostJournalInput => ({ type, idempotencyKey: key, source: { type: 'PAYMENT', id: 'pay_c1' }, actor, lines });
+  it('accrues to and pays out of the reseller payable, in the right direction only', async () => {
+    const store = new MemoryStore();
+    await postJournal(store, j('COMMISSION_ACCRUAL', 'commission:pay_c1', [line(Accounts.COMMISSION_EXPENSE, 'DEBIT', 40n), line(Accounts.resellerCommission(R), 'CREDIT', 40n)]));
+    expect(store.balance(Accounts.resellerCommission(R))).toBe(40n);
+    await postJournal(store, j('COMMISSION_PAYOUT', 'commission_payout:1', [line(Accounts.resellerCommission(R), 'DEBIT', 40n), line(Accounts.bank('nodal'), 'CREDIT', 40n)]));
+    expect(store.balance(Accounts.resellerCommission(R))).toBe(0n);
+    await expect(postJournal(store, j('COMMISSION_PAYOUT', 'x', [line(Accounts.resellerCommission(R), 'DEBIT', 1n), line(Accounts.bank('nodal'), 'CREDIT', 1n)]))).rejects.toThrow(); // can't overdraw
+    await expect(postJournal(store, j('COMMISSION_ACCRUAL', 'y', [line(Accounts.resellerCommission(R), 'DEBIT', 1n), line(Accounts.COMMISSION_EXPENSE, 'CREDIT', 1n)]))).rejects.toThrow(LedgerValidationError);
+    await expect(postJournal(store, j('PAYOUT_SETTLE', 'z', [line(Accounts.resellerCommission(R), 'DEBIT', 1n), line(Accounts.bank('nodal'), 'CREDIT', 1n)]))).rejects.toThrow(LedgerValidationError);
+  });
+});
+
 describe('validation', () => {
   it('rejects unbalanced, single-line, zero and negative journals before any I/O', async () => {
     const store = new MemoryStore();

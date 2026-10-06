@@ -51,6 +51,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
     if (appError.headers) {
       for (const [k, v] of Object.entries(appError.headers)) res.setHeader(k, v);
     }
+    // Exposed to the API request log (error handlers must never throw, so guard non-Express responses).
+    if (res.locals) res.locals.errorCode = appError.code;
     res.status(appError.status).json(body);
   }
 

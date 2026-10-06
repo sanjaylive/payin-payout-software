@@ -20,8 +20,8 @@ export class PricingController {
 
   @Get('plans')
   @RequirePermissions('pricing.read')
-  plans() {
-    return this.pricing.listPlans();
+  plans(@CurrentActor() actor: Actor) {
+    return this.pricing.listPlans(actor);
   }
 
   @Post('plans')

@@ -16,7 +16,7 @@ import type { z } from 'zod';
 import { AppError } from '../../common/errors/app-error';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { SettlementsService } from './settlements.service';
 
@@ -40,6 +40,7 @@ export class SettlementsController {
   constructor(private readonly settlements: SettlementsService) {}
 
   @Get()
+  @ApiKeyAccess()
   @RequirePermissions('settlement.read')
   @ApiZodQuery(listSettlementsQuerySchema)
   list(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(listSettlementsQuerySchema)) q: z.output<typeof listSettlementsQuerySchema>) {
@@ -131,6 +132,7 @@ export class SettlementsController {
   }
 
   @Get(':id')
+  @ApiKeyAccess()
   @RequirePermissions('settlement.read')
   get(@CurrentActor() actor: Actor, @Param('id', stlId) id: string) {
     return this.settlements.get(actor, id);

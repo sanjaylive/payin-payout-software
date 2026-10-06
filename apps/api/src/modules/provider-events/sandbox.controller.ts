@@ -4,7 +4,7 @@ import { idSchema, sandboxCompleteSchema, sandboxPayoutSchema } from '@pay2all/v
 import type { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { SandboxService } from './sandbox.service';
 
@@ -16,6 +16,7 @@ export class SandboxController {
   constructor(private readonly sandbox: SandboxService) {}
 
   @Post('payments/:id/complete')
+  @ApiKeyAccess()
   @HttpCode(200)
   @RequirePermissions('payin.read')
   @ApiOperation({ summary: 'Sandbox only: simulate the customer paying (or declining) via a signed mock callback' })
@@ -25,6 +26,7 @@ export class SandboxController {
   }
 
   @Post('payouts/:id/complete')
+  @ApiKeyAccess()
   @HttpCode(200)
   @RequirePermissions('payout.read')
   @ApiOperation({ summary: 'Sandbox only: simulate the bank completing, failing or returning a sent payout' })

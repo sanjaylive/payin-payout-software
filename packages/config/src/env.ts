@@ -70,6 +70,8 @@ export const apiEnvSchema = z
     KAFKA_CLIENT_ID: z.string().default('pay2all'),
     /** Webhook endpoints must be https in production; http is accepted elsewhere for local receivers. */
     WEBHOOK_REQUIRE_HTTPS: bool(false),
+    /** Which API keys this deployment accepts: a sandbox deployment issues pk_test_ keys, live pk_live_. */
+    API_ENVIRONMENT: z.enum(['TEST', 'LIVE']).default('TEST'),
     S3_ENDPOINT: z.string().default(''),
     S3_REGION: z.string().default('ap-south-1'),
     S3_BUCKET: z.string().min(3).default('pay2all-documents'),

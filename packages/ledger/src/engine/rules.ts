@@ -44,6 +44,7 @@ const RULES: Partial<Record<JournalType, Rule>> = {
   PROVIDER_SETTLEMENT: { allowedMerchantLegs: [], allowedPlatform: ['platform:bank:', 'platform:PROVIDER_COST', 'platform:provider:'] },
   PROVIDER_CHARGE: { allowedMerchantLegs: [], allowedPlatform: ['platform:PROVIDER_COST', 'platform:provider:'] },
   COMMISSION_ACCRUAL: { allowedMerchantLegs: [], allowedPlatform: ['platform:COMMISSION_EXPENSE'] },
+  COMMISSION_PAYOUT: { allowedMerchantLegs: [], allowedPlatform: ['platform:bank:'] },
   // REVERSAL mirrors an already-validated journal; only the single-merchant invariant applies.
 };
 
@@ -81,8 +82,12 @@ export function assertJournalRules(type: JournalType, lines: PostingLine[], spec
       if (spec.ownerType === 'PLATFORM' && !rule.allowedPlatform.some((p) => line.accountCode.startsWith(p))) {
         throw new LedgerValidationError(`${type} may not post to ${line.accountCode}`);
       }
-      if (spec.ownerType === 'RESELLER' && type !== 'COMMISSION_ACCRUAL') {
+      if (spec.ownerType === 'RESELLER' && type !== 'COMMISSION_ACCRUAL' && type !== 'COMMISSION_PAYOUT') {
         throw new LedgerValidationError(`${type} may not post to reseller accounts`);
+      }
+      // Accruals only ever credit a reseller's payable; payouts only ever debit it.
+      if (spec.ownerType === 'RESELLER' && line.direction !== (type === 'COMMISSION_ACCRUAL' ? 'CREDIT' : 'DEBIT')) {
+        throw new LedgerValidationError(`${type} must ${type === 'COMMISSION_ACCRUAL' ? 'credit' : 'debit'} the reseller's commission payable`);
       }
     }
   }

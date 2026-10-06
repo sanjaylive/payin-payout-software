@@ -164,9 +164,47 @@ export class PricingService {
     };
   }
 
-  async listPlans() {
-    const plans = await this.prisma.pricingPlan.findMany({ include: { rules: true }, orderBy: [{ kind: 'asc' }, { createdAt: 'desc' }] });
-    return plans.map((p) => this.presentPlan(p));
+  /** Platform: every plan. Reseller: its own merchant rate cards plus the wholesale plan it pays (read-only). */
+  async listPlans(actor: Actor) {
+    if (actor.organizationType === 'PLATFORM') {
+      const plans = await this.prisma.pricingPlan.findMany({ include: { rules: true }, orderBy: [{ kind: 'asc' }, { createdAt: 'desc' }] });
+      return plans.map((p) => this.presentPlan(p));
+    }
+    const own = await this.prisma.pricingPlan.findMany({ where: { ownerOrgId: actor.organizationId }, include: { rules: true }, orderBy: { createdAt: 'desc' } });
+    const wholesale = actor.organizationType === 'RESELLER' ? await this.wholesaleFor(actor.organizationId) : null;
+    return [...(wholesale ? [this.presentPlan(wholesale)] : []), ...own.map((p) => this.presentPlan(p))];
+  }
+
+  private async wholesaleFor(resellerId: string, at = new Date()) {
+    const platform = await this.prisma.organization.findFirstOrThrow({ where: { type: 'PLATFORM' }, select: { id: true } });
+    return this.planFor('WHOLESALE', { type: 'RESELLER', id: resellerId }, [platform.id], at);
+  }
+
+  /**
+   * A reseller's merchant price may never be below what the reseller pays us: checked at
+   * representative amounts per service for the method/mode the rules target.
+   */
+  private async assertNotBelowWholesale(resellerId: string, rules: z.output<typeof createPricingPlanSchema>['rules']) {
+    const wholesale = await this.wholesaleFor(resellerId);
+    if (!wholesale) throw new AppError(ErrorCode.INVALID_REQUEST, 'No wholesale price is set for your account yet; contact Pay2All');
+    const asRules = rules.map((r, i) => ({ id: `new_${i}`, service: r.service, method: r.method, providerId: r.provider_id, minAmountMinor: r.min_amount, maxAmountMinor: r.max_amount, chargeType: r.charge_type, rateMicros: r.rate === null ? null : parseRateMicros(r.rate), flatMinor: r.flat_fee, minFeeMinor: r.min_fee, maxFeeMinor: r.max_fee }));
+    const samples = [10_000n, 100_000n, 1_000_000n, 10_000_000n, 50_000_000n];
+    for (const service of [...new Set(rules.map((r) => r.service))]) {
+      const methods = [...new Set(rules.filter((r) => r.service === service).map((r) => r.method ?? (service === 'PAYIN' ? 'UPI_QR' : 'IMPS')))];
+      for (const method of methods) {
+        for (const amountMinor of samples) {
+          const ctx = { service, method, providerId: null, amountMinor };
+          const mine = selectRule(asRules, ctx);
+          const theirs = selectRule(wholesale.rules, ctx);
+          if (!mine || !theirs) continue;
+          const fee = computeFee(mine, amountMinor);
+          const floor = computeFee(theirs, amountMinor);
+          if (fee < floor) {
+            throw new AppError(ErrorCode.INVALID_REQUEST, `${service} ${method} at ₹${minorToMajorString(amountMinor)}: fee ₹${minorToMajorString(fee)} is below your wholesale price ₹${minorToMajorString(floor)}`);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -174,7 +212,13 @@ export class PricingService {
    * a date) so every historical snapshot keeps pointing at what was actually charged.
    */
   async createPlan(actor: Actor, input: z.output<typeof createPricingPlanSchema>) {
-    if (actor.organizationType !== 'PLATFORM') throw new AppError(ErrorCode.FORBIDDEN, 'Reseller rate cards arrive in Phase 9');
+    if (actor.organizationType === 'RESELLER') {
+      // Reseller rate cards: merchant pricing for its own merchants, never below its wholesale.
+      if (input.kind !== 'MERCHANT') throw new AppError(ErrorCode.FORBIDDEN, 'Resellers can create merchant rate cards only');
+      await this.assertNotBelowWholesale(actor.organizationId, input.rules);
+    } else if (actor.organizationType !== 'PLATFORM') {
+      throw new AppError(ErrorCode.FORBIDDEN);
+    }
     const plan = await this.prisma.$transaction(async (tx) => {
       if (input.is_default) {
         await tx.pricingPlan.updateMany({ where: { kind: input.kind, ownerOrgId: actor.organizationId, isDefault: true }, data: { isDefault: false } });
@@ -209,7 +253,7 @@ export class PricingService {
         },
         include: { rules: true },
       });
-      await this.audit.record({ action: 'pricing.plan.created', resourceType: 'pricing_plan', resourceId: created.id, organizationId: null, newValue: this.presentPlan(created) }, tx);
+      await this.audit.record({ action: 'pricing.plan.created', resourceType: 'pricing_plan', resourceId: created.id, organizationId: actor.organizationType === 'PLATFORM' ? null : actor.organizationId, newValue: this.presentPlan(created) }, tx);
       return created;
     });
     return this.presentPlan(plan);
@@ -217,7 +261,9 @@ export class PricingService {
 
   async archivePlan(actor: Actor, id: string) {
     const plan = await this.prisma.pricingPlan.findUnique({ where: { id } });
-    if (!plan) throw new AppError(ErrorCode.NOT_FOUND, 'Plan not found');
+    // Only the owner (or the platform) can archive — a reseller must never be able to switch off
+    // the platform's default pricing.
+    if (!plan || (actor.organizationType !== 'PLATFORM' && plan.ownerOrgId !== actor.organizationId)) throw new AppError(ErrorCode.NOT_FOUND, 'Plan not found');
     await this.prisma.$transaction(async (tx) => {
       await tx.pricingPlan.update({ where: { id }, data: { status: 'ARCHIVED', isDefault: false, effectiveTo: new Date(), version: { increment: 1 } } });
       await this.audit.record({ action: 'pricing.plan.archived', resourceType: 'pricing_plan', resourceId: id, organizationId: null }, tx);
@@ -228,6 +274,12 @@ export class PricingService {
   async assign(actor: Actor, input: z.output<typeof assignPricingPlanSchema>) {
     const plan = await this.prisma.pricingPlan.findUnique({ where: { id: input.plan_id } });
     if (!plan || plan.status !== 'ACTIVE') throw new AppError(ErrorCode.INVALID_REQUEST, 'Plan not found or archived');
+    if (actor.organizationType !== 'PLATFORM') {
+      // Resellers assign their own merchant rate cards to their own merchants only.
+      if (actor.organizationType !== 'RESELLER' || plan.ownerOrgId !== actor.organizationId || plan.kind !== 'MERCHANT') throw new AppError(ErrorCode.NOT_FOUND, 'Plan not found');
+      const owned = input.subject_type === 'MERCHANT' && (await this.prisma.merchant.count({ where: { id: input.subject_id, resellerId: actor.organizationId } }));
+      if (!owned) throw new AppError(ErrorCode.NOT_FOUND, 'Merchant not found');
+    }
     const expected: Record<PricingPlanKind, PricingSubjectType> = { MERCHANT: 'MERCHANT', WHOLESALE: 'RESELLER', PROVIDER_COST: 'PROVIDER' };
     if (expected[plan.kind] !== input.subject_type) throw new AppError(ErrorCode.INVALID_REQUEST, `${plan.kind} plans are assigned to ${expected[plan.kind].toLowerCase()}s`);
     const exists =

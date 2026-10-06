@@ -204,8 +204,10 @@ export const createMerchantSchema = z.strictObject({
   display_name: z.string().trim().min(2).max(120),
   /** Platform staff may place a merchant under a reseller. Resellers always create under themselves. */
   reseller_id: idSchema('org').optional(),
+  /** Platform staff may place a merchant under an API partner (mutually exclusive with reseller_id). */
+  partner_id: idSchema('org').optional(),
   source: z.string().trim().max(80).optional(),
-});
+}).refine((b) => !(b.reseller_id && b.partner_id), { message: 'Choose a reseller or an API partner, not both', path: ['partner_id'] });
 
 export const listMerchantsQuerySchema = paginationQuerySchema.extend({
   status: z

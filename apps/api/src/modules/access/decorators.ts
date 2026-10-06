@@ -8,6 +8,7 @@ export const REQUIRED_PERMISSIONS = 'pay2all:requiredPermissions';
 export const AUTHENTICATED_ONLY = 'pay2all:authenticatedOnly';
 export const ANY_PERMISSIONS = 'pay2all:anyPermissions';
 export const ALLOW_RESTRICTED_SESSION = 'pay2all:allowRestrictedSession';
+export const API_KEY_ACCESS = 'pay2all:apiKeyAccess';
 
 /** No authentication. Use sparingly (login, refresh, health, password reset). */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
@@ -20,6 +21,13 @@ export const RequireAnyPermission = (...permissions: PermissionKey[]) => SetMeta
 
 /** Any authenticated user (self-service routes like /auth/me). Explicit so nothing is open by omission. */
 export const AuthenticatedOnly = () => SetMetadata(AUTHENTICATED_ONLY, true);
+
+/**
+ * Part of the public server-to-server API: also reachable with a signed API key (still subject to the
+ * key's permissions). Every other route rejects API keys — opt-in, so the dashboard surface
+ * (approvals, team, keys, webhooks config…) can never be driven by a leaked key.
+ */
+export const ApiKeyAccess = () => SetMetadata(API_KEY_ACCESS, true);
 
 /** Reachable from a restricted (MFA-enrollment-pending) session. */
 export const AllowRestrictedSession = () => SetMetadata(ALLOW_RESTRICTED_SESSION, true);
