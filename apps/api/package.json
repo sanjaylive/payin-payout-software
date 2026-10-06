@@ -53,6 +53,7 @@
     "supertest": "^7.1.4",
     "typescript": "~5.9.3",
     "unplugin-swc": "^1.5.7",
-    "vitest": "^3.2.7"
+    "vitest": "^3.2.7",
+    "@types/pg": "^8.15.5"
   }
 }

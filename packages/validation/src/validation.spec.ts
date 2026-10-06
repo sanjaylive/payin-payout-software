@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createUserSchema, identifierSchema, loginSchema, normalizeMobile } from './index';
+import { createUserSchema, identifierSchema, loginFormSchema, loginSchema, normalizeMobile } from './index';
 
 describe('identifier normalisation', () => {
   it('normalises emails and Indian mobiles', () => {
@@ -25,5 +25,12 @@ describe('strict objects', () => {
     expect(
       createUserSchema.safeParse({ name: 'Aman', email: 'a@b.com', role_key: 'merchant_owner' }).success,
     ).toBe(false);
+  });
+});
+
+describe('form schemas', () => {
+  it('validate like the API schema but keep the raw identifier string', () => {
+    expect(loginFormSchema.parse({ identifier: ' 98765 43210 ', password: 'x' }).identifier).toBe('98765 43210');
+    expect(loginFormSchema.safeParse({ identifier: 'nope', password: 'x' }).success).toBe(false);
   });
 });

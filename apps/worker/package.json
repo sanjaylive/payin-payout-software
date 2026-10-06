@@ -1,0 +1,28 @@
+{
+  "name": "@pay2all/worker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch-path=dist dist/main.js",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@pay2all/config": "workspace:*",
+    "@pay2all/database": "workspace:*",
+    "@pay2all/events": "workspace:*",
+    "@pay2all/logger": "workspace:*",
+    "dotenv": "^17.2.3",
+    "ioredis": "^5.11.1",
+    "pino": "^10.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "eslint": "^9.39.5",
+    "typescript": "~5.9.3",
+    "vitest": "^3.2.7"
+  }
+}

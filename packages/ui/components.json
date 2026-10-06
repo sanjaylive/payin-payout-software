@@ -1,0 +1,20 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": true,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "slate",
+    "cssVariables": true
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@pay2all/ui/components",
+    "utils": "@pay2all/ui/lib/utils",
+    "hooks": "@pay2all/ui/hooks",
+    "lib": "@pay2all/ui/lib",
+    "ui": "@pay2all/ui/components/ui"
+  }
+}

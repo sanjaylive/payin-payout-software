@@ -1,0 +1,6 @@
+{
+  "name": "@pay2all/docs",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Developer documentation site (placeholder until the public API stabilises — see docs/ROADMAP.md)."
+}

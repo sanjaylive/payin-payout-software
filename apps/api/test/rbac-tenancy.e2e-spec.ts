@@ -14,9 +14,11 @@ let adminToken: string;
 
 beforeAll(async () => {
   ctx = await createTestContext();
-  [sharma, kirana, nimbus, reseller, platform] = await Promise.all(
-    ['sharma-electronics', 'kirana-fresh', 'nimbus-software', 'acme-partners', 'pay2all'].map((s) => orgBySlug(ctx, s)),
-  ) as [{ id: string }, { id: string }, { id: string }, { id: string }, { id: string }];
+  sharma = await orgBySlug(ctx, 'sharma-electronics');
+  kirana = await orgBySlug(ctx, 'kirana-fresh');
+  nimbus = await orgBySlug(ctx, 'nimbus-software');
+  reseller = await orgBySlug(ctx, 'acme-partners');
+  platform = await orgBySlug(ctx, 'pay2all');
   sharmaOwnerToken = (await login(ctx, 'owner@sharma-electronics.local')).accessToken!;
   kiranaOwnerToken = (await login(ctx, 'owner@kirana-fresh.local')).accessToken!;
   const resellerUser = await createUser(ctx, { roleKey: 'RESELLER', organizationId: reseller.id });

@@ -1,0 +1,4 @@
+@import "@pay2all/ui/globals.css";
+
+/* App sources (the UI package registers its own). */
+@source "../";

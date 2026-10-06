@@ -21,23 +21,23 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] LEDGER.md: double-entry design, posting recipes, balance service
 - [x] PAYIN_FLOW.md / PAYOUT_FLOW.md: lifecycles and state machines
 
-## Phase 1 — Foundation 🟡
+## Phase 1 — Foundation ✅
 
-- [ ] Turborepo + pnpm workspace, shared tsconfig/ESLint/Prettier
-- [ ] Docker Compose: Postgres 17, Redis 7, Kafka (KRaft), SeaweedFS (S3), Mailpit
-- [ ] `packages/config`: Zod env validation (fails boot on invalid/placeholder secrets in production)
-- [ ] `packages/logger`: pino JSON logs with mandatory redaction
-- [ ] `packages/types`: response envelope, `ErrorCode` catalog with HTTP mapping
-- [ ] `packages/auth`: argon2id hashing, AES-256-GCM envelope encryption, token helpers, permission catalog, system roles
-- [ ] `packages/validation`: shared Zod schemas (auth, users, pagination)
-- [ ] `packages/database`: Prisma 7 schema (identity, sessions, MFA, audit, outbox, notifications), migration with append-only triggers, seed
-- [ ] API core: request ID + AsyncLocalStorage context, response envelope, global exception filter, helmet, CORS, Swagger at `/docs`, health checks
-- [ ] Auth: login (email/mobile), lockout, Redis rate limits, JWT access, rotating refresh with reuse detection, sessions list/revoke, logout-all, password forgot/reset/change, TOTP MFA (setup/enable/verify/disable), mandatory MFA for privileged roles
-- [ ] IAM: organizations (scoped), users, memberships, roles, permissions, PermissionGuard, TenantScopeService, privilege-escalation guard
-- [ ] Audit: append-only writer inside transactions, query API with keyset pagination
-- [ ] Worker app skeleton (graceful shutdown, health) and docs app placeholder
-- [ ] Web: Pay2All design tokens (light/dark), shadcn/ui, login, MFA, forgot/reset, merchant and admin shells with full navigation, security settings (sessions, MFA), users, roles, audit logs
-- [ ] Tests: hashing/crypto/permissions units, auth and RBAC integration (refresh rotation, reuse detection, lockout, cross-tenant 404, permission 403, audit immutability)
+- [x] Turborepo + pnpm workspace, shared tsconfig/ESLint/Prettier
+- [x] Docker Compose: Postgres 17, Redis 7, Kafka (KRaft), SeaweedFS (S3), Mailpit
+- [x] `packages/config`: Zod env validation (fails boot on invalid/placeholder secrets in production)
+- [x] `packages/logger`: pino JSON logs with mandatory redaction
+- [x] `packages/types`: response envelope, `ErrorCode` catalog with HTTP mapping
+- [x] `packages/auth`: argon2id hashing, AES-256-GCM envelope encryption, token helpers, permission catalog, system roles
+- [x] `packages/validation`: shared Zod schemas (auth, users, pagination)
+- [x] `packages/database`: Prisma 7 schema (identity, sessions, MFA, audit, outbox, notifications), migration with append-only triggers, seed
+- [x] API core: request ID + AsyncLocalStorage context, response envelope, global exception filter, helmet, CORS, Swagger at `/docs`, health checks
+- [x] Auth: login (email/mobile), lockout, Redis rate limits, JWT access, rotating refresh with reuse detection, sessions list/revoke, logout-all, password forgot/reset/change, TOTP MFA (setup/enable/verify/disable), mandatory MFA for privileged roles
+- [x] IAM: organizations (scoped), users, memberships, roles, permissions, PermissionGuard, TenantScopeService, privilege-escalation guard
+- [x] Audit: append-only writer inside transactions, query API with keyset pagination
+- [x] Worker app skeleton (graceful shutdown, health) and docs app placeholder
+- [x] Web: Pay2All design tokens (light/dark), shadcn/ui, login, MFA, forgot/reset, merchant and admin shells with full navigation, security settings (sessions, MFA), users, roles, audit logs
+- [x] Tests: hashing/crypto/permissions units, auth and RBAC integration (refresh rotation, reuse detection, lockout, cross-tenant 404, permission 403, audit immutability)
 
 ## Phase 2 — Merchant & compliance ⬜
 
@@ -125,4 +125,20 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 
 ## Phase completion log
 
-_(Appended as phases complete.)_
+### Phase 1 — Foundation (completed 2026-10-06)
+
+**Delivered:** monorepo, infra, shared packages, NestJS API (auth, MFA, sessions, RBAC, tenancy, audit), worker skeleton, Next.js dashboard (merchant/reseller portal + separate admin console).
+
+**Verification:**
+- `turbo run lint typecheck test`: 44/44 tasks green (two uncached runs).
+- 41 unit tests (config, logger redaction, crypto/argon2/TOTP/RBAC catalog, validation, guards, cursors, error filter).
+- 47 API integration tests against real Postgres + Redis: refresh rotation, reuse detection, concurrent refresh, lockout, rate limits, CSRF, MFA enrollment/replay, password reset, cross-tenant 404s, privilege escalation, org suspension, audit immutability.
+- Mutation check: disabling session revocation or tenant scoping makes 7 targeted tests fail.
+- `prisma validate` passes; migrations apply cleanly to an empty DB; `next build` succeeds.
+
+**Deviations / notes:**
+- MinIO no longer publishes public images; local S3 is SeaweedFS (S3 API only, so no code impact).
+- Password-reset and invitation emails are sent directly over SMTP (fire-and-forget) until the Phase 7 outbox worker exists.
+- Seed covers identity/tenancy only. Providers, payins, payouts, ledger and settlements are seeded by the phases that introduce them.
+- Web UI was verified at HTTP level (pages, CSP, CORS, cookie refresh) — interactive browser walkthrough still pending.
+- Organization switching for users with multiple memberships is deferred (login uses the earliest active membership).

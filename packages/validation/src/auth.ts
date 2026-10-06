@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { identifierSchema } from './common';
+import { identifierInputSchema, identifierSchema } from './common';
 
 /** Policy length bounds are enforced here; contextual rules (email/mobile) run server-side. */
 export const passwordSchema = z
@@ -51,3 +51,7 @@ export type ChangePasswordInput = z.input<typeof changePasswordSchema>;
 export const switchOrganizationSchema = z.strictObject({
   organization_id: z.string().min(1).max(40),
 });
+
+/** Browser form variants (no transforms; values are submitted as typed). */
+export const loginFormSchema = z.object({ identifier: identifierInputSchema, password: z.string().min(1, 'Enter your password').max(256) });
+export const forgotPasswordFormSchema = z.object({ identifier: identifierInputSchema });

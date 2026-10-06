@@ -59,3 +59,15 @@ export const paginationQuerySchema = z.strictObject({
   limit: z.coerce.number().int().min(1).max(100).default(25),
 });
 export type PaginationQuery = z.infer<typeof paginationQuerySchema>;
+
+/**
+ * Same rules as identifierSchema but without the transform — for browser forms, which must submit
+ * the raw string the API expects (the API applies the normalising transform itself).
+ */
+export const identifierInputSchema = z
+  .string()
+  .trim()
+  .superRefine((v, ctx) => {
+    const result = identifierSchema.safeParse(v);
+    if (!result.success) ctx.addIssue({ code: 'custom', message: result.error.issues[0]?.message ?? 'Invalid identifier' });
+  });
