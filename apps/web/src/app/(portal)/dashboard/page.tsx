@@ -8,6 +8,8 @@ import { ArrowDownToLine, ArrowUpFromLine, ChartColumn, CircleCheck, Hourglass, 
 import Link from 'next/link';
 import { useState } from 'react';
 import { PageHeader } from '@/components/common/page-header';
+import { useBalances } from '@/features/ledger/balance-cards';
+import { fmt } from '@/features/ledger/format';
 import { useMe } from '@/lib/auth/use-me';
 
 /**
@@ -18,6 +20,8 @@ export default function MerchantDashboard() {
   const { data: me } = useMe();
   const [range, setRange] = useState(() => presetRange('today'));
   const pending = (phase: number) => `Live from Phase ${phase}`;
+  const isMerchant = me?.organization.type === 'MERCHANT';
+  const balances = useBalances(isMerchant ? me.organization.id : undefined);
 
   return (
     <>
@@ -29,8 +33,8 @@ export default function MerchantDashboard() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <StatCard label="Today's Payin" value="—" icon={ArrowDownToLine} hint={pending(5)} />
         <StatCard label="Today's Payout" value="—" icon={ArrowUpFromLine} hint={pending(6)} />
-        <StatCard label="Available Balance" value="—" icon={Wallet} hint={pending(3)} />
-        <StatCard label="Unsettled Balance" value="—" icon={Hourglass} hint={pending(3)} />
+        <StatCard label="Available Balance" value={isMerchant ? fmt(balances.data?.available) : '—'} loading={isMerchant && balances.isPending} icon={Wallet} hint={<Link href="/accounts/balance" className="hover:underline">View balances</Link>} />
+        <StatCard label="Unsettled Balance" value={isMerchant ? fmt(balances.data?.unsettled) : '—'} loading={isMerchant && balances.isPending} icon={Hourglass} hint="Settles on your cycle" />
         <StatCard label="Payin Success Rate" value="—" icon={CircleCheck} hint={pending(5)} />
         <StatCard label="Payout Success Rate" value="—" icon={CircleCheck} hint={pending(6)} />
       </div>

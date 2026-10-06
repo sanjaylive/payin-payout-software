@@ -3,7 +3,11 @@
 import { StatCard } from '@pay2all/ui/components/stat-card';
 import { Card, CardContent, CardHeader, CardTitle } from '@pay2all/ui/components/ui/card';
 import { ArrowDownToLine, ArrowUpFromLine, Banknote, CircleAlert, Clock, FileWarning, Gauge, Hourglass, Landmark, Wallet } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
+import { fmt } from '@/features/ledger/format';
+import { api } from '@/lib/api/client';
+import { useCan } from '@/lib/auth/use-me';
 import { PageHeader } from '@/components/common/page-header';
 
 const CARDS = [
@@ -19,13 +23,31 @@ const CARDS = [
   { label: 'Transactions / sec', icon: Clock, phase: 10 },
 ];
 
+interface Summary {
+  total_merchant_balance: string;
+  unsettled: string;
+}
+
 export default function AdminDashboard() {
+  const can = useCan();
+  const summary = useQuery({ queryKey: ['ledger-summary'], queryFn: () => api.get<Summary>('/v1/ledger/summary'), enabled: can('ledger.platform.read') });
+  const live: Record<string, string | undefined> = {
+    'Total Merchant Balance': summary.data ? fmt(summary.data.total_merchant_balance) : undefined,
+    'Unsettled Amount': summary.data ? fmt(summary.data.unsettled) : undefined,
+  };
   return (
     <>
       <PageHeader title="Platform overview" description="Pay2All Payments operations console." />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {CARDS.map((c) => (
-          <StatCard key={c.label} label={c.label} value="—" icon={c.icon} hint={`Live from Phase ${c.phase}`} />
+          <StatCard
+            key={c.label}
+            label={c.label}
+            value={live[c.label] ?? '—'}
+            loading={c.label in live && summary.isPending && can('ledger.platform.read')}
+            icon={c.icon}
+            hint={c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
+          />
         ))}
       </div>
       <div className="mt-6 grid gap-4 lg:grid-cols-3">

@@ -240,3 +240,86 @@ export interface SalesLead {
   converted_merchant_id: string | null;
   created_at: string;
 }
+
+export interface MerchantBalances {
+  merchant_id: string;
+  currency: string;
+  available: string;
+  pending: string;
+  unsettled: string;
+  reserved: string;
+  lien: string;
+  settled_to_date: string;
+  receivable: string;
+  as_of: string;
+}
+
+export interface LedgerAccount {
+  id: string;
+  code: string;
+  name: string;
+  type: string;
+  normal_balance: 'DEBIT' | 'CREDIT';
+  owner_type: string;
+  owner_id: string | null;
+  bucket: string | null;
+  currency: string;
+  maintained: boolean;
+  balance: string | null;
+  created_at: string;
+}
+
+export interface StatementEntry {
+  id: string;
+  journal_id: string;
+  journal_type: string;
+  source_type: string;
+  source_id: string;
+  description: string | null;
+  direction: 'DEBIT' | 'CREDIT';
+  amount: string;
+  balance_after: string | null;
+  created_at: string;
+}
+
+export interface LedgerJournal {
+  id: string;
+  type: string;
+  idempotency_key?: string;
+  source_type: string;
+  source_id: string;
+  description: string | null;
+  reverses_journal_id: string | null;
+  reversed_by_journal_id: string | null;
+  effective_at: string;
+  posted_at: string;
+  created_by_id?: string | null;
+  request_id: string | null;
+  entries: { id: string; account_id: string; account_code: string; account_name: string; bucket: string | null; direction: 'DEBIT' | 'CREDIT'; amount: string; balance_after: string | null }[];
+}
+
+export interface LedgerAdjustment {
+  id: string;
+  merchant_id: string;
+  direction: 'CREDIT' | 'DEBIT';
+  amount: string;
+  reason: string;
+  reference: string;
+  supporting_note: string | null;
+  status: 'PENDING_APPROVAL' | 'POSTED' | 'REJECTED' | 'CANCELLED';
+  approvals_required: number;
+  approvals: { approver_id: string; comment: string | null; approved_at: string }[];
+  maker_id: string;
+  journal_id: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+}
+
+export interface TrialBalance {
+  debits: string;
+  credits: string;
+  difference: string;
+  balanced: boolean;
+  entries: number;
+  journals: number;
+}

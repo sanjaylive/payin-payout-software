@@ -11,6 +11,8 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { errorMessage } from '@/lib/api/errors';
 import { useCan } from '@/lib/auth/use-me';
+import { JournalsTable } from '../ledger/admin-ledger';
+import { BalanceCards } from '../ledger/balance-cards';
 import { BankAccountsSection } from './bank-accounts-section';
 import { DocumentsSection } from './documents-section';
 import { isEditableStatus, REVIEW_ACTION_LABELS } from './labels';
@@ -57,6 +59,7 @@ export function MerchantDetail({ merchantId, backHref }: { merchantId: string; b
           <TabsTrigger value="documents">Documents ({app.documents.length})</TabsTrigger>
           <TabsTrigger value="bank">Bank</TabsTrigger>
           {app.screening?.risk_notes !== undefined && <TabsTrigger value="screening">Screening</TabsTrigger>}
+          {can('ledger.read') && (app.status === 'APPROVED' || app.status === 'SUSPENDED') && <TabsTrigger value="ledger">Balances</TabsTrigger>}
           {can('limit.read') && <TabsTrigger value="limits">Limits</TabsTrigger>}
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
@@ -74,6 +77,10 @@ export function MerchantDetail({ merchantId, backHref }: { merchantId: string; b
         <TabsContent value="documents" className="mt-4"><DocumentsSection app={app} canUpload={can('merchant.update') || can('compliance.approve')} /></TabsContent>
         <TabsContent value="bank" className="mt-4"><BankAccountsSection app={app} canEdit={editable} /></TabsContent>
         <TabsContent value="screening" className="mt-4"><ScreeningPanel key={app.version} app={app} /></TabsContent>
+        <TabsContent value="ledger" className="mt-4 space-y-6">
+          <BalanceCards merchantId={app.id} />
+          {can('ledger.platform.read') && <JournalsTable merchantId={app.id} />}
+        </TabsContent>
         <TabsContent value="limits" className="mt-4"><MerchantLimitsPanel merchantId={app.id} /></TabsContent>
         <TabsContent value="history" className="mt-4">
           <Card className="shadow-none">

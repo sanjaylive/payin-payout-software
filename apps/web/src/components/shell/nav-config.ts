@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 /** Highest delivered phase — nav entries above it render roadmap placeholders. */
-export const CURRENT_PHASE = 2;
+export const CURRENT_PHASE = 3;
 
 export interface NavLeaf {
   label: string;
@@ -145,9 +145,9 @@ export const ADMIN_NAV: NavItem[] = [
     label: 'Ledger',
     icon: Scale,
     children: [
-      { label: 'Accounts', href: '/admin/ledger/accounts', phase: 3, permission: 'ledger.read' },
-      { label: 'Journals', href: '/admin/ledger/journals', phase: 3, permission: 'ledger.read' },
-      { label: 'Adjustments', href: '/admin/ledger/adjustments', phase: 3, permission: 'ledger.adjust' },
+      { label: 'Accounts', href: '/admin/ledger/accounts', phase: 3, permission: 'ledger.platform.read' },
+      { label: 'Journals', href: '/admin/ledger/journals', phase: 3, permission: 'ledger.platform.read' },
+      { label: 'Adjustments', href: '/admin/ledger/adjustments', phase: 3, permission: 'ledger.adjust.approve' },
     ],
   },
   {
