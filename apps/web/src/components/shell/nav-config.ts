@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 /** Highest delivered phase — nav entries above it render roadmap placeholders. */
-export const CURRENT_PHASE = 8;
+export const CURRENT_PHASE = 9;
 
 export interface NavLeaf {
   label: string;
@@ -112,6 +112,25 @@ export const RESELLER_NAV: NavItem[] = [
   { label: 'Commissions', href: '/reseller/commissions', icon: Receipt, phase: 9 },
   { label: 'Earnings', href: '/reseller/earnings', icon: Landmark, phase: 9 },
   { label: 'Reports', href: '/reseller/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },
+  { label: 'Team', href: '/team', icon: Users, phase: 1, permission: 'user.read' },
+  { label: 'Settings', href: '/settings/security', icon: Settings, phase: 1 },
+];
+
+export const PARTNER_NAV: NavItem[] = [
+  { label: 'Dashboard', href: '/partner', icon: LayoutDashboard, phase: 9 },
+  { label: 'Merchants', href: '/partner/merchants', icon: Building2, phase: 9, permission: 'merchant.read' },
+  { label: 'Payin', href: '/partner/payin', icon: ArrowDownToLine, phase: 9, permission: 'payin.read' },
+  { label: 'Payout', href: '/partner/payout', icon: ArrowUpFromLine, phase: 9, permission: 'payout.read' },
+  {
+    label: 'Developers',
+    icon: Code2,
+    children: [
+      { label: 'API Keys', href: '/developers/api-keys', phase: 9, permission: 'api_key.read' },
+      { label: 'Documentation', href: '/developers/docs', phase: 9 },
+      { label: 'IP Whitelist', href: '/developers/ip-whitelist', phase: 9, permission: 'api_key.read' },
+      { label: 'API Logs', href: '/developers/api-logs', phase: 9, permission: 'api_key.read' },
+    ],
+  },
   { label: 'Team', href: '/team', icon: Users, phase: 1, permission: 'user.read' },
   { label: 'Settings', href: '/settings/security', icon: Settings, phase: 1 },
 ];

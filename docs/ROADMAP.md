@@ -109,11 +109,11 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Recon runs: CSV import (S3), generic parser, matching engine, exceptions dashboard, manual resolution
 - [x] Merchant fees page (monthly fees and GST)
 
-## Phase 9 — Reseller & API partner ⬜
+## Phase 9 — Reseller & API partner ✅
 
-- [ ] Reseller hierarchy, merchant mapping, rate cards, commission accrual, earnings
-- [ ] API partners, API keys (pk/sk, rotation, TEST/LIVE), HMAC signing guard, replay protection, IP allowlist, per-key rate limits
-- [ ] API usage dashboard, API logs
+- [x] Reseller hierarchy, merchant mapping, rate cards (floor = wholesale), commission accrual, earnings, commission payouts
+- [x] API partners (merchant mapping, act-for-merchant header, partner portal), API keys (pk/sk, rotation, TEST/LIVE), HMAC signing guard, nonce replay protection, IP allowlist, per-key rate limits
+- [x] API usage dashboard, API logs, developer documentation page
 
 ## Phase 10 — Risk, observability, hardening ⬜
 
@@ -398,3 +398,37 @@ As in Phase 5, the new pages were compiled and fetched but not visually checked 
   - queue claims now use the application clock instead of Postgres `now()`, so a lagging DB/VM clock can't delay just-queued work (found through an intermittent worker test).
 
 **Notes:** deferrals are listed in SETTLEMENT.md §6.
+
+### Phase 9 — Reseller & API partner (completed 2026-10-07)
+
+**Delivered:**
+- **API keys:** scoped permissions, encrypted secret shown once, rotation with overlap, revoke.
+- **Signed requests:** timestamp + nonce + HMAC over method, path and body hash; replay guard; IP allowlist; per-key rate limits; IP throttling on repeated auth failures. Routes opt in with `@ApiKeyAccess`.
+- **Usage:** request logs (90-day retention) and usage summary. `API_KEY` audit actors.
+- **API partners:** reseller-like tenancy, merchant creation under the partner, act-for-merchant header, a partner portal (dashboard, merchants, payin, payout, developers).
+- **Resellers:**
+  - rate cards with a wholesale floor, and assignment to their own merchants only;
+  - **security fix:** plan archive/assign ownership was missing;
+  - commission accrual sweeper, earnings and per-merchant margins;
+  - `COMMISSION_PAYOUT` journal with direction-checked reseller legs.
+- **UI:** Developers (API keys with secret reveal, IP allowlist, API logs with usage chart, documentation with Node/Python/cURL samples); reseller Pricing, Commissions, Earnings and a dashboard card; admin Resellers → Commissions; "Belongs to" (reseller or partner) when creating merchants.
+- **Docs:** API.md, RESELLERS.md, SECURITY.md §6.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- **API:** 154 integration tests (7 new, in `partners.e2e-spec.ts`), covering:
+  - secret shown once and encrypted; permission subset;
+  - signed calls attribute payments to the key;
+  - tampering, stale timestamps, wrong path, replayed nonce, missing nonce, unknown and revoked keys rejected; identical requests with fresh nonces allowed; dashboard routes refuse keys;
+  - per-key permissions, rate limit (429 + Retry-After), rotation overlap and expiry, IP allowlist;
+  - request logs and usage, tenant-scoped;
+  - partner acting for its own merchant only; merchant keys can't use the header;
+  - reseller rate cards: below-wholesale refused, foreign merchant refused, platform plan untouchable;
+  - commission accrual exact and idempotent; earnings scoped; overdrawn payout refused.
+- **Mutation check:** removing the plan-archive ownership check fails the regression test.
+- **Ledger:** commission accrual/payout rules and direction checks.
+
+**Notes:**
+- The replay design moved from storing signatures to signed nonces (SECURITY.md §6).
+- GST on commissions is still to be decided.
+- The new pages were compiled, but not checked visually in a browser.

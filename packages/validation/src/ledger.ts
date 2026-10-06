@@ -23,7 +23,8 @@ export const listJournalsQuerySchema = paginationQuerySchema.extend({
   merchant_id: idSchema('org').optional(),
 });
 
-export const balancesQuerySchema = z.strictObject({ merchant_id: idSchema('org') });
+/** merchant_id may be omitted by merchant callers (dashboard or API key): their own balances. */
+export const balancesQuerySchema = z.strictObject({ merchant_id: idSchema('org').optional() });
 
 export const reverseJournalSchema = z.strictObject({ reason: z.string().trim().min(10, 'Explain the correction (at least 10 characters)').max(500) });
 

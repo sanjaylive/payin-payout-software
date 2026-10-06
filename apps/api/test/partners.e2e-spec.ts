@@ -71,6 +71,7 @@ describe('API keys', () => {
     expect(p).toMatchObject({ merchantId: m.id, createdById: k.key_id });
     const balances = await signed(k.public_key, k.secret, 'GET', `/v1/ledger/balances?merchant_id=${m.id}`).req;
     expect(balances.status).toBe(200);
+    expect((await signed(k.public_key, k.secret, 'GET', '/v1/ledger/balances').req).status).toBe(200); // own balances by default
     expect(created.headers['ratelimit-limit']).toBe('600');
   });
 
