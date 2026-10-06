@@ -82,14 +82,15 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Expiry sweeper, status polling, refunds (jobs process)
 - [x] Dashboard: payin transactions, details drawer, create payment, QR codes, payment links, refunds, live payin charts; admin payin/refunds and pricing
 
-## Phase 6 — Payout ⬜
+## Phase 6 — Payout ✅
 
-- [ ] Beneficiaries (verification, masking)
-- [ ] Payout creation with reservation in a single transaction
-- [ ] Maker-checker approvals
-- [ ] Payout processor (provider call, attempts, ambiguous-outcome handling)
-- [ ] Release/settle/reversal postings
-- [ ] Dashboard: make payout, bulk payout, approvals, beneficiaries
+- [x] Beneficiaries (encryption, masking, blind index, verification with name match, blocking)
+- [x] Payout creation with reservation in a single transaction
+- [x] Maker-checker approvals (tiers frozen at creation, MFA checkers, race-safe)
+- [x] Payout processor (provider call, attempts, ambiguous-outcome handling, crash recovery, manual review)
+- [x] Release/settle/reversal postings
+- [x] Bulk CSV payouts
+- [x] Dashboard: make payout, bulk payout, approvals, beneficiaries, payout transactions; admin payouts with review
 
 ## Phase 7 — Kafka + workers ⬜
 
@@ -272,3 +273,46 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - API-key authentication (Phase 9).
 
 The dashboard charts were not checked visually in a browser this phase (the browser extension was unavailable), only compiled and verified against live stats data.
+
+### Phase 6 — Payout (completed 2026-10-06)
+
+**Delivered:**
+- **API:**
+  - beneficiaries (create, list, verify, block);
+  - payouts (create with reservation, list, stats, get, approve, reject/cancel, review resolution);
+  - bulk CSV (upload, review, confirm, cancel, approve/reject all);
+  - payout callbacks and the sandbox simulator.
+- **Jobs:** processor, in-flight sweeper, approval expiry, bulk creation.
+- **UI:**
+  - merchant: payout transactions, make payout, bulk payout, approvals, beneficiaries, live payout cards and chart;
+  - reseller: payout overview;
+  - admin: payouts with a manual-review queue and evidence-based resolution, plus today's payouts on the dashboard.
+- **Seed:** SYSTEM maker-checker tiers (≤ ₹10k auto, ≤ ₹1L one approver, above that two) and demo beneficiaries and payouts created through the real services.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- **API:** 133 integration tests (22 new in `payouts.e2e-spec.ts`), covering all of §12:
+  - 50 concurrent payouts produce exactly 10 reservations, 40 `INSUFFICIENT_BALANCE`, AVAILABLE at 0, and no errors;
+  - insufficient balance leaves no row and no journal, and replays the 422;
+  - same key ×20 creates one payout and one reserve; `DUPLICATE_ORDER` and `IDEMPOTENCY_CONFLICT` behave as specified;
+  - failure, failover and requeue behave correctly;
+  - an ambiguous outcome is never re-sent and moves to manual review after 24 h;
+  - a bank return posts a reversal;
+  - crash recovery uses the same reference with no duplicate transfer;
+  - maker-checker covers self-approval, non-MFA sessions, double votes, a racing final approval (exactly one `payout.queued`), the frozen tier, reject and expiry;
+  - append-only votes, tenancy, encrypted and never-exposed account numbers, and bulk validation, idempotent re-run and batch tier;
+  - a global ledger invariant check (balanced journals, no negative balances, no drift) after the suite.
+- **Mutation check:** removing the self-approval guard fails the maker-checker test.
+- **Unit tests:** payout state machine; mode rules, name match and CSV parser.
+- **Dev stack:**
+  - demo payouts went QUEUED → sent → SUCCESS with UTRs via the jobs process;
+  - the approval-tier payout waits correctly;
+  - ledger invariants hold on the dev database.
+
+**Notes:** see PAYOUT_FLOW.md §13:
+- processing is polled by the jobs process until the Kafka path in Phase 7;
+- penny-drop charges are not yet ledgered;
+- beneficiary unblock is not exposed;
+- risk pre-checks arrive in Phase 10.
+
+As in Phase 5, the new pages were compiled and fetched but not visually checked in a browser.

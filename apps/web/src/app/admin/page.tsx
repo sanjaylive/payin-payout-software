@@ -10,13 +10,14 @@ import { api } from '@/lib/api/client';
 import { useCan } from '@/lib/auth/use-me';
 import { PageHeader } from '@/components/common/page-header';
 import { usePaymentStats } from '@/features/payin/payin-overview';
+import { usePayoutStats } from '@/features/payout/payout-overview';
 import { presetRange } from '@pay2all/ui/components/date-range-filter';
 
 const todayRange = presetRange('today');
 
 const CARDS = [
   { label: "Today's Payin", icon: ArrowDownToLine, phase: 5 },
-  { label: 'Total Payout', icon: ArrowUpFromLine, phase: 6 },
+  { label: "Today's Payout", icon: ArrowUpFromLine, phase: 6 },
   { label: 'Total Revenue', icon: Banknote, phase: 9 },
   { label: 'Total Merchant Balance', icon: Wallet, phase: 3 },
   { label: 'Unsettled Amount', icon: Hourglass, phase: 3 },
@@ -41,6 +42,7 @@ export default function AdminDashboard() {
   const summary = useQuery({ queryKey: ['ledger-summary'], queryFn: () => api.get<Summary>('/v1/ledger/summary'), enabled: can('ledger.platform.read') });
   const providers = useQuery({ queryKey: ['providers', 'all'], queryFn: () => api.get<ProviderBrief[]>('/v1/providers'), enabled: can('provider.read') });
   const payin = usePaymentStats(todayRange, undefined, can('payin.read'));
+  const payout = usePayoutStats(todayRange, undefined, can('payout.read'));
   const healthy = providers.data?.filter((p) => p.status === 'ACTIVE').length;
   const live: Record<string, string | undefined> = {
     'Provider Health': providers.data ? `${healthy}/${providers.data.filter((p) => p.status !== 'DISABLED').length} healthy` : undefined,
@@ -48,6 +50,7 @@ export default function AdminDashboard() {
     'Unsettled Amount': summary.data ? fmt(summary.data.unsettled) : undefined,
     "Today's Payin": payin.data ? fmt(payin.data.totals.success_amount) : undefined,
     'Failed Payins Today': payin.data ? payin.data.totals.failed_count.toLocaleString('en-IN') : undefined,
+    "Today's Payout": payout.data ? fmt(payout.data.totals.success_amount) : undefined,
   };
   const PAYIN_CARDS = ["Today's Payin", 'Failed Payins Today'];
   return (
@@ -59,9 +62,9 @@ export default function AdminDashboard() {
             key={c.label}
             label={c.label}
             value={live[c.label] ?? '—'}
-            loading={c.label === 'Provider Health' ? providers.isPending && can('provider.read') : PAYIN_CARDS.includes(c.label) ? payin.isPending && can('payin.read') : c.label in live && summary.isPending && can('ledger.platform.read')}
+            loading={c.label === 'Provider Health' ? providers.isPending && can('provider.read') : PAYIN_CARDS.includes(c.label) ? payin.isPending && can('payin.read') : c.label === "Today's Payout" ? payout.isPending && can('payout.read') : c.label in live && summary.isPending && can('ledger.platform.read')}
             icon={c.icon}
-            hint={c.label === 'Provider Health' && providers.data ? <Link href="/admin/providers/health" className="hover:underline">View health</Link> : PAYIN_CARDS.includes(c.label) && payin.data ? <Link href="/admin/transactions/payin" className="hover:underline">View payins</Link> : c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
+            hint={c.label === 'Provider Health' && providers.data ? <Link href="/admin/providers/health" className="hover:underline">View health</Link> : PAYIN_CARDS.includes(c.label) && payin.data ? <Link href="/admin/transactions/payin" className="hover:underline">View payins</Link> : c.label === "Today's Payout" && payout.data ? <Link href="/admin/transactions/payout" className="hover:underline">View payouts</Link> : c.label in live ? 'From the ledger' : `Live from Phase ${c.phase}`}
           />
         ))}
       </div>

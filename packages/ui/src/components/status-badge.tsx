@@ -4,9 +4,9 @@ export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' |
 
 /** Default tone per status across payin, payout, settlement, KYC, users, orgs. */
 const STATUS_TONES: Record<string, StatusTone> = {
-  SUCCESS: 'success', ACTIVE: 'success', APPROVED: 'success', VERIFIED: 'success', SETTLED: 'success', PROCESSED: 'success', MATCHED: 'success', REFUNDED: 'neutral',
-  PENDING: 'warning', PROCESSING: 'warning', QUEUED: 'info', CREATED: 'neutral', SUBMITTED: 'info', UNDER_REVIEW: 'info', APPROVAL_PENDING: 'warning', MANUAL_REVIEW: 'warning', MORE_INFORMATION_REQUIRED: 'warning', INVITED: 'info', SETTLEMENT_PENDING: 'info', REFUND_PENDING: 'warning', PARTIALLY_REFUNDED: 'info', ON_HOLD: 'warning', DEGRADED: 'warning', MAINTENANCE: 'info', DRAFT: 'neutral',
-  FAILED: 'danger', REJECTED: 'danger', SUSPENDED: 'danger', DISABLED: 'danger', BLOCKED: 'danger', REVOKED: 'danger', REVERSED: 'danger', EXPIRED: 'neutral', CANCELLED: 'neutral', DOWN: 'danger', DISPUTED: 'danger', CHARGEBACK: 'danger', CLOSED: 'neutral', LOCKED: 'danger',
+  SUCCESS: 'success', ACTIVE: 'success', APPROVED: 'success', VERIFIED: 'success', SETTLED: 'success', PROCESSED: 'success', MATCHED: 'success', COMPLETED: 'success', REFUNDED: 'neutral',
+  PENDING: 'warning', PROCESSING: 'warning', QUEUED: 'info', CREATED: 'neutral', SUBMITTED: 'info', UNDER_REVIEW: 'info', APPROVAL_PENDING: 'warning', MANUAL_REVIEW: 'warning', MORE_INFORMATION_REQUIRED: 'warning', INVITED: 'info', SETTLEMENT_PENDING: 'info', VALIDATED: 'info', CONFIRMED: 'info', REFUND_PENDING: 'warning', PARTIALLY_REFUNDED: 'info', ON_HOLD: 'warning', DEGRADED: 'warning', MAINTENANCE: 'info', DRAFT: 'neutral',
+  FAILED: 'danger', REJECTED: 'danger', VALIDATION_FAILED: 'danger', SUSPENDED: 'danger', DISABLED: 'danger', BLOCKED: 'danger', REVOKED: 'danger', REVERSED: 'danger', EXPIRED: 'neutral', CANCELLED: 'neutral', DOWN: 'danger', DISPUTED: 'danger', CHARGEBACK: 'danger', CLOSED: 'neutral', LOCKED: 'danger',
 };
 
 const TONE_CLASSES: Record<StatusTone, string> = {

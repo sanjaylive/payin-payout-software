@@ -1,6 +1,6 @@
 # Payout (Disbursement) Flow
 
-> Status: design (implemented in Phase 6; Kafka worker hardening in Phase 7). Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [DATABASE.md](./DATABASE.md), [LEDGER.md](./LEDGER.md), [PAYIN_FLOW.md](./PAYIN_FLOW.md)
+> Status: implemented in Phase 6 (see §13 for refinements); Kafka-driven processing arrives in Phase 7. Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [DATABASE.md](./DATABASE.md), [LEDGER.md](./LEDGER.md), [PAYIN_FLOW.md](./PAYIN_FLOW.md)
 
 A payout moves money **out** of a merchant's available balance to a beneficiary through a partner bank or PSP. It is the highest-risk flow on the platform. Every design choice here prefers "stuck and visible" over "duplicated or lost".
 
@@ -26,7 +26,7 @@ The routing engine (ARCHITECTURE.md §9) picks the provider from mode, amount, m
 
 ## 2. Amount format
 
-> **Decision pending confirmation from Pay2All.** External `amount` is a **string decimal in major units, with at most 2 decimals** (`"15000.00"`), parsed exactly into paise. JSON numbers are rejected (`INVALID_REQUEST`). The alternative is integer paise (`1500000`). See PAYIN_FLOW.md §2. Internally everything is `BIGINT` paise.
+> **Decided (Phase 5, option a):** external `amount` is a **string decimal in major units, with at most 2 decimals** (`"15000.00"`), parsed exactly into paise. JSON numbers are rejected. Internally everything is `BIGINT` paise.
 
 ## 3. Beneficiaries
 
@@ -248,7 +248,7 @@ CREATED ─► VALIDATING ─┬─► APPROVAL_PENDING ─┬─► QUEUED ─�
 | `APPROVAL_PENDING` | `QUEUED`, `REJECTED` |
 | `MANUAL_REVIEW` (pre-send, risk) | `QUEUED`, `REJECTED` |
 | `QUEUED` | `PROCESSING`, `REJECTED` (cancel before pickup) |
-| `PROCESSING` | `PENDING`, `SUCCESS`, `FAILED`, `MANUAL_REVIEW` |
+| `PROCESSING` | `PENDING`, `SUCCESS`, `FAILED`, `MANUAL_REVIEW`, `QUEUED` (requeue only when every attempt provably never reached a provider) |
 | `PENDING` | `SUCCESS`, `FAILED`, `MANUAL_REVIEW` |
 | `MANUAL_REVIEW` (post-send, unknown outcome) | `SUCCESS`, `FAILED` (only with provider/bank evidence and an audit reason) |
 | `SUCCESS` | `REVERSED` |
@@ -286,3 +286,19 @@ CREATED ─► VALIDATING ─┬─► APPROVAL_PENDING ─┬─► QUEUED ─�
 | Worker crash simulation | Kill between txn A and the provider call → the sweeper resolves via status lookup with no duplicate transfer |
 | State machine | Every disallowed transition in §10 is rejected by the transition service |
 | Ledger invariant | After every test: Σ debits = Σ credits per journal and globally, and no non-negative account below zero |
+
+## 13. Phase 6 implementation notes
+
+Where the shipped code refines or defers parts of the design above:
+
+- **Processing runs in the API jobs process** (`pnpm dev:jobs`), not a Kafka consumer. `payout.process` is replaced by polling `QUEUED` rows with `FOR UPDATE SKIP LOCKED` every 5 s. Txn A is the claim (`QUEUED → PROCESSING`). Before every provider call, an `INITIATED` attempt with reference `pout_X-n` is committed. Phase 7 swaps the trigger for the outbox/Kafka path; the crash-safety rules stay the same.
+- **Requeue.** If every attempt failed with `NOT_ATTEMPTED`/`CONFIGURATION` (provably not sent), the payout goes `PROCESSING → QUEUED` with backoff. This edge was added to §10's table. After 10 requeues it fails and releases (`PROVIDER_UNAVAILABLE`). A definitive `REJECTED` on every candidate fails and releases immediately.
+- **Unknown outcomes.** The sweeper (every 15 s, per-payout backoff 30 s → 1 h) looks the latest attempt up by provider reference, else by our reference. A `NOT_FOUND` triggers a same-reference re-send **only** for providers that declare `capabilities.supports_reference_lookup = true`. Otherwise the payout waits, and after 24 h it moves to `MANUAL_REVIEW` with funds still reserved. Platform users with `payout.review` resolve it with evidence: a UTR is required to mark success, and a reason is always required and audited.
+- **Critical section.** Payout creation does all lock-free work first: insert, pricing snapshot, idempotency attach. It then locks the merchant `AVAILABLE` row, checks daily/monthly limits (exact under the lock), posts `PAYOUT_RESERVE` and moves the status. Nothing inside the lock takes a second pool connection. If contention persists after the bounded retries, the API returns a retryable `503 SERVICE_UNAVAILABLE`. This releases the idempotency key, so the client can retry with the same key. The 50-way concurrency test produces exactly 10 reservations, 40 `INSUFFICIENT_BALANCE` and 0 errors.
+- **Approvals.** Approvers must be in the payout's merchant org, hold `payout.approve`, and have an MFA-verified session (`MFA_ENROLLMENT_REQUIRED` otherwise). The maker cannot approve their own payout but may cancel it (`reject`, code `CANCELLED_BY_MAKER`). Votes are append-only (DB trigger). Without any approval policy, every payout needs one approver (fail-safe). The seed installs the §6 tiers at SYSTEM level.
+- **Beneficiaries.** The account number is encrypted with `beneficiary:<merchantId>` as associated data (a ciphertext cannot be replayed under another merchant), masked, and blind-indexed (`beneficiary-account`). Payouts above **₹25,000** need a `VERIFIED` beneficiary. Verification uses the primary payout provider's `verifyBeneficiary` plus a token-based name match (threshold 70). Penny-drop charges are **not** yet priced or ledgered (Phase 8, with provider statements). Unblocking is not exposed yet.
+- **Bank return:** `PAYOUT_REVERSAL` (not the generic `REVERSAL` mirror) returns the principal to AVAILABLE and keeps the fee unless the pricing snapshot says `refund_fee`. The settle journal id is recorded in the reversal's metadata.
+- **Status mismatches** (we hold `FAILED` and the provider says `SUCCESS`, or vice versa) are never auto-corrected. They are flagged on the payout with a CRITICAL audit entry for reconciliation (Phase 8).
+- **Bulk:** CSVs (≤ 1,000 rows, ≤ 1 MB) are validated synchronously at upload and **never stored**. Account numbers go straight into encrypted beneficiaries, so beneficiaries are created even if the batch is later discarded. A batch with any invalid row is `VALIDATION_FAILED`, and the corrected file must be uploaded again. Confirming needs an MFA session. The confirmer becomes the maker of every row. Each row's tier is the stricter of the row amount and the batch total. Rows are created 50 per tick with key `bulk_<batch>_<row>`, and processing stops at the first `INSUFFICIENT_BALANCE`. Checkers can approve or reject every row they may vote on in one action.
+- **Risk pre-checks** (velocity, beneficiary fan-out, `MANUAL_REVIEW` before send) arrive in Phase 10. The `MANUAL_REVIEW → QUEUED/REJECTED` transitions already exist for them.
+- **Merchant webhooks:** `payout.created/queued/processing/success/failed/rejected/reversed` events are recorded with an outbox row in the same transaction. Delivery is Phase 7.

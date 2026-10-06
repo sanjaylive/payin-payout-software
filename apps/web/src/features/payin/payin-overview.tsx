@@ -17,7 +17,7 @@ import { type ColumnDatum, ColumnChart } from './column-chart';
 const IST_MS = 330 * 60_000;
 
 /** Server buckets are IST wall-clock times serialised as UTC; build the same keys to fill gaps. */
-function buckets(range: DateRangeValue, unit: 'hour' | 'day', stats: PaymentStats): (ColumnDatum & { key: string })[] {
+export function buckets(range: DateRangeValue, unit: 'hour' | 'day', stats: PaymentStats): (ColumnDatum & { key: string })[] {
   const byKey = new Map(stats.series.map((s) => [new Date(s.bucket_start).toISOString(), s]));
   const step = unit === 'hour' ? 3_600_000 : 86_400_000;
   const startIst = new Date(range.from.getTime() + IST_MS);
@@ -45,17 +45,22 @@ function buckets(range: DateRangeValue, unit: 'hour' | 'day', stats: PaymentStat
   return out;
 }
 
-const compactInr = (minor: number) => (minor >= 1e9 ? `₹${(minor / 1e9).toFixed(1)}Cr` : minor >= 1e7 ? `₹${(minor / 1e7).toFixed(1)}L` : minor >= 1e5 ? `₹${(minor / 1e5).toFixed(1)}K` : formatMinor(BigInt(Math.round(minor))));
+export const compactInr = (minor: number) => (minor >= 1e9 ? `₹${(minor / 1e9).toFixed(1)}Cr` : minor >= 1e7 ? `₹${(minor / 1e7).toFixed(1)}L` : minor >= 1e5 ? `₹${(minor / 1e5).toFixed(1)}K` : formatMinor(BigInt(Math.round(minor))));
 
-export function usePaymentStats(range: DateRangeValue, merchantId?: string, enabled = true) {
+/** Bucketed stats from `/v1/payments/stats` or `/v1/payouts/stats` (same shape). */
+export function useTxnStats(path: '/v1/payments/stats' | '/v1/payouts/stats', range: DateRangeValue, merchantId?: string, enabled = true) {
   const unit: 'hour' | 'day' = range.to.getTime() - range.from.getTime() <= 2 * 86_400_000 ? 'hour' : 'day';
   const query = useQuery({
-    queryKey: ['payment-stats', range.from.toISOString(), range.to.toISOString(), unit, merchantId],
-    queryFn: () => api.get<PaymentStats>('/v1/payments/stats', { from: range.from.toISOString(), to: range.to.toISOString(), bucket: unit, merchant_id: merchantId }),
+    queryKey: [path, range.from.toISOString(), range.to.toISOString(), unit, merchantId],
+    queryFn: () => api.get<PaymentStats & { totals: { pending_approval_count?: number } }>(path, { from: range.from.toISOString(), to: range.to.toISOString(), bucket: unit, merchant_id: merchantId }),
     refetchInterval: 30_000,
     enabled,
   });
   return { ...query, unit };
+}
+
+export function usePaymentStats(range: DateRangeValue, merchantId?: string, enabled = true) {
+  return useTxnStats('/v1/payments/stats', range, merchantId, enabled);
 }
 
 export function PayinStatCards({ range, merchantId }: { range: DateRangeValue; merchantId?: string }) {

@@ -1,6 +1,6 @@
 /* eslint-disable no-console */
 /**
- * Demo payins for Sharma Electronics (development only). Created through the real services —
+ * Demo payins and payouts for Sharma Electronics (development only). Created through the real services —
  * pricing snapshot, provider call, signed sandbox callback, ledger capture, refund — so the demo
  * data is indistinguishable from real flow output. Idempotent: skipped if demo orders exist.
  *
@@ -11,7 +11,7 @@ import path from 'node:path';
 import { NestFactory } from '@nestjs/core';
 import { PERMISSIONS, type PermissionKey } from '@pay2all/auth';
 import type { PrismaClient } from '@pay2all/database';
-import { createPaymentSchema, createRefundSchema } from '@pay2all/validation';
+import { createPaymentSchema, createPayoutSchema, createRefundSchema } from '@pay2all/validation';
 import { config as loadDotenv } from 'dotenv';
 import { AppModule } from '../app.module';
 import { ApiConfig } from '../config/api-config';
@@ -20,6 +20,8 @@ import type { Actor } from '../modules/auth/actor';
 import { PaymentsService } from '../modules/payments/payments.service';
 import { RefundsService } from '../modules/payments/refunds.service';
 import { SandboxService } from '../modules/provider-events/sandbox.service';
+import { BeneficiariesService } from '../modules/payouts/beneficiaries.service';
+import { PayoutsService } from '../modules/payouts/payouts.service';
 
 // Amounts script the sandbox: .13 → declined, .50 → stays pending; everything else succeeds.
 const DEMO: { amount: string; method: 'UPI_QR' | 'UPI_INTENT' | 'PAYMENT_LINK'; customer: string; outcome: 'SUCCESS' | 'FAILED' | 'OPEN'; refund?: string }[] = [
@@ -41,10 +43,6 @@ async function main() {
   try {
     const prisma = app.get<PrismaClient>(PRISMA);
     const sharma = await prisma.organization.findUniqueOrThrow({ where: { slug: 'sharma-electronics' } });
-    if (await prisma.payment.count({ where: { merchantId: sharma.id, merchantOrderId: { startsWith: 'DEMO-' } } })) {
-      console.log('  Demo payments already present — skipped.');
-      return;
-    }
     const owner = await prisma.user.findUniqueOrThrow({ where: { email: 'owner@sharma-electronics.local' } });
     const actor: Actor = {
       kind: 'user',
@@ -57,6 +55,24 @@ async function main() {
       permissions: new Set(Object.keys(PERMISSIONS) as PermissionKey[]),
       restricted: false,
     };
+    if (await prisma.payment.count({ where: { merchantId: sharma.id, merchantOrderId: { startsWith: 'DEMO-' } } })) {
+      console.log('  Demo payments already present — skipped.');
+    } else {
+      await seedPayins(app, actor);
+    }
+    if (await prisma.payout.count({ where: { merchantId: sharma.id, merchantOrderId: { startsWith: 'DEMO-PO-' } } })) {
+      console.log('  Demo payouts already present — skipped.');
+    } else {
+      await seedPayouts(app, actor);
+    }
+  } finally {
+    await app.close();
+  }
+}
+
+type App = Awaited<ReturnType<typeof NestFactory.createApplicationContext>>;
+
+async function seedPayins(app: App, actor: Actor) {
     const payments = app.get(PaymentsService);
     const refunds = app.get(RefundsService);
     const sandbox = app.get(SandboxService, { strict: false });
@@ -73,9 +89,24 @@ async function main() {
       }
     }
     console.log(`  Demo payments: ${DEMO.length} for Sharma Electronics (successes, failures, one open, one refund).`);
-  } finally {
-    await app.close();
+}
+
+/** Payouts are queued here; the jobs process sends them (run `pnpm dev:jobs`). */
+async function seedPayouts(app: App, actor: Actor) {
+  const beneficiaries = app.get(BeneficiariesService);
+  const payouts = app.get(PayoutsService);
+  const vendor = await beneficiaries.create(actor, { name: 'Shree Ganesh Traders', type: 'BUSINESS', account_number: '50100876543219', ifsc: 'HDFC0001234' }).catch(() => null);
+  if (vendor) await beneficiaries.verify(actor, vendor.beneficiary_id);
+  const list: { order: string; amount: string; mode: 'IMPS' | 'UPI'; beneficiary: Record<string, string>; purpose: 'VENDOR_PAYMENT' | 'SALARY' | 'REFUND_PAYOUT' }[] = [
+    { order: 'DEMO-PO-0001', amount: '4500.00', mode: 'IMPS', beneficiary: vendor ? { beneficiary_id: vendor.beneficiary_id } : { name: 'Shree Ganesh Traders', account_number: '50100876543219', ifsc: 'HDFC0001234' }, purpose: 'VENDOR_PAYMENT' },
+    { order: 'DEMO-PO-0002', amount: '1200.00', mode: 'UPI', beneficiary: { name: 'Neha Kapoor', upi_id: 'neha.kapoor@okicici' }, purpose: 'REFUND_PAYOUT' },
+    { order: 'DEMO-PO-0003', amount: '22000.00', mode: 'IMPS', beneficiary: { name: 'Ravi Kumar', account_number: '30211234567892', ifsc: 'SBIN0004321' }, purpose: 'SALARY' },
+  ];
+  for (const [i, d] of list.entries()) {
+    const raw = { merchant_order_id: d.order, amount: d.amount, mode: d.mode, purpose: d.purpose, beneficiary: d.beneficiary };
+    await payouts.create(actor, createPayoutSchema.parse(raw), raw, `seed-demo-payout-${i + 1}`).catch((err: unknown) => console.warn(`  Payout ${d.order} skipped: ${err instanceof Error ? err.message : String(err)}`));
   }
+  console.log('  Demo payouts: 2 queued (sent by the jobs process), 1 awaiting approval by a second team member.');
 }
 
 main().catch((err: unknown) => {
