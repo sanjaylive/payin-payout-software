@@ -147,6 +147,9 @@ importers:
       supertest:
         specifier: ^7.1.4
         version: 7.3.1
+      tsx:
+        specifier: ^4.20.6
+        version: 4.23.15
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
@@ -231,6 +234,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@pay2all/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
       '@pay2all/config':
         specifier: workspace:*
         version: link:../../packages/config

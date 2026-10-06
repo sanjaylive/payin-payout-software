@@ -19,7 +19,7 @@
     "prisma:validate": "pnpm --filter @pay2all/database prisma:validate",
     "prisma:migrate": "pnpm --filter @pay2all/database prisma:migrate",
     "prisma:deploy": "pnpm --filter @pay2all/database prisma:deploy",
-    "db:seed": "turbo run build --filter=@pay2all/database... --output-logs=errors-only && pnpm --filter @pay2all/database db:seed"
+    "db:seed": "turbo run build --filter=@pay2all/database... --filter=@pay2all/ledger... --output-logs=errors-only && pnpm --filter @pay2all/database db:seed && pnpm --filter @pay2all/api seed:demo-ledger"
   },
   "devDependencies": {
     "prettier": "^3.6.2",

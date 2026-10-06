@@ -81,7 +81,7 @@ packages/
   auth/        Password hashing (argon2id), AES-256-GCM field encryption, token helpers,
                permission catalog + system role definitions (single source of truth)
   database/    Prisma 7 schema, migrations, generated client, seed
-  ledger/      Money helpers + double-entry posting domain (Phase 3)
+  ledger/      Money helpers (browser-safe) + `/engine`: pure double-entry posting engine behind a LedgerStore port
   events/      Event envelope, topic registry, outbox/consumer contracts (Phase 7)
   providers/   Provider interfaces + mock/provider-a/provider-b adapters (Phase 4)
   ui/          shadcn/ui-based component library and Pay2All design tokens
@@ -89,7 +89,7 @@ docs/          Architecture documents (this folder)
 infra/         Docker/infra support files
 ```
 
-**Dependency rule:** `apps/*` may depend on `packages/*`, and packages never depend on apps. `database` is the only package that talks to PostgreSQL. `ledger` exposes pure posting logic plus a repository that accepts a Prisma transaction client, so a ledger posting always runs **inside the caller's transaction**.
+**Dependency rule:** `apps/*` may depend on `packages/*`, and packages never depend on apps. `database` is the only package that talks to PostgreSQL. `ledger` exposes the pure posting engine behind a `LedgerStore` port. The API implements the port with the caller's Prisma transaction client, so a ledger posting always runs **inside the caller's transaction** (see LEDGER.md §10).
 
 ## 4. Modular monolith (apps/api)
 

@@ -97,3 +97,39 @@ export function divRound(numerator: bigint, denominator: bigint, mode: RoundingM
 /** Serialize for JSON APIs: minor units as a decimal string (bigint is not JSON-safe). */
 export const minorToJson = (minor: bigint | null | undefined): string | null =>
   minor === null || minor === undefined ? null : minor.toString();
+
+// ---- Fee and tax math (docs/LEDGER.md §2) -------------------------------------------------------
+
+/** Rates are percentages scaled by 10^6: 0.18 % → 180_000n, 18 % → 18_000_000n. */
+export const RATE_SCALE = 1_000_000n;
+
+/** Parse a percentage string ("0.18", "18", "2.5") into rate micros without floating point. */
+export function parseRateMicros(percent: string): bigint {
+  const match = /^(\d{1,3})(?:\.(\d{1,6}))?$/.exec(percent.trim());
+  if (!match) throw new MoneyError('Rate must be a percentage with up to 6 decimals');
+  const micros = BigInt(match[1]!) * RATE_SCALE + BigInt((match[2] ?? '').padEnd(6, '0') || '0');
+  if (micros > 100n * RATE_SCALE) throw new MoneyError('Rate cannot exceed 100%');
+  return micros;
+}
+
+/** amount × rate%, rounded once to the paise (HALF_UP by default). */
+export function percentOf(amountMinor: bigint, rateMicros: bigint, mode: RoundingMode = 'HALF_UP'): bigint {
+  if (amountMinor < 0n || rateMicros < 0n) throw new MoneyError('percentOf expects non-negative inputs');
+  return divRound(amountMinor * rateMicros, 100n * RATE_SCALE, mode);
+}
+
+/** GST (or any tax) on an already-rounded fee. */
+export function taxOn(feeMinor: bigint, taxRateMicros: bigint): bigint {
+  return percentOf(feeMinor, taxRateMicros, 'HALF_UP');
+}
+
+export function clamp(valueMinor: bigint, minMinor?: bigint | null, maxMinor?: bigint | null): bigint {
+  let v = valueMinor;
+  if (minMinor !== null && minMinor !== undefined && v < minMinor) v = minMinor;
+  if (maxMinor !== null && maxMinor !== undefined && v > maxMinor) v = maxMinor;
+  return v;
+}
+
+export function sumMinor(values: readonly bigint[]): bigint {
+  return values.reduce((a, b) => a + b, 0n);
+}

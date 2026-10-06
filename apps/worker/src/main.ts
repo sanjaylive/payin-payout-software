@@ -5,11 +5,14 @@ import { loadEnv, workerEnvSchema } from '@pay2all/config';
 import { createPrismaClient } from '@pay2all/database';
 import { createLogger } from '@pay2all/logger';
 import Redis from 'ioredis';
+import { balanceSnapshotJob, ledgerVerificationJob } from './jobs/ledger-jobs';
+import { Scheduler } from './jobs/scheduler';
 
 /**
  * Pay2All worker process.
  *
- * Phase 1: process lifecycle only — datastore connections, health endpoint, graceful shutdown.
+ * Phase 1: process lifecycle — datastore connections, health endpoint, graceful shutdown.
+ * Phase 3: scheduled ledger jobs (hourly balance verification, daily 00:00 IST snapshots).
  * Phase 7 registers the outbox relay and Kafka consumers here (docs/ARCHITECTURE.md §8).
  */
 async function main(): Promise<void> {
@@ -35,6 +38,9 @@ async function main(): Promise<void> {
     }
     res.writeHead(404).end();
   });
+  const scheduler = new Scheduler(redis, logger, [ledgerVerificationJob(prisma, logger), balanceSnapshotJob(prisma)]);
+  scheduler.start();
+
   server.listen(env.WORKER_HEALTH_PORT, () => logger.info({ port: env.WORKER_HEALTH_PORT }, 'Worker started'));
 
   let shuttingDown = false;
@@ -43,8 +49,11 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info({ signal }, 'Worker shutting down');
     server.close();
-    // Consumers (Phase 7) must finish their in-flight batch and commit offsets before this resolves.
-    void Promise.allSettled([prisma.$disconnect(), redis.quit()]).finally(() => process.exit(0));
+    // Let in-flight jobs finish; consumers (Phase 7) will also commit offsets here.
+    void scheduler
+      .stop()
+      .then(() => Promise.allSettled([prisma.$disconnect(), redis.quit()]))
+      .finally(() => process.exit(0));
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));

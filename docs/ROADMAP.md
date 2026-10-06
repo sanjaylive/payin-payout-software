@@ -51,16 +51,17 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] MFA recovery codes and admin MFA reset
 - [x] Admin UI: merchants, pending KYC queue, merchant 360 with review actions, limits & policies, sales leads; reseller merchant views; merchant compliance pages
 
-## Phase 3 — Ledger ⬜
+## Phase 3 — Ledger ✅
 
-- [ ] Money helpers (`packages/ledger`): parse/format, fee math, rounding, currency validation
-- [ ] Chart of accounts provisioning per merchant and platform
-- [ ] `postJournal` with balance validation, idempotency key, locked running balances, `balance_after`
-- [ ] DB guards: immutability triggers, deferred balanced-journal constraint trigger, CHECK non-negative
-- [ ] Balance service (available, pending, unsettled, reserved, lien)
-- [ ] Reversal journals, maker-checker manual adjustments
-- [ ] Balance verification job + daily `BalanceSnapshot`
-- [ ] Tests: Debit = Credit property tests, concurrent postings, duplicate idempotency key, reversal
+- [x] Money helpers (`packages/ledger`): parse/format, fee math (HALF_UP per component), rate micros, clamp, currency registry
+- [x] Chart of accounts derived from structured account codes (merchant buckets, reseller commission, platform accounts)
+- [x] `postJournal`: validation, journal-type rules, single-merchant invariant, idempotency key + lines hash, sorted row locks, non-negative checks, running `balance_after`
+- [x] DB guards: immutability triggers, deferred balanced-journal constraint trigger, currency match, immutable account identity, CHECK non-negative
+- [x] Balance service (available, pending, unsettled, reserved, lien, settled to date, receivable) and platform summary
+- [x] Reversal journals (once, never a reversal of a reversal, never into negative) and maker-checker manual adjustments
+- [x] Balance verification (API on demand + hourly worker job; drift freezes payouts) and daily 00:00 IST `BalanceSnapshot`
+- [x] Tests: randomized Debit = Credit / balance invariants, concurrent reserves, duplicate keys, reversal, adjustments, tenancy
+- [x] UI: merchant Balance and Ledger statement; admin Accounts, Journals (with reversal), Adjustments, ledger health; live balance cards
 
 ## Phase 4 — Providers ⬜
 
@@ -175,3 +176,26 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - Screening and bank verification are recorded manually until provider integrations land (Phase 4+).
 - Post-approval profile changes, which need a change-request workflow, are deferred. Bank-account additions after approval are allowed but stay unusable until compliance verifies them, and owners are emailed.
 - The browser walkthrough is still pending (the Chrome extension was not connected). Verification was done at the HTTP and API level.
+
+### Phase 3 — Ledger (completed 2026-10-06)
+
+**Delivered:**
+- **Engine:** a pure posting engine in `@pay2all/ledger/engine`, with the Prisma store and retrying transaction runner in the API.
+- **Migrations:** two new ones, the ledger schema with its DB guards and the adjustment policy reference data.
+- **Ledger module:** balances, statements, journals, reversals, maker-checker adjustments, verification and trial balance.
+- **Worker:** a scheduler running hourly verification and daily snapshots.
+- **UI:** the merchant and admin ledger screens.
+- **Seed:** demo ledger history posted through the engine.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- Ledger package: 19 tests, including 300 randomized postings.
+- API: 78 integration tests (13 new ledger tests).
+- Worker: unit tests for the IST date math.
+- **Spec example:** the payout example posts exactly. The merchant is debited ₹10,005.90; clearing is credited ₹10,000, fees ₹5 and GST ₹0.90.
+- **Dev ledger:** zero drift and a zero trial balance. Fee and GST totals match a hand calculation, and the merchant statement reconciles line by line.
+- **Mutation:** removing row locks causes a double spend that the concurrency test catches.
+
+**Notes:**
+- Demo journals reference `demo_pay_*` and `demo_pout_*` source ids. The Payin and Payout phases will seed the matching transactions.
+- Refund, chargeback and settlement *flows* arrive with their phases. Their posting recipes and type rules already exist in the engine.

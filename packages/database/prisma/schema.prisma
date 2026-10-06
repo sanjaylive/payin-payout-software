@@ -6,6 +6,7 @@
 // Phase 1 scope: identity & access, sessions, MFA, audit, outbox, notifications.
 // Phase 2 scope: merchants, onboarding/KYC, documents, bank accounts, compliance reviews, limits,
 // approval policies, sales leads, MFA recovery codes.
+// Phase 3 scope: double-entry ledger (accounts, journals, entries, snapshots, adjustments).
 // Later phases add their models in their own migrations (see docs/ROADMAP.md).
 
 generator client {
@@ -460,6 +461,8 @@ enum LimitLevel {
 enum ServiceType {
   PAYIN
   PAYOUT
+  /// Manual ledger adjustments (maker-checker policy only).
+  ADJUSTMENT
 }
 
 enum LeadStatus {
@@ -720,4 +723,219 @@ model SalesLead {
   @@index([assignedSalesUserId, createdAt(sort: Desc)])
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("sales_leads")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 3 — Double-entry ledger (docs/LEDGER.md)
+// ---------------------------------------------------------------------------------------------
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  REVENUE
+  EXPENSE
+  EQUITY
+  CLEARING
+}
+
+enum EntryDirection {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerOwnerType {
+  PLATFORM
+  MERCHANT
+  RESELLER
+}
+
+enum LedgerBucket {
+  AVAILABLE
+  PENDING
+  UNSETTLED
+  SETTLED
+  RESERVED
+  LIEN
+  RECEIVABLE
+  COMMISSION_PAYABLE
+}
+
+enum JournalType {
+  PAYIN_CAPTURE
+  PROVIDER_SETTLEMENT
+  SETTLEMENT
+  HOLD_RELEASE
+  REFUND
+  REFUND_REVERSAL
+  CHARGEBACK_LIEN
+  CHARGEBACK_DEBIT
+  CHARGEBACK_RELEASE
+  PAYOUT_RESERVE
+  PAYOUT_SETTLE
+  PAYOUT_RELEASE
+  PAYOUT_REVERSAL
+  ADJUSTMENT_CREDIT
+  ADJUSTMENT_DEBIT
+  LIEN_PLACE
+  LIEN_RELEASE
+  COMMISSION_ACCRUAL
+  PROVIDER_CHARGE
+  REVERSAL
+}
+
+enum JournalSourceType {
+  PAYMENT
+  PAYOUT
+  REFUND
+  SETTLEMENT
+  CHARGEBACK
+  ADJUSTMENT
+  PROVIDER
+  RISK
+  JOURNAL
+  SYSTEM
+}
+
+enum AdjustmentDirection {
+  CREDIT
+  DEBIT
+}
+
+enum AdjustmentStatus {
+  PENDING_APPROVAL
+  POSTED
+  REJECTED
+  CANCELLED
+}
+
+/// Ledger account. `balanceMinor` is maintained (and row-locked) only for merchant/reseller accounts;
+/// hot platform accounts keep NULL and are aggregated from entries (docs/LEDGER.md §6).
+model LedgerAccount {
+  id            String            @id
+  code          String            @unique @db.VarChar(120)
+  name          String            @db.VarChar(160)
+  type          LedgerAccountType
+  normalBalance EntryDirection    @map("normal_balance")
+  ownerType     LedgerOwnerType   @map("owner_type")
+  ownerId       String?           @map("owner_id")
+  bucket        LedgerBucket?
+  currency      String            @db.Char(3)
+  allowNegative Boolean           @default(false) @map("allow_negative")
+  balanceMinor  BigInt?           @map("balance_minor")
+  version       Int               @default(0)
+  metadata      Json              @default("{}")
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  entries   LedgerEntry[]
+  snapshots BalanceSnapshot[]
+
+  @@index([ownerType, ownerId])
+  @@index([type, createdAt])
+  @@map("ledger_accounts")
+}
+
+/// Immutable journal header. `idempotencyKey` makes every posting exactly-once.
+model LedgerJournal {
+  id                String            @id
+  type              JournalType
+  idempotencyKey    String            @unique @map("idempotency_key") @db.VarChar(160)
+  /// sha256 of the canonical (type, source, lines) — a replay with different lines is a bug.
+  linesHash         String            @map("lines_hash") @db.Char(64)
+  sourceType        JournalSourceType @map("source_type")
+  sourceId          String            @map("source_id") @db.VarChar(60)
+  reversesJournalId String?           @unique @map("reverses_journal_id")
+  description       String?           @db.VarChar(300)
+  metadata          Json              @default("{}")
+  effectiveAt       DateTime          @map("effective_at") @db.Timestamptz(3)
+  postedAt          DateTime          @default(now()) @map("posted_at") @db.Timestamptz(3)
+  createdById       String?           @map("created_by_id")
+  requestId         String?           @map("request_id") @db.VarChar(40)
+
+  entries LedgerEntry[]
+
+  @@index([sourceType, sourceId])
+  @@index([type, postedAt(sort: Desc)])
+  @@index([postedAt(sort: Desc), id(sort: Desc)])
+  @@map("ledger_journals")
+}
+
+/// Immutable journal line. amount > 0; sign comes from direction.
+model LedgerEntry {
+  id                String         @id
+  journalId         String         @map("journal_id")
+  accountId         String         @map("account_id")
+  direction         EntryDirection
+  amountMinor       BigInt         @map("amount_minor")
+  currency          String         @db.Char(3)
+  /// Running balance of the account after this line (maintained accounts only).
+  balanceAfterMinor BigInt?        @map("balance_after_minor")
+  memo              String?        @db.VarChar(200)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  journal LedgerJournal @relation(fields: [journalId], references: [id], onDelete: Restrict)
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@index([accountId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([journalId])
+  @@map("ledger_entries")
+}
+
+/// Daily closing balance per account (00:00 IST cut-off) for statements and fast history.
+model BalanceSnapshot {
+  id           String   @id
+  accountId    String   @map("account_id")
+  snapshotDate DateTime @map("snapshot_date") @db.Date
+  balanceMinor BigInt   @map("balance_minor")
+  debitsMinor  BigInt   @map("debits_minor")
+  creditsMinor BigInt   @map("credits_minor")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  account LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+
+  @@unique([accountId, snapshotDate])
+  @@index([snapshotDate])
+  @@map("balance_snapshots")
+}
+
+/// Manual balance adjustment with maker-checker. Admins never edit balances directly.
+model LedgerAdjustment {
+  id                String              @id
+  merchantId        String              @map("merchant_id")
+  direction         AdjustmentDirection
+  amountMinor       BigInt              @map("amount_minor")
+  currency          String              @default("INR") @db.Char(3)
+  reason            String              @db.VarChar(500)
+  reference         String              @db.VarChar(120)
+  supportingNote    String?             @map("supporting_note") @db.VarChar(2000)
+  status            AdjustmentStatus    @default(PENDING_APPROVAL)
+  approvalsRequired Int                 @map("approvals_required")
+  makerId           String              @map("maker_id")
+  journalId         String?             @unique @map("journal_id")
+  rejectedById      String?             @map("rejected_by_id")
+  rejectionReason   String?             @map("rejection_reason") @db.VarChar(500)
+  postedAt          DateTime?           @map("posted_at") @db.Timestamptz(3)
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  approvals LedgerAdjustmentApproval[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@map("ledger_adjustments")
+}
+
+model LedgerAdjustmentApproval {
+  id           String   @id
+  adjustmentId String   @map("adjustment_id")
+  approverId   String   @map("approver_id")
+  comment      String?  @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  adjustment LedgerAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Restrict)
+
+  @@unique([adjustmentId, approverId])
+  @@map("ledger_adjustment_approvals")
 }

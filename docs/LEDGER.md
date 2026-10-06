@@ -408,3 +408,35 @@ Invariants that hold at all times (asserted in tests and by the verification job
 | Refund | Partial refunds summing to the payment amount succeed; one more paise is rejected. Concurrent refunds never exceed the payment. |
 | Reversal journal | `reverseJournal` mirrors exactly, a second reversal is refused, and reversing spent funds fails with insufficient balance. |
 | Balance verification | A deliberately corrupted `balance_minor` (test-only, trigger disabled in the fixture) is detected by the verification job. |
+
+## 10. Implementation notes (Phase 3)
+
+| Concern | Where it lives |
+| --- | --- |
+| Money helpers (`parseMajorToMinor`, `percentOf`, `taxOn`, `clamp`, `parseRateMicros`) | `@pay2all/ledger` (browser-safe root export) |
+| Posting engine: chart of accounts, journal-type rules, validation, lines hash, `postJournal`, `reverseJournal` | `@pay2all/ledger/engine` (Node-only subpath). It is pure and talks to storage through the `LedgerStore` port. |
+| Prisma `LedgerStore`: sorted `FOR UPDATE`, `ON CONFLICT DO NOTHING` journal insert, balance updates | `apps/api/src/modules/ledger/prisma-ledger-store.ts` |
+| Transaction runner (READ COMMITTED, `lock_timeout = 2s`, jittered retry on `40P01/40001/55P03`) | `apps/api/src/modules/ledger/ledger-transaction.ts` |
+| DB guards: immutability, deferred balance check, entry/account currency match, account identity immutable, non-negative CHECK, one reversal per journal | migration `…_ledger` |
+| Shared SQL: `ledger_account_balances(cutoff)`, `ledger_verify_balances()` | migration `…_ledger`. The API (`POST /v1/ledger/verify`) and the worker (hourly) run the same SQL. |
+| Daily snapshots at 00:00 IST, drift detection that freezes payouts | `apps/worker/src/jobs/ledger-jobs.ts`. A Redis-claimed scheduler ensures one run per key across replicas. |
+
+**Decisions made during implementation:**
+
+- **Posting code lives in the API.** The Prisma store sits in the API because a store inside `packages/ledger` would form a workspace dependency cycle (`ledger → database → validation → ledger`). The worker gets its own store when Phase 7 needs to post.
+- **Platform permission.** `ledger.platform.read` is a PLATFORM-only permission for platform-wide totals, accounts and integrity checks. Merchants see only their own accounts, and only their own lines of any journal.
+- **Adjustment approval policy.** Adjustments use the approval-policy table with `service = ADJUSTMENT`, seeded at the SYSTEM level as one approver for every amount. With no policy at all the default is one approver, so the system fails safe.
+- **Atomic approval.** Approval and posting happen in one transaction. A debit adjustment that would overdraw rolls back the approval itself, and the adjustment stays pending.
+- **Reversal idempotency.** Reversal journals use the key `reversal:<journal_id>`, so a repeated request returns the same reversal.
+- **Zero-amount lines are invalid.** Callers omit zero fee or GST lines; for example, a tiny payment whose fee rounds to zero simply has no fee line.
+- **Demo history goes through the engine.** `pnpm db:seed` posts the demo history through the real engine (`apps/api/scripts/seed-demo-ledger.ts`), including the spec payout example. The seed is idempotent.
+
+**Verified by tests:**
+
+- **Unit:** 300 randomized postings keep a zero trial balance, and stored balances always equal Σ entries.
+- **Integration:**
+  - 15 concurrent ₹100 reserves against ₹500 → exactly 5 succeed.
+  - Raw SQL cannot commit an unbalanced journal.
+  - Entries and journals are immutable.
+  - A corrupted balance is detected and freezes payouts.
+- **Mutation check:** removing `FOR UPDATE` makes all 15 reserves succeed (a double spend), and the test fails as intended.

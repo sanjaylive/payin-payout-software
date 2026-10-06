@@ -57,7 +57,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     description: 'Ledger, settlements, reconciliation and adjustments',
     permissions: [
       'organization.read', 'audit.read', 'merchant.read', 'payin.read', 'payout.read',
-      'ledger.read', 'ledger.adjust', 'ledger.adjust.approve', 'settlement.read',
+      'ledger.read', 'ledger.platform.read', 'ledger.adjust', 'ledger.adjust.approve', 'settlement.read',
       'settlement.process', 'settlement.hold', 'reconciliation.read', 'reconciliation.manage',
       'pricing.read', 'provider.read', 'report.read', 'report.export',
     ],
@@ -72,7 +72,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'organization.read', 'merchant.read', 'merchant.update', 'payin.read', 'payin.refund',
       'payout.read', 'payout.review', 'beneficiary.read', 'provider.read', 'provider.manage',
       'routing.manage', 'webhook.read', 'webhook.manage', 'limit.read', 'limit.manage',
-      'risk.read', 'risk.review', 'reconciliation.read', 'settlement.read', 'ledger.read',
+      'risk.read', 'risk.review', 'reconciliation.read', 'settlement.read', 'ledger.read', 'ledger.platform.read',
       'report.read', 'report.export',
     ],
   },

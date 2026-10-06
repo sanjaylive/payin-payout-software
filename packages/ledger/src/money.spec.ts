@@ -38,3 +38,27 @@ describe('divRound', () => {
     expect(divRound(19n, 10n, 'DOWN')).toBe(1n);
   });
 });
+
+describe('fee and tax math', () => {
+  it('reproduces the LEDGER.md worked example exactly', async () => {
+    const { parseRateMicros, percentOf, taxOn } = await import('./money.js');
+    // ₹1,000.00 at 0.18 % with GST 18 % → fee 180 paise, GST 32.4 → 32 paise, net 99788.
+    const fee = percentOf(100000n, parseRateMicros('0.18'));
+    const gst = taxOn(fee, parseRateMicros('18'));
+    expect(fee).toBe(180n);
+    expect(gst).toBe(32n);
+    expect(100000n - fee - gst).toBe(99788n);
+    // Payout example: ₹5 fee + 18 % GST = 90 paise.
+    expect(taxOn(500n, parseRateMicros('18'))).toBe(90n);
+  });
+
+  it('rounds half up once per component and clamps', async () => {
+    const { clamp, parseRateMicros, percentOf } = await import('./money.js');
+    expect(percentOf(250n, parseRateMicros('1'))).toBe(3n); // 2.5 → 3
+    expect(percentOf(249n, parseRateMicros('1'))).toBe(2n); // 2.49 → 2
+    expect(clamp(5n, 10n, 100n)).toBe(10n);
+    expect(clamp(500n, 10n, 100n)).toBe(100n);
+    expect(() => parseRateMicros('101')).toThrow();
+    expect(() => parseRateMicros('0.1234567')).toThrow();
+  });
+});

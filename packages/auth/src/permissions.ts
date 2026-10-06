@@ -50,6 +50,7 @@ export const PERMISSIONS = {
   'beneficiary.manage': { description: 'Create and block beneficiaries', scopes: ['API_PARTNER', 'MERCHANT'] },
 
   'ledger.read': { description: 'View balances, ledger accounts and journals', scopes: ALL },
+  'ledger.platform.read': { description: 'View platform-wide ledger totals, accounts and integrity checks', scopes: P },
   'ledger.adjust': { description: 'Create manual adjustment requests (maker)', scopes: P },
   'ledger.adjust.approve': { description: 'Approve manual adjustments (checker)', scopes: P },
 

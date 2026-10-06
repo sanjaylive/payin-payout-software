@@ -9,7 +9,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run --project unit",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration",
+    "seed:demo-ledger": "tsx scripts/seed-demo-ledger.ts"
   },
   "dependencies": {
     "@nestjs/common": "~11.2.7",
@@ -58,6 +59,7 @@
     "unplugin-swc": "^1.5.7",
     "vitest": "^3.2.7",
     "@types/pg": "^8.15.5",
-    "@types/multer": "^2.0.0"
+    "@types/multer": "^2.0.0",
+    "tsx": "^4.20.6"
   }
 }

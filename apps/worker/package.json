@@ -17,7 +17,8 @@
     "@pay2all/logger": "workspace:*",
     "dotenv": "^17.2.3",
     "ioredis": "^5.11.1",
-    "pino": "^10.4.0"
+    "pino": "^10.4.0",
+    "@pay2all/auth": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

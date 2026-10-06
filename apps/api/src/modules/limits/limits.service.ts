@@ -169,24 +169,27 @@ export class LimitsService {
 
   // ---- Approval policies -------------------------------------------------------------------------
 
-  private async policyFor(subject: Subject): Promise<ApprovalPolicyShape | null> {
-    const row = await this.prisma.approvalPolicy.findFirst({ where: { level: subject.level, subjectId: subject.subjectId, service: 'PAYOUT' } });
+  private async policyFor(subject: Subject, service: ServiceType = 'PAYOUT'): Promise<ApprovalPolicyShape | null> {
+    const row = await this.prisma.approvalPolicy.findFirst({ where: { level: subject.level, subjectId: subject.subjectId, service } });
     return row ? { makerCheckerEnabled: row.makerCheckerEnabled, tiers: parseTiers(row.tiers) } : null;
   }
 
-  private async effectivePolicy(chain: Subject[]): Promise<{ policy: ApprovalPolicyShape; source: LimitLevel } | null> {
+  private async effectivePolicy(chain: Subject[], service: ServiceType = 'PAYOUT'): Promise<{ policy: ApprovalPolicyShape; source: LimitLevel } | null> {
     for (const s of chain) {
-      const p = await this.policyFor(s);
+      const p = await this.policyFor(s, service);
       if (p) return { policy: p, source: s.level };
     }
     return null;
   }
 
-  /** Used by Payout (Phase 6) to decide how many checkers a payout needs. */
-  async approvalsRequiredFor(merchantId: string, amountMinor: bigint): Promise<number> {
+  /**
+   * How many independent checkers an operation needs (payouts in Phase 6, ledger adjustments now).
+   * With no policy configured anywhere, money-moving operations default to ONE approver — fail safe.
+   */
+  async approvalsRequiredFor(merchantId: string, amountMinor: bigint, service: ServiceType = 'PAYOUT'): Promise<number> {
     const subject: Subject = { level: 'MERCHANT', subjectId: merchantId };
-    const effective = await this.effectivePolicy([subject, ...(await this.parentChain(subject))]);
-    return effective ? approvalsRequired(effective.policy, amountMinor) : 0;
+    const effective = await this.effectivePolicy([subject, ...(await this.parentChain(subject))], service);
+    return effective ? approvalsRequired(effective.policy, amountMinor) : 1;
   }
 
   async effectivePolicyForMerchant(actor: Actor, merchantId: string) {
