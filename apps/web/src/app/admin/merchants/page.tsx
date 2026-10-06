@@ -2,14 +2,14 @@
 
 import { Suspense } from 'react';
 import { PageHeader } from '@/components/common/page-header';
-import { OrganizationsTable } from '@/features/organizations-table';
+import { MerchantsTable } from '@/features/merchants/merchants-table';
 
-export default function AdminMERCHANTPage() {
+export default function AdminMerchantsPage() {
   return (
     <>
       <PageHeader title="Merchants" description="All merchant accounts across Pay2All and its resellers." />
       <Suspense>
-        <OrganizationsTable type="MERCHANT" />
+        <MerchantsTable detailBase="/admin/merchants" />
       </Suspense>
     </>
   );

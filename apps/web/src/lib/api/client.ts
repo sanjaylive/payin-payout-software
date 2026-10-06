@@ -87,6 +87,31 @@ async function send(path: string, opts: RequestOptions): Promise<Response> {
   });
 }
 
+async function sendForm(path: string, form: FormData): Promise<Response> {
+  const token = useAuthStore.getState().accessToken;
+  return fetch(buildUrl(path), { method: 'POST', credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+}
+
+/** Multipart upload (KYC documents). The browser sets the multipart boundary. */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  let res = await sendForm(path, form);
+  if (res.status === 401 && (await refreshSession())) res = await sendForm(path, form);
+  return (await parse<T>(res)).data;
+}
+
+/** Authenticated file download: fetch with the bearer token, then save via a temporary blob URL. */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const get = () => fetch(buildUrl(path), { credentials: 'include', headers: { Authorization: `Bearer ${useAuthStore.getState().accessToken ?? ''}` } });
+  let res = await get();
+  if (res.status === 401 && (await refreshSession())) res = await get();
+  if (!res.ok) await parse(res);
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = Object.assign(document.createElement('a'), { href: url, download: name });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Promise<ApiSuccess<T, PaginationMeta>> {
   let res = await send(path, opts);
   if (res.status === 401 && opts.auth !== false) {
@@ -101,6 +126,7 @@ export const api = {
   post: <T>(path: string, body?: unknown, opts: Omit<RequestOptions, 'body' | 'method'> = {}) =>
     apiRequest<T>(path, { ...opts, method: 'POST', body: body ?? {} }).then((r) => r.data),
   patch: <T>(path: string, body: unknown) => apiRequest<T>(path, { method: 'PATCH', body }).then((r) => r.data),
+  put: <T>(path: string, body: unknown) => apiRequest<T>(path, { method: 'PUT', body }).then((r) => r.data),
   delete: <T>(path: string, query?: Query) => apiRequest<T>(path, { method: 'DELETE', query }).then((r) => r.data),
 };
 

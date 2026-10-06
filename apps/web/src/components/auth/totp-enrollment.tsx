@@ -17,7 +17,7 @@ import { FormError } from './form-error';
 const schema = z.object({ code: totpCodeSchema });
 
 /** TOTP enrollment: QR + manual secret (shown once), then code confirmation. */
-export function TotpEnrollment({ onEnabled }: { onEnabled: () => void }) {
+export function TotpEnrollment({ onEnabled }: { onEnabled: (recoveryCodes: string[]) => void }) {
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
   const [error, setError] = useState<unknown>(null);
   const setup = useMutation({ mutationFn: () => api.post<{ secret: string; qr_data_url: string }>('/v1/auth/mfa/totp/setup') });
@@ -29,9 +29,9 @@ export function TotpEnrollment({ onEnabled }: { onEnabled: () => void }) {
   const onSubmit = form.handleSubmit(async ({ code }) => {
     setError(null);
     try {
-      const res = await api.post<{ access_token: string }>('/v1/auth/mfa/totp/enable', { code });
+      const res = await api.post<{ access_token: string; recovery_codes: string[] }>('/v1/auth/mfa/totp/enable', { code });
       setAccessToken(res.access_token);
-      onEnabled();
+      onEnabled(res.recovery_codes);
     } catch (err) {
       setError(err);
     }

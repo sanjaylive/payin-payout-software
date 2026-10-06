@@ -41,16 +41,17 @@ PostgreSQL 17 · Prisma 7 (`prisma-client` generator + `@prisma/adapter-pg`) · 
 
 | Model | Key columns |
 | --- | --- |
-| `Merchant` | 1:1 with an `Organization` of type MERCHANT. `resellerId`, `status` (DRAFT → … → APPROVED/REJECTED/SUSPENDED), `payinEnabled`, `payoutEnabled`, `riskCategory`, `assignedSalesUserId`, `version`. |
+| `Merchant` | Shares its primary key with its `Organization` of type MERCHANT (`merchantId == organizationId`). `resellerId`, `status` (DRAFT → … → APPROVED/REJECTED/SUSPENDED), `payinEnabled`, `payoutEnabled`, `riskCategory`, `assignedSalesUserId`, `version`. |
 | `MerchantProfile` | Legal name, display name, entity type, PAN, GSTIN, CIN/LLPIN, addresses (JSONB, validated), website, app URL, category, MCC, expected monthly volume, avg/max ticket (minor units), settlement preference, contacts. |
 | `MerchantKyc` | Screening statuses (`sanctionsStatus`, `pepStatus`, `adverseMediaStatus`), `riskAssessment`, `kycStatus`. |
-| `MerchantDirector` / `MerchantUbo` | Name, DIN, PAN (encrypted + masked), ownership %, KYC status. |
-| `MerchantDocument` | `type`, `storageKey` (S3 object key), `sha256`, `mimeType`, `sizeBytes`, `status` (UPLOADED/VERIFIED/REJECTED/EXPIRED), `expiresAt`, `reviewedById`. |
+| `MerchantPerson` | Directors, partners, proprietors, UBOs and signatories in one table with role flags (one person often holds several roles). PAN is encrypted, masked and HMAC-indexed for cross-merchant matching. Also holds DIN, ownership % and KYC status. |
+| `MerchantDocument` | `type`, `personId?`, `storageKey` (server-generated S3 key), `sha256` (computed server-side), `mimeType` (sniffed), `sizeBytes`, `status` (UPLOADED/VERIFIED/REJECTED/EXPIRED), `expiresAt`, `uploadedById`, `reviewedById`, `rejectionReason`. |
 | `MerchantBankAccount` | `accountNumberEncrypted`, `accountNumberMasked`, `accountNumberHash` (HMAC, for duplicate detection across merchants), `ifsc`, `holderName`, `verificationStatus`, `isPrimary`. |
-| `ComplianceReview` | Append-only history: `merchantId`, `fromStatus`, `toStatus`, `reviewedById`, `reviewedAt`, `reason`, `notes`. |
-| `SalesLead` | `assignedSalesUserId`, `source`, `followUpDate`, `notes`, `convertedMerchantId`. |
-| `LimitConfig` | `level` (SYSTEM/RESELLER/MERCHANT), `subjectId`, `service` (PAYIN/PAYOUT), `perTxnMinMinor`, `perTxnMaxMinor`, `dailyAmountMinor`, `dailyCount`, `monthlyAmountMinor`, `monthlyCount`, effective dates. |
-| `ApprovalPolicy` | Maker-checker tiers per level: `[ {upToMinor, approvalsRequired} ]`. |
+| `ComplianceReview` | Append-only, trigger-guarded history: `merchantId`, `action`, `fromStatus`, `toStatus`, `reviewedById`, `reviewedAt`, `reason`, `notes`, `details` (decision snapshot), `requestId`. |
+| `SalesLead` | `assignedSalesUserId`, `source`, `status`, `followUpDate`, `notes` (append-only JSON log), `convertedMerchantId` (unique). Sales ownership of resellers and merchants is `Organization.assignedSalesUserId`. |
+| `LimitConfig` | `level` (SYSTEM/RESELLER/MERCHANT), `subjectId`, `service` (PAYIN/PAYOUT), `perTxnMinMinor`, `perTxnMaxMinor`, `dailyAmountMinor`, `dailyCount`, `monthlyAmountMinor`, `monthlyCount`, `version`. Null fields inherit from the broader level, resolved field by field. Delegated admins can only tighten. |
+| `ApprovalPolicy` | Maker-checker tiers per level: `[ {up_to_minor, approvals_required} ]`, plus `makerCheckerEnabled`. The most specific policy applies as a whole. A child policy can never be looser than its parent at any amount. |
+| `MfaRecoveryCode` | `userId`, `codeHash` (keyed HMAC), `usedAt`. |
 
 ### 2.3 Ledger (Phase 3) — see LEDGER.md
 

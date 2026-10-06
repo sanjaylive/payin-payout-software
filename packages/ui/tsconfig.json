@@ -1,7 +1,11 @@
 {
   "extends": "@pay2all/config/tsconfig/base.json",
   "compilerOptions": {
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2023",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "jsx": "react-jsx",
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -9,8 +13,13 @@
     "declaration": false,
     "declarationMap": false,
     "paths": {
-      "@pay2all/ui/*": ["./src/*"]
-    }
+      "@pay2all/ui/*": [
+        "./src/*"
+      ]
+    },
+    "baseUrl": "."
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

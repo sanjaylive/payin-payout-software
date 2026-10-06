@@ -55,7 +55,8 @@ POST /v1/auth/login ─▶ (MFA?) ─▶ Session row created
 - **Replay prevention:** `lastUsedStep` is stored, and a code from the same or an earlier step is rejected.
 - **Login with MFA:** the password step returns `{ mfa_required: true, mfa_token }`, a 5-minute JWT with `typ:"mfa"`. `POST /v1/auth/mfa/verify` with the code creates the session. No session or refresh token exists before MFA succeeds.
 - **Mandatory MFA:** roles with `requiresMfa` are all platform staff roles and RESELLER. If such a user has no active factor, login creates a **restricted session** (`mfaEnrollmentRequired`). In a restricted session the guard allows only routes marked `@AllowRestrictedSession()` (`/auth/me`, MFA setup/enable, logout). Controlled by `AUTH_ENFORCE_MFA`.
-- **Recovery codes:** 10 single-use, argon2-hashed codes. *(Planned for Phase 2. Until then an admin resets MFA under an audited `user.manage` action.)*
+- **Recovery codes:** 10 single-use 50-bit codes (`ABCDE-FGH23`), returned once at enrollment and on regeneration (which needs a current TOTP code). They are stored as a keyed HMAC (blind index) rather than a slow hash, so a leaked table alone cannot be brute-forced offline. Consuming one is race-safe, audited and emailed to the user.
+- **Admin MFA reset:** platform staff with `user.manage` can reset another user's MFA, but not their own. A reason is required. The reset disables all factors and codes, revokes every session, writes an audit entry and emails the user.
 
 ## 2. Authorization: RBAC + permissions
 
@@ -169,7 +170,14 @@ X-Pay2All-Signature: v1=hex(HMAC_SHA256(endpointSecret, `${eventId}.${timestamp}
 
 - **Helmet:** a strict CSP on the API (`default-src 'none'`, relaxed only for the `/docs` Swagger route), HSTS in production, `X-Content-Type-Options`, `Referrer-Policy: no-referrer`, frameguard deny.
 - **CORS:** an explicit allowlist, with credentials only for listed origins.
-- **Body limits:** 1 MB by default, larger only on upload routes. Uploads go straight to S3 through pre-signed URLs with a content-type and size policy.
+- **Body limits:** 1 MB by default, larger only on upload routes.
+- **KYC uploads (Phase 2 decision):** files go *through the API*, not browser-direct pre-signed URLs, so the server enforces all of the following before anything is stored:
+  - a size cap (`MAX_DOCUMENT_BYTES`);
+  - content checks by magic bytes, accepting PDF, PNG and JPEG only, with the client MIME type ignored;
+  - a sha256 computed server-side;
+  - a storage key made of server IDs only, with the client filename used for display only and sanitised.
+- **KYC downloads** stream through the API after authorization. Each one is audited (`merchant.document.viewed`) and sent with `Content-Disposition: attachment`, `Cache-Control: no-store` and a `sandbox` CSP.
+- **Encryption at rest** of the bucket (`S3_SSE`) is mandatory in production.
 - **Input validation:** strict Zod objects reject unknown keys. Prisma parameterises queries. Raw SQL uses tagged templates only, and `$queryRawUnsafe` is lint-banned.
 - **Web app:** React escapes output, `dangerouslySetInnerHTML` is lint-banned, and Next.js sends a CSP with nonces in production.
 - **Trusted proxies:** `TRUST_PROXY_HOPS` sets how many proxies to trust, so `X-Forwarded-For` cannot be spoofed when no proxy is present.

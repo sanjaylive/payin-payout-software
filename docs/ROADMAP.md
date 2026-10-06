@@ -39,17 +39,17 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Web: Pay2All design tokens (light/dark), shadcn/ui, login, MFA, forgot/reset, merchant and admin shells with full navigation, security settings (sessions, MFA), users, roles, audit logs
 - [x] Tests: hashing/crypto/permissions units, auth and RBAC integration (refresh rotation, reuse detection, lockout, cross-tenant 404, permission 403, audit immutability)
 
-## Phase 2 — Merchant & compliance ⬜
+## Phase 2 — Merchant & compliance ✅
 
-- [ ] Merchant + profile + KYC + directors/UBO + bank accounts (encrypted, masked, hashed)
-- [ ] Onboarding wizard (DRAFT → SUBMITTED) with server-side step validation
-- [ ] Documents: pre-signed S3 upload, sha256, status workflow, expiry
-- [ ] Compliance review workflow: append-only `compliance_reviews`, reviewer/time/reason/notes, MORE_INFORMATION_REQUIRED loop
-- [ ] Screening status fields (SANCTIONS / PEP / ADVERSE_REVIEW), provider integration stubbed
-- [ ] Limits (SYSTEM → RESELLER → MERCHANT resolution) and approval policies
-- [ ] Sales CRM: leads, assignment, follow-ups
-- [ ] MFA recovery codes
-- [ ] Admin UI: all merchants, pending KYC, suspended, merchant detail with review timeline
+- [x] Merchant + profile + KYC screening + directors/UBOs (`MerchantPerson`) + bank accounts (encrypted, masked, hashed)
+- [x] Onboarding workspace (save drafts section by section; DRAFT → SUBMITTED) with a server-side requirements engine
+- [x] Documents: upload through the API (magic-byte sniffing, server sha256, size cap), status workflow, expiry, audited downloads
+- [x] Compliance workflow: append-only `compliance_reviews`, reviewer/time/reason/notes, MORE_INFORMATION_REQUIRED loop, four-eyes rules
+- [x] Screening status fields (SANCTIONS / PEP / ADVERSE_REVIEW), recorded manually; provider integration later
+- [x] Limits (SYSTEM → RESELLER → MERCHANT field-wise resolution) and approval policies (spec tiers seeded)
+- [x] Sales CRM: leads, assignment, notes, follow-ups, conversion into merchants
+- [x] MFA recovery codes and admin MFA reset
+- [x] Admin UI: merchants, pending KYC queue, merchant 360 with review actions, limits & policies, sales leads; reseller merchant views; merchant compliance pages
 
 ## Phase 3 — Ledger ⬜
 
@@ -142,3 +142,36 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - Seed covers identity/tenancy only. Providers, payins, payouts, ledger and settlements are seeded by the phases that introduce them.
 - Web UI was verified at HTTP level (pages, CSP, CORS, cookie refresh) — interactive browser walkthrough still pending.
 - Organization switching for users with multiple memberships is deferred (login uses the earliest active membership).
+
+### Phase 2 — Merchant & compliance (completed 2026-10-06)
+
+**Delivered:**
+- **Data and workflow:** a new migration, the merchant aggregate, the onboarding and compliance API with an explicit state machine, and the limits/approval-policy, sales CRM and MFA recovery modules.
+- **Money:** helpers in `@pay2all/ledger`.
+- **Validation:** Indian identifier validators, including the GSTIN checksum, verified against two published sample GSTINs.
+- **UI:** the merchant compliance pages, the admin merchant console and the reseller merchant views.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- 24 API unit tests, plus package unit tests for money, identifiers and RBAC.
+- 65 API integration tests covering:
+  - the full DRAFT → APPROVED journey, including the information-request loop;
+  - immutability of compliance history;
+  - optimistic concurrency (concurrent review start, concurrent lead conversion);
+  - four-eyes rules;
+  - encrypted storage of PAN and account numbers (nothing in responses or audit logs);
+  - file-content sniffing and size caps;
+  - audited, byte-exact downloads;
+  - cross-tenant 404s;
+  - limit and policy tightening-only rules;
+  - recovery codes and admin MFA reset.
+- **Mutation check:** removing the version guard or the merchant tenant scope fails 3 targeted tests.
+- **Role walkthrough:** a merchant owner, compliance and sales walkthrough against the dev servers passed 15 checks, and every new page renders.
+
+**Decisions and notes:**
+- KYC uploads go through the API rather than browser-direct pre-signed URLs (SECURITY.md §8).
+- Platform staff may attach files during review, for example the countersigned agreement. Applicants are locked out until information is requested.
+- Business PAN and GSTIN are stored in plaintext because they are registry data needed for search. Personal PANs and bank account numbers are encrypted.
+- Screening and bank verification are recorded manually until provider integrations land (Phase 4+).
+- Post-approval profile changes, which need a change-request workflow, are deferred. Bank-account additions after approval are allowed but stay unusable until compliance verifies them, and owners are emailed.
+- The browser walkthrough is still pending (the Chrome extension was not connected). Verification was done at the HTTP and API level.

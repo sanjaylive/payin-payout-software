@@ -51,7 +51,7 @@ export default function MerchantDashboard() {
           <CardTitle className="text-base">Get ready to go live</CardTitle>
         </CardHeader>
         <CardContent className="text-muted-foreground space-y-2 text-sm">
-          <p>1. Complete your business profile and KYC documents under Compliance.</p>
+          <p>1. Complete your <Link href="/compliance/profile" className="text-primary font-medium hover:underline">business profile and KYC documents</Link> under Compliance.</p>
           <p>2. Invite your team from <Link href="/team" className="text-primary font-medium hover:underline">Team</Link> and enable two-factor authentication in <Link href="/settings/security" className="text-primary font-medium hover:underline">Settings</Link>.</p>
           <p>3. Generate API keys and configure webhooks under Developers once your account is approved.</p>
         </CardContent>

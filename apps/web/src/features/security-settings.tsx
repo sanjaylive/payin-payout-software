@@ -71,9 +71,64 @@ function ChangePasswordCard() {
   );
 }
 
+export function RecoveryCodesDialog({ codes, onClose }: { codes: string[] | null; onClose: () => void }) {
+  return (
+    <Dialog open={Boolean(codes)} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Save your recovery codes</DialogTitle>
+        </DialogHeader>
+        <p className="text-muted-foreground text-sm">Each code works once if you lose your authenticator. Store them in a password manager — they won&apos;t be shown again.</p>
+        <div className="bg-muted grid grid-cols-2 gap-2 rounded-lg p-4 font-mono text-sm select-all">
+          {codes?.map((c) => <span key={c}>{c}</span>)}
+        </div>
+        <Button
+          variant="outline"
+          onClick={() => {
+            void navigator.clipboard.writeText(codes?.join('\n') ?? '');
+            toast.success('Copied');
+          }}
+        >
+          Copy codes
+        </Button>
+        <Button onClick={onClose}>I&apos;ve saved them</Button>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RegenerateCodes({ onCodes }: { onCodes: (codes: string[]) => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <FormField label="Authenticator code" name="regen-code" inputMode="numeric" maxLength={6} className="w-36 font-mono" value={code} onChange={(e) => setCode(e.target.value)} />
+      <Button
+        variant="outline"
+        disabled={busy || code.length !== 6}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const res = await api.post<{ recovery_codes: string[] }>('/v1/auth/mfa/recovery-codes', { code });
+            setCode('');
+            onCodes(res.recovery_codes);
+          } catch (e) {
+            toast.error(errorMessage(e));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Generate new recovery codes
+      </Button>
+    </div>
+  );
+}
+
 function MfaCard({ me }: { me: Me }) {
   const queryClient = useQueryClient();
   const [enrolling, setEnrolling] = useState(false);
+  const [codes, setCodes] = useState<string[] | null>(null);
   return (
     <Card className="shadow-none">
       <CardHeader className="flex flex-row items-start justify-between gap-4">
@@ -87,9 +142,15 @@ function MfaCard({ me }: { me: Me }) {
       </CardHeader>
       <CardContent>
         {me.mfa.enabled ? (
-          <p className="text-muted-foreground flex items-center gap-2 text-sm">
-            <ShieldCheck className="text-success size-4" /> Authenticator app is active. Codes are required at every sign-in.
-          </p>
+          <div className="space-y-4">
+            <p className="text-muted-foreground flex items-center gap-2 text-sm">
+              <ShieldCheck className="text-success size-4" /> Authenticator app is active. Codes are required at every sign-in.
+            </p>
+            <p className="text-sm">
+              Recovery codes remaining: <span className={me.mfa.recovery_codes_remaining < 3 ? 'text-destructive font-semibold' : 'font-semibold'}>{me.mfa.recovery_codes_remaining}</span>
+            </p>
+            <RegenerateCodes onCodes={setCodes} />
+          </div>
         ) : (
           <Button variant="outline" onClick={() => setEnrolling(true)}>
             <ShieldOff /> Set up authenticator
@@ -103,8 +164,9 @@ function MfaCard({ me }: { me: Me }) {
           </DialogHeader>
           {enrolling && (
             <TotpEnrollment
-              onEnabled={() => {
+              onEnabled={(recoveryCodes) => {
                 setEnrolling(false);
+                setCodes(recoveryCodes);
                 toast.success('Two-factor authentication enabled');
                 void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
               }}
@@ -112,6 +174,7 @@ function MfaCard({ me }: { me: Me }) {
           )}
         </DialogContent>
       </Dialog>
+      <RecoveryCodesDialog codes={codes} onClose={() => { setCodes(null); void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY }); }} />
     </Card>
   );
 }

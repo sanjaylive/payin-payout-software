@@ -7,7 +7,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 import { useCan } from '@/lib/auth/use-me';
 import { Brand } from './brand';
-import type { NavItem, NavLeaf } from './nav-config';
+import { CURRENT_PHASE, type NavItem, type NavLeaf } from './nav-config';
 
 function isActive(pathname: string, search: string, href: string): boolean {
   const [path, query] = href.split('?');
@@ -16,7 +16,7 @@ function isActive(pathname: string, search: string, href: string): boolean {
 }
 
 function PhaseTag({ phase }: { phase: number }) {
-  if (phase <= 1) return null;
+  if (phase <= CURRENT_PHASE) return null;
   return <span className="text-sidebar-muted ml-auto text-[10px] font-medium tabular-nums">P{phase}</span>;
 }
 

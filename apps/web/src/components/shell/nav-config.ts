@@ -24,6 +24,9 @@ import {
   Webhook,
 } from 'lucide-react';
 
+/** Highest delivered phase — nav entries above it render roadmap placeholders. */
+export const CURRENT_PHASE = 2;
+
 export interface NavLeaf {
   label: string;
   href: string;
@@ -120,6 +123,7 @@ export const ADMIN_NAV: NavItem[] = [
     children: [
       { label: 'All Merchants', href: '/admin/merchants', phase: 1, permission: 'merchant.read' },
       { label: 'Pending KYC', href: '/admin/merchants/pending-kyc', phase: 2, permission: 'compliance.read' },
+      { label: 'Sales Leads', href: '/admin/sales', phase: 2, permission: 'sales.read' },
       { label: 'Suspended', href: '/admin/merchants?status=SUSPENDED', phase: 1, permission: 'merchant.read' },
       { label: 'Limits', href: '/admin/merchants/limits', phase: 2, permission: 'limit.read' },
       { label: 'Pricing', href: '/admin/merchants/pricing', phase: 5, permission: 'pricing.read' },
