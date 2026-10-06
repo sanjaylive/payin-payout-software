@@ -1,6 +1,6 @@
 # Payin (Collection) Flow
 
-> Status: design (implemented in Phase 5). Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [DATABASE.md](./DATABASE.md), [LEDGER.md](./LEDGER.md), [PAYOUT_FLOW.md](./PAYOUT_FLOW.md)
+> Status: implemented in Phase 5 — see §13 for where the implementation refines this design. Related: [ARCHITECTURE.md](./ARCHITECTURE.md), [DATABASE.md](./DATABASE.md), [LEDGER.md](./LEDGER.md), [PAYOUT_FLOW.md](./PAYOUT_FLOW.md)
 
 A payin collects money from a merchant's customer through a partner provider (bank / PSP / authorised PA). Pay2All owns the transaction identity (`pay_…`), state machine, pricing snapshot and ledger postings. Provider identifiers are only stored as references.
 
@@ -15,11 +15,11 @@ A payin collects money from a merchant's customer through a partner provider (ba
 | `IMPS` / `NEFT` / `RTGS` | Future | Bank transfer collections (via VA) | UTR on credit |
 | `CARDS` / `NETBANKING` | Future | Redirect / hosted checkout | provider order ref |
 
-The public request field `method` accepts the family `UPI`, with an optional `upi_flow` of `QR` or `INTENT` (default: both are returned when the provider supports it). It also accepts an explicit method value such as `UPI_QR`. The method enum is the internal source of truth, and new methods are added without changing the API shape.
+The public request field `method` accepts `UPI` (an alias for `UPI_QR`; the response carries both the QR payload and the intent URL when the provider supports it) or an explicit method value such as `UPI_QR`, `UPI_INTENT` or `PAYMENT_LINK`. The method enum is the internal source of truth, and new methods are added without changing the API shape.
 
 ## 2. Amount format
 
-> **Decision pending confirmation from Pay2All.**
+> **Decided (Phase 5, option a):**
 > External `amount` is a **string decimal in major units (INR) with at most 2 decimal places**, for example `"1000.00"` or `"1000"`. The API parses it **exactly** into paise (`BIGINT`) with a regex and integer arithmetic, so floating point is never involved. JSON numbers (`1000`) are **rejected** with `INVALID_REQUEST`. This avoids float ambiguity and the "is it rupees or paise?" class of bugs.
 >
 > **Alternative:** integer paise (`"amount": 100000` = ₹1,000.00), as several other gateways use. This is also unambiguous and float-safe for values below 2^53. If Pay2All picks it, only the parsing and presenting layer changes. Storage is paise either way.
@@ -297,3 +297,20 @@ Concurrency: two simultaneous refunds on one payment serialize on the payment ro
 | Worker crash mid webhook delivery | Kafka offset is not committed, so the message is redelivered, and the delivery attempt is idempotent per (event, endpoint, attempt) |
 | DB unavailable on callback | 5xx to the provider, which retries. Nothing is lost. |
 | Redis unavailable | Rate limit fails **closed** for public API writes. Limit counters fall back to DB aggregation. Idempotency still works (DB is authoritative). |
+
+## 13. Phase 5 implementation notes
+
+Where the shipped code refines or defers parts of the design above:
+
+- **Idempotency.** An `IN_PROGRESS` key returns `409 IDEMPOTENCY_IN_PROGRESS` (distinct from `IDEMPOTENCY_CONFLICT`, which means a different body). The resource id is attached to the record inside the business transaction; the response body is stored right after. A crash between the two is repaired by the idempotency sweeper, which rebuilds the stored response from the resource. The Redis fast-path cache is **not** implemented: PostgreSQL alone serves replays, which is fine at current volume. The dashboard sends one key per user action, keeps it for network/5xx retries and rotates it after a definitive 4xx.
+- **Background jobs** run in the API's jobs process (`apps/api/src/jobs.main.ts`, `pnpm dev:jobs`), not the worker. They reuse the same Nest services as HTTP, so polls and callbacks share one transition path. Jobs: payin poller (every 15 s, per-payment backoff 1/2/5/10/15/30 min), expiry sweeper (60 s, 5 min grace, final status check, never expires on provider uncertainty), refund dispatcher (20 s), inbound-event retry (60 s) and idempotency sweeper (60 s). Every claim uses `FOR UPDATE SKIP LOCKED`; runs are de-duplicated across replicas by the Redis scheduler.
+- **Provider callbacks** are verified over the raw bytes, stored once (`provider_webhook_events`, unique per provider event id) and processed inline. Processing failures leave the event `FAILED` for the retry job; callbacks for unknown payments are stored as `IGNORED` (reconciliation flags them in Phase 8).
+- **Ambiguous create** (timeout / 5xx while creating the order): the payment stays `CREATED` with no QR, so the customer cannot pay twice, and **no second provider is tried**. The expiry sweeper later expires it, or a late callback captures it.
+- **Amount mismatch:** a SUCCESS reporting a different amount is never captured. The payment is flagged `requires_review` with an audited HIGH-severity event and is resolved through reconciliation (Phase 8), not the late-success accept action.
+- **Late success under `MANUAL_REVIEW`:** the payment keeps its terminal status with `requires_review = true` and an audit entry. A platform user with `risk.review` accepts it (`POST /v1/payments/:id/review/accept`, reason required), which captures it. The risk-event / ops-review queue and the "auto-refund" resolution arrive in Phase 10.
+- **Refunds** debit the merchant at creation (`REFUND` journal: UNSETTLED first, then AVAILABLE, credit provider clearing). The merchant fee is not returned by default (`refund_fee` on the plan), so a full refund of a fresh payment needs other balance to cover the fee. A definitive provider failure posts the exact mirror (`REFUND_REVERSAL`). Ambiguous outcomes retry with backoff on the same `rfnd_…` reference, then move to `MANUAL_REVIEW` after 6 attempts.
+- **Pricing snapshot after failover:** fees are quoted with the primary candidate before the provider call. If failover moves the payment to the fallback provider, the merchant fee is unchanged (correct), but the snapshot's provider cost reflects the primary's plan. With only platform-default provider-cost plans this is identical; provider-specific cost plans will re-quote on failover in Phase 8 (margin reporting).
+- **Limits** use indexed aggregates over the merchant's payments, so they are approximate under heavy concurrency (two simultaneous requests can both pass the last unit of headroom). Exact counters arrive with the risk engine (Phase 10).
+- **Merchant webhooks:** `payment.*` / `refund.*` events are recorded in `webhook_events` with an outbox row in the same transaction. Delivery, signing and retries are Phase 7.
+- **Sandbox:** `POST /v1/sandbox/payments/:id/complete` (non-production, mock providers in the TEST environment only) builds a correctly signed mock callback and sends it through the real inbound path. A second sandbox payin provider, `mock-upi-2`, is the seeded fallback route. Its `scripted_create_failures: false` lets a `.91` amount demonstrate failover end to end.
+- **API keys / HMAC request signing** for these endpoints arrive in Phase 9. Until then they accept dashboard sessions only.

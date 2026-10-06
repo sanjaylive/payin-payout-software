@@ -12,7 +12,8 @@
     "test:integration": "vitest run --project integration",
     "seed:demo-ledger": "tsx scripts/seed-demo-ledger.ts",
     "dev:jobs": "nest start --watch --preserveWatchOutput --entryFile jobs.main",
-    "start:jobs": "node dist/jobs.main.js"
+    "start:jobs": "node dist/jobs.main.js",
+    "seed:demo-payments": "node dist/scripts/seed-demo-payments.js"
   },
   "dependencies": {
     "@nestjs/common": "~11.2.7",

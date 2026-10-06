@@ -379,3 +379,125 @@ export interface RoutingSimulation {
   candidates: { order: number; provider_code: string; route_name: string; tier: string; degraded: boolean }[];
   evaluations: { route_id: string; route_name: string; provider_code: string; tier: string; selected: boolean; reasons: string[] }[];
 }
+
+export type PaymentStatus =
+  | 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'SETTLEMENT_PENDING' | 'SETTLED'
+  | 'REFUND_PENDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'DISPUTED' | 'CHARGEBACK';
+export type PayinMethod = 'UPI_QR' | 'UPI_INTENT' | 'PAYMENT_LINK';
+
+export interface Refund {
+  refund_id: string;
+  payment_id: string;
+  merchant_refund_id: string | null;
+  amount: string;
+  currency: string;
+  status: 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'MANUAL_REVIEW';
+  reason: string | null;
+  failure_reason: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface PaymentAttemptRow {
+  attempt_no: number;
+  provider: string;
+  status: string;
+  error_kind: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  latency_ms: number | null;
+  created_at: string;
+}
+
+export interface Payment {
+  payment_id: string;
+  merchant_id: string;
+  merchant_order_id: string;
+  amount: string;
+  currency: string;
+  fee: string;
+  tax: string;
+  net_amount: string;
+  refunded_amount: string;
+  status: PaymentStatus;
+  method: PayinMethod;
+  qr?: string | null;
+  upi_intent?: string | null;
+  payment_link: string | null;
+  expires_at: string;
+  utr: string | null;
+  rrn: string | null;
+  payer_vpa: string | null;
+  customer: { name: string | null; mobile: string | null; email: string | null };
+  description: string | null;
+  metadata: Record<string, string> | null;
+  late_success: boolean;
+  requires_review: boolean;
+  review_reason?: string | null;
+  failure_code: string | null;
+  failure_reason: string | null;
+  success_at: string | null;
+  settled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  provider?: string | null;
+  provider_order_id?: string | null;
+  provider_transaction_id?: string | null;
+  reseller_id?: string | null;
+  refunds?: Refund[];
+  attempts?: PaymentAttemptRow[];
+}
+
+export interface PaymentStatsBucket {
+  bucket_start: string;
+  count: number;
+  success_count: number;
+  failed_count: number;
+  success_amount: string;
+}
+
+export interface PaymentStats {
+  from: string;
+  to: string;
+  bucket: 'hour' | 'day';
+  totals: { count: number; success_count: number; failed_count: number; success_amount: string; success_rate: number | null };
+  series: PaymentStatsBucket[];
+}
+
+export interface PricingRuleRow {
+  id: string;
+  service: 'PAYIN' | 'PAYOUT';
+  method: string | null;
+  provider_id: string | null;
+  min_amount: string | null;
+  max_amount: string | null;
+  charge_type: 'FLAT' | 'PERCENTAGE' | 'PERCENTAGE_WITH_MIN_MAX';
+  rate: string | null;
+  flat_fee: string | null;
+  min_fee: string | null;
+  max_fee: string | null;
+}
+
+export interface PricingPlanRow {
+  id: string;
+  name: string;
+  kind: 'PROVIDER_COST' | 'WHOLESALE' | 'MERCHANT';
+  status: 'ACTIVE' | 'ARCHIVED';
+  owner_org_id: string;
+  is_default: boolean;
+  tax_rate: string | null;
+  refund_fee: boolean;
+  effective_from: string;
+  effective_to: string | null;
+  rules: PricingRuleRow[];
+  created_at: string;
+}
+
+export interface PricingQuote {
+  merchant_fee: string;
+  tax: string;
+  wholesale_fee: string | null;
+  provider_cost: string;
+  reseller_margin: string;
+  platform_margin: string;
+}

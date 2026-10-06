@@ -25,6 +25,8 @@ interface RequestOptions {
   query?: Query;
   /** Attach the bearer token and transparently refresh once on expiry (default true). */
   auth?: boolean;
+  /** Extra request headers (e.g. Idempotency-Key). */
+  headers?: Record<string, string>;
 }
 
 function buildUrl(path: string, query?: Query): string {
@@ -82,6 +84,7 @@ async function send(path: string, opts: RequestOptions): Promise<Response> {
     headers: {
       ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(opts.auth !== false && token ? { Authorization: `Bearer ${token}` } : {}),
+      ...opts.headers,
     },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
   });

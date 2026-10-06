@@ -76,3 +76,15 @@ export const paymentStatsQuerySchema = z.strictObject({
   to: z.iso.datetime(),
   bucket: z.enum(['hour', 'day']).default('day'),
 });
+
+/** Dashboard "create payment" form: plain strings, no transforms (mapped to createPaymentSchema on submit). */
+export const createPaymentFormSchema = z.object({
+  merchant_order_id: orderId,
+  amount: z.string().trim().regex(/^\d{1,10}(\.\d{1,2})?$/, 'Enter an amount like 1000 or 1000.50').refine((v) => !/^0+(\.\d*)?$/.test(v), 'Minimum amount is ₹1.00'),
+  method: z.enum(['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK']),
+  customer_name: z.string().trim().max(120),
+  customer_mobile: z.union([z.literal(''), mobileSchema]),
+  customer_email: z.union([z.literal(''), z.email('Enter a valid email')]),
+  description: z.string().trim().max(200),
+  expires_in_minutes: z.enum(['5', '15', '60', '1440']),
+});
