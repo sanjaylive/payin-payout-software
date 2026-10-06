@@ -8,7 +8,8 @@
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --project unit --passWithNoTests",
+    "test:integration": "vitest run --project integration"
   },
   "dependencies": {
     "@pay2all/config": "workspace:*",
@@ -18,7 +19,8 @@
     "dotenv": "^17.2.3",
     "ioredis": "^5.11.1",
     "pino": "^10.4.0",
-    "@pay2all/auth": "workspace:*"
+    "@pay2all/auth": "workspace:*",
+    "@pay2all/providers": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

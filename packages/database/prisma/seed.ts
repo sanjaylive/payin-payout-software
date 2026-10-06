@@ -14,6 +14,7 @@ import { config as loadDotenv } from 'dotenv';
 import { checkPasswordPolicy, hashPassword, newId, PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@pay2all/auth';
 import { createPrismaClient, type OrganizationType, type PrismaClient } from '../src/index';
 import { ensureMerchantAggregates, seedMerchantOnboarding } from './seed-merchants';
+import { seedProviders } from './seed-providers';
 
 loadDotenv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
@@ -147,6 +148,7 @@ async function main() {
     resellerUserId: created.get('admin@acme-partners.local')!,
     nimbusOwnerId: created.get('owner@nimbus-software.local')!,
   });
+  await seedProviders(prisma, m1.id);
   const salesId = created.get('sales@pay2all.local')!;
   await prisma.organization.updateMany({ where: { id: { in: [reseller.id, m1.id, m2.id] } }, data: { assignedSalesUserId: salesId } });
   if ((await prisma.salesLead.count()) === 0) {

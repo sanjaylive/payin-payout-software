@@ -6,6 +6,7 @@ import { createPrismaClient } from '@pay2all/database';
 import { createLogger } from '@pay2all/logger';
 import Redis from 'ioredis';
 import { balanceSnapshotJob, ledgerVerificationJob } from './jobs/ledger-jobs';
+import { providerHealthJob, providerSnapshotJob } from './jobs/provider-health-job';
 import { Scheduler } from './jobs/scheduler';
 
 /**
@@ -13,6 +14,7 @@ import { Scheduler } from './jobs/scheduler';
  *
  * Phase 1: process lifecycle — datastore connections, health endpoint, graceful shutdown.
  * Phase 3: scheduled ledger jobs (hourly balance verification, daily 00:00 IST snapshots).
+ * Phase 4: provider health (probes + circuit breaker, the single writer of AUTO statuses) and snapshots.
  * Phase 7 registers the outbox relay and Kafka consumers here (docs/ARCHITECTURE.md §8).
  */
 async function main(): Promise<void> {
@@ -38,7 +40,12 @@ async function main(): Promise<void> {
     }
     res.writeHead(404).end();
   });
-  const scheduler = new Scheduler(redis, logger, [ledgerVerificationJob(prisma, logger), balanceSnapshotJob(prisma)]);
+  const scheduler = new Scheduler(redis, logger, [
+    ledgerVerificationJob(prisma, logger),
+    balanceSnapshotJob(prisma),
+    providerHealthJob(prisma, redis, logger, env.ENCRYPTION_KEY, env.ENCRYPTION_KEY_ID),
+    providerSnapshotJob(prisma, redis),
+  ]);
   scheduler.start();
 
   server.listen(env.WORKER_HEALTH_PORT, () => logger.info({ port: env.WORKER_HEALTH_PORT }, 'Worker started'));

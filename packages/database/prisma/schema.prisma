@@ -7,6 +7,7 @@
 // Phase 2 scope: merchants, onboarding/KYC, documents, bank accounts, compliance reviews, limits,
 // approval policies, sales leads, MFA recovery codes.
 // Phase 3 scope: double-entry ledger (accounts, journals, entries, snapshots, adjustments).
+// Phase 4 scope: providers, encrypted credentials, routing rules, health snapshots, inbound webhooks.
 // Later phases add their models in their own migrations (see docs/ROADMAP.md).
 
 generator client {
@@ -938,4 +939,176 @@ model LedgerAdjustmentApproval {
 
   @@unique([adjustmentId, approverId])
   @@map("ledger_adjustment_approvals")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Phase 4 — Providers, routing and health (docs/ARCHITECTURE.md §9)
+// ---------------------------------------------------------------------------------------------
+
+enum ProviderKind {
+  PAYIN
+  PAYOUT
+  BOTH
+}
+
+enum ProviderStatus {
+  ACTIVE
+  DEGRADED
+  DOWN
+  MAINTENANCE
+  DISABLED
+}
+
+/// AUTO = set by the circuit breaker; MANUAL = set by an operator (never auto-overridden).
+enum StatusSource {
+  AUTO
+  MANUAL
+}
+
+enum ProviderEnvironment {
+  TEST
+  LIVE
+}
+
+enum RouteTier {
+  PRIMARY
+  SECONDARY
+  FALLBACK
+}
+
+enum InboundWebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+/// A bank / PSP / PA integration. Business logic never references a provider directly — it goes
+/// through the routing engine and the adapter interface.
+model Provider {
+  id              String              @id
+  code            String              @unique @db.VarChar(40)
+  name            String              @db.VarChar(120)
+  kind            ProviderKind
+  /// Adapter implementation key in @pay2all/providers (mock, provider-a, provider-b, …).
+  adapter         String              @db.VarChar(40)
+  environment     ProviderEnvironment @default(TEST)
+  status          ProviderStatus      @default(ACTIVE)
+  statusSource    StatusSource        @default(MANUAL) @map("status_source")
+  statusReason    String?             @map("status_reason") @db.VarChar(300)
+  statusChangedAt DateTime            @default(now()) @map("status_changed_at") @db.Timestamptz(3)
+  /// { payin_methods: [...], payout_modes: [...], min_amount_minor, max_amount_minor }
+  capabilities    Json                @default("{}")
+  /// Non-secret configuration: { base_url, timeout_ms, ... }
+  config          Json                @default("{}")
+  /// Indicative costs for routing: { payin_rate_micros, payout_flat_minor }
+  costs           Json                @default("{}")
+  version         Int                 @default(1)
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  credentials ProviderCredential[]
+  routes      ProviderRoute[]
+  snapshots   ProviderHealthSnapshot[]
+  webhooks    ProviderWebhookEvent[]
+
+  @@index([kind, status])
+  @@map("providers")
+}
+
+/// Encrypted credential bundle per provider and environment. Values are write-only via the API.
+model ProviderCredential {
+  id              String              @id
+  providerId      String              @map("provider_id")
+  environment     ProviderEnvironment
+  /// AES-256-GCM envelope of a JSON object { key: value }, AAD = providerId:environment.
+  secretEncrypted String              @map("secret_encrypted")
+  /// Key names and last-4 fingerprints for display: { api_key: "…9f3a" }.
+  fingerprints    Json                @default("{}")
+  rotatedAt       DateTime            @default(now()) @map("rotated_at") @db.Timestamptz(3)
+  rotatedById     String?             @map("rotated_by_id")
+  createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@unique([providerId, environment])
+  @@map("provider_credentials")
+}
+
+/// Routing rule: when the match criteria apply, `provider` is a candidate at `tier`/`priority`.
+model ProviderRoute {
+  id             String         @id
+  name           String         @db.VarChar(120)
+  service        ServiceType
+  tier           RouteTier      @default(PRIMARY)
+  /// Lower runs first within a tier.
+  priority       Int            @default(100)
+  isActive       Boolean        @default(true) @map("is_active")
+  providerId     String         @map("provider_id")
+  merchantId     String?        @map("merchant_id")
+  resellerId     String?        @map("reseller_id")
+  /// Payin method (UPI_QR, …) or payout mode (IMPS, …); null = any.
+  method         String?        @db.VarChar(30)
+  minAmountMinor BigInt?        @map("min_amount_minor")
+  maxAmountMinor BigInt?        @map("max_amount_minor")
+  riskCategories RiskCategory[] @map("risk_categories")
+  /// Optional IST window { start: "HH:MM", end: "HH:MM", days: [1..7] }.
+  timeWindow     Json?          @map("time_window")
+  createdById    String?        @map("created_by_id")
+  version        Int            @default(1)
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([service, isActive, tier, priority])
+  @@index([merchantId])
+  @@index([resellerId])
+  @@map("provider_routes")
+}
+
+/// Periodic health snapshot (the live window lives in Redis).
+model ProviderHealthSnapshot {
+  id            String         @id
+  providerId    String         @map("provider_id")
+  service       ServiceType
+  windowStart   DateTime       @map("window_start") @db.Timestamptz(3)
+  windowEnd     DateTime       @map("window_end") @db.Timestamptz(3)
+  requests      Int
+  successes     Int
+  failures      Int
+  timeouts      Int
+  avgLatencyMs  Int?           @map("avg_latency_ms")
+  p95LatencyMs  Int?           @map("p95_latency_ms")
+  p99LatencyMs  Int?           @map("p99_latency_ms")
+  status        ProviderStatus
+  lastSuccessAt DateTime?      @map("last_success_at") @db.Timestamptz(3)
+  lastFailureAt DateTime?      @map("last_failure_at") @db.Timestamptz(3)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([providerId, createdAt(sort: Desc)])
+  @@map("provider_health_snapshots")
+}
+
+/// Inbound provider callbacks: verified, de-duplicated by the provider's event id, stored redacted.
+model ProviderWebhookEvent {
+  id              String               @id
+  providerId      String               @map("provider_id")
+  externalEventId String               @map("external_event_id") @db.VarChar(120)
+  eventType       String               @map("event_type") @db.VarChar(60)
+  signatureValid  Boolean              @map("signature_valid")
+  payload         Json
+  status          InboundWebhookStatus @default(RECEIVED)
+  error           String?              @db.VarChar(500)
+  requestId       String?              @map("request_id") @db.VarChar(40)
+  receivedAt      DateTime             @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt     DateTime?            @map("processed_at") @db.Timestamptz(3)
+
+  provider Provider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@unique([providerId, externalEventId])
+  @@index([status, receivedAt])
+  @@map("provider_webhook_events")
 }

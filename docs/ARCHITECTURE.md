@@ -199,26 +199,71 @@ worker: outbox relay
 
 ## 9. Provider architecture
 
+Implemented in `packages/providers` (Phase 4). Business logic never references a specific bank or PSP. It goes through the **routing engine**, the **failover executor** and the **adapter interfaces**.
+
 ```ts
-interface PayinProvider {
-  createPayment(req, ctx): Promise<ProviderPaymentResult>;
-  getPaymentStatus(ref, ctx): Promise<ProviderPaymentStatus>;
-  refundPayment(req, ctx): Promise<ProviderRefundResult>;
-  verifyWebhook(rawBody, headers): ProviderWebhookVerification;
-}
-interface PayoutProvider {
-  createPayout(req, ctx): Promise<ProviderPayoutResult>;
-  getPayoutStatus(ref, ctx): Promise<ProviderPayoutStatus>;
-  verifyBeneficiary(req, ctx): Promise<BeneficiaryVerification>;
-  getBalance(ctx): Promise<ProviderBalance>;
-}
+interface PayinProvider  { createPayment; getPaymentStatus; refundPayment; verifyWebhook; healthCheck }
+interface PayoutProvider { createPayout; getPayoutStatus; verifyBeneficiary; getBalance; verifyWebhook; healthCheck }
 ```
 
-- Adapters live in `packages/providers/{mock,provider-a,provider-b}`. They map provider-specific payloads to normalized results and **never** touch the database.
-- Credentials are stored encrypted (`ProviderCredential`, AES-256-GCM with key id). Adapters receive decrypted credentials through a `ProviderContext` at call time, and the logger redacts them.
-- **Routing engine:** rules are evaluated in priority order and matched on merchant, reseller, amount slab, method, time window and risk category. The output is an ordered candidate list (PRIMARY → SECONDARY → FALLBACK), filtered by health status and limits.
-- **No blind retries on money movement.** A payout is sent to a fallback provider *only* when the primary returned a definitive pre-acceptance failure, such as a connection refused before the request was sent or an explicit "not accepted" code. Timeouts or ambiguous responses move the payout to `PENDING` and status polling or reconciliation takes over. Every provider call carries our attempt ID as the provider idempotency reference where supported.
-- **Health:** a rolling window in Redis tracks success rate, timeout rate, and p50/p95/p99 latency, with periodic snapshots to `ProviderHealth`. A circuit breaker moves a provider through `ACTIVE ↔ DEGRADED ↔ DOWN`. `MAINTENANCE` and `DISABLED` are manual states.
+### 9.1 Error taxonomy: the rule that prevents duplicate transfers
+
+| Kind | Meaning | Fail over to the next provider? |
+| --- | --- | --- |
+| `NOT_ATTEMPTED` | Never reached the provider: refused connection, DNS failure, 429, circuit open | Yes |
+| `REJECTED` | Provider definitively refused before acceptance (4xx validation) | Yes |
+| `CONFIGURATION` | Our credentials or config are wrong: 401/403, invalid endpoint | Yes, and alert |
+| `AMBIGUOUS` | The request *may* have been processed: timeout after send, 5xx, malformed response, unknown status | **Never.** Go to status polling or reconciliation. |
+
+- **Classification source:** the HTTP client (`http/client.ts`) classifies from the actual socket and HTTP outcome. Anything unclassified is treated as `AMBIGUOUS`.
+- **Failover:** `executeWithFailover()` moves to the next candidate only on safe kinds.
+- **Tests:** a real-socket stub server covers refused connections, timeouts after send, 4xx/5xx and malformed bodies. Failover tests prove an ambiguous outcome never reaches a second provider.
+
+### 9.2 Routing engine
+
+`decideRoute()` is pure and explainable.
+
+- **Rule criteria:** merchant, reseller, payin method or payout mode, amount slab, risk category, and an IST time window (which may cross midnight).
+- **Exclusions:** providers in DOWN, MAINTENANCE or DISABLED; providers that don't support the method; amounts outside the provider's limits; and providers of the wrong kind.
+- **Ordering:** tier (PRIMARY → SECONDARY → FALLBACK), then healthy before DEGRADED, then specificity (merchant > reseller > global), then priority. Ties break on success rate, then cost, then p95 latency.
+- **One candidate per provider.**
+- **Explanations:** every rule records why it matched or was skipped. `POST /v1/routing/simulate` exposes this to operators.
+
+### 9.3 Credentials
+
+- **Storage:** each `ProviderCredential` row holds one AES-256-GCM bundle with AAD = `providerId:environment`.
+- **Write-only:** values are never returned. The API shows key names and last-4 fingerprints, and audit rows record key names only.
+- **Decryption:** happens in memory at call time (`ProviderRegistryService`).
+- **Plain config:** `config` rejects secret-looking keys.
+
+### 9.4 Health and circuit breaker
+
+- **Recording (API):** API nodes record per-call samples in Redis as per-minute counters and the last 500 latencies.
+- **Single writer:** the worker's `provider-health` job is the **single writer** of automatic statuses, so concurrent nodes can't flap them. Every minute it:
+  1. probes each AUTO-managed provider with `healthCheck()`;
+  2. evaluates the breaker using traffic *since the last status change*, so a provider that just recovered isn't re-tripped by old failures;
+  3. applies the result with optimistic concurrency, writing an audit row and an outbox event.
+- **Breaker thresholds:** ≥ 50% errors → DOWN; ≥ 15% errors or p95 ≥ 5 s → DEGRADED. The minimum is 20 samples.
+- **Half-open recovery:** a DOWN provider receives no routed traffic, so it recovers through probes. Three consecutive good probes move DOWN → DEGRADED, and healthy traffic or probes then move it to ACTIVE. Three consecutive failed probes take an idle provider DOWN.
+- **Manual statuses** (MAINTENANCE, DISABLED) are never changed automatically. Setting ACTIVE hands the provider back to the breaker.
+- **History:** snapshots are written every 5 minutes to `provider_health_snapshots`.
+
+### 9.5 Inbound provider webhooks
+
+- **Verification:** `POST /v1/webhooks/providers/:code` verifies the adapter-specific HMAC over the **exact raw bytes** (`rawBody`).
+- **Rejection:** an invalid signature returns `401` and is audited. Unverified payloads are never stored.
+- **Dedupe:** verified events are de-duplicated on `(provider, external_event_id)` and stored as RECEIVED.
+- **Processing:** happens asynchronously. Payin and Payout consume the events from Phase 5 onward.
+
+### 9.6 Adapters
+
+| Adapter | Purpose |
+| --- | --- |
+| `mock` | Deterministic, stateless sandbox for payin and payout. Outcomes are scripted by the amount's paise (`.13`, `.17`, `.50`, `.77`, `.88`, `.99`). It is idempotent on the request reference and HMAC-signs its webhooks. |
+| `provider-a` | Integration **template** for an HMAC-signed REST PSP (payin + payout). Tested against a local stub. |
+| `provider-b` | Integration **template** for a bank payout API: bearer token and numeric status codes. |
+
+The templates are seeded DISABLED. Connecting a real partner means implementing its API mapping in an adapter. Routing, failover, health and credential handling need no changes.
 
 ## 10. Designing toward ~1,000 TPS
 

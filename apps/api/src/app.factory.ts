@@ -16,6 +16,8 @@ export async function createApp(config: ApiConfig): Promise<NestExpressApplicati
   const app = await NestFactory.create<NestExpressApplication>(AppModule.register(config), {
     bufferLogs: true,
     bodyParser: false,
+    // Keep the exact request bytes (req.rawBody) for webhook signature verification.
+    rawBody: true,
   });
   app.useLogger(app.get(Logger));
   app.flushLogs();

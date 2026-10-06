@@ -38,7 +38,8 @@
     "zod": "^4.6.5",
     "@aws-sdk/client-s3": "^3.1146.0",
     "@pay2all/ledger": "workspace:*",
-    "multer": "^2.4.0"
+    "multer": "^2.4.0",
+    "@pay2all/providers": "workspace:*"
   },
   "devDependencies": {
     "@nestjs/cli": "~11.0.24",

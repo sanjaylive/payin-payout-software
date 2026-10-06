@@ -53,6 +53,9 @@ importers:
       '@pay2all/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@pay2all/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@pay2all/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -249,6 +252,9 @@ importers:
       '@pay2all/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@pay2all/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       dotenv:
         specifier: ^17.2.3
         version: 17.4.2

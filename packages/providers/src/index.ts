@@ -1,5 +1,16 @@
 /**
- * @pay2all/providers — provider interfaces and adapters (mock, provider-a, provider-b).
- * Implemented in Phase 4; see docs/ARCHITECTURE.md §9.
+ * @pay2all/providers — provider contracts, error taxonomy, routing engine, failover executor,
+ * health tracking and adapters (mock, provider-a, provider-b). See docs/ARCHITECTURE.md §9.
  */
-export const PROVIDERS_PACKAGE_PHASE = 4;
+export * from './health/health';
+export * from './http/client';
+export * from './interfaces/errors';
+export * from './interfaces/types';
+export { MockPayinProvider } from './mock/payin';
+export { MockPayoutProvider } from './mock/payout';
+export { ulidTime } from './mock/shared';
+export { ProviderAAdapter } from './provider-a';
+export { ProviderBAdapter } from './provider-b';
+export * from './registry';
+export * from './routing/engine';
+export * from './routing/failover';

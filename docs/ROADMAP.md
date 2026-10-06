@@ -63,13 +63,15 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Tests: randomized Debit = Credit / balance invariants, concurrent reserves, duplicate keys, reversal, adjustments, tenancy
 - [x] UI: merchant Balance and Ledger statement; admin Accounts, Journals (with reversal), Adjustments, ledger health; live balance cards
 
-## Phase 4 — Providers ⬜
+## Phase 4 — Providers ✅
 
-- [ ] `PayinProvider` / `PayoutProvider` interfaces, normalized result types and error taxonomy
-- [ ] Provider config + encrypted credentials + admin UI
-- [ ] Routing engine (rules, PRIMARY/SECONDARY/FALLBACK, health/limit filtering) with explainable decisions
-- [ ] Mock payin and mock payout providers with scriptable outcomes (success/fail/pending/timeout)
-- [ ] Provider health: Redis rolling windows, circuit breaker, snapshots
+- [x] `PayinProvider` / `PayoutProvider` interfaces, normalized result types, error taxonomy (NOT_ATTEMPTED / REJECTED / CONFIGURATION / AMBIGUOUS)
+- [x] Classified signed HTTP client; failover executor that never retries ambiguous outcomes elsewhere
+- [x] Provider config + write-only encrypted credentials + admin UI (status, credentials, connection test, health history)
+- [x] Routing engine (merchant/reseller/method/amount/risk/time window, tiers, health/cost/latency tie-breaks) with explanations and simulator
+- [x] Mock payin and payout providers with scriptable outcomes; provider-a / provider-b integration templates
+- [x] Provider health: Redis rolling windows, circuit breaker with half-open recovery, single-writer worker job, snapshots
+- [x] Inbound provider webhook endpoint (raw-body signature verification, de-duplication)
 
 ## Phase 5 — Payin ⬜
 
@@ -199,3 +201,30 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 **Notes:**
 - Demo journals reference `demo_pay_*` and `demo_pout_*` source ids. The Payin and Payout phases will seed the matching transactions.
 - Refund, chargeback and settlement *flows* arrive with their phases. Their posting recipes and type rules already exist in the engine.
+
+### Phase 4 — Providers (completed 2026-10-06)
+
+**Delivered:**
+- **`@pay2all/providers`:** the contracts, error taxonomy, HTTP client, routing engine, failover executor, health and breaker logic, and the mock, provider-a and provider-b adapters.
+- **API:** provider CRUD, manual status, write-only credentials, connection test, routes and routing simulator, and inbound webhooks.
+- **Worker:** the provider-health job (the single writer of automatic statuses) and health snapshots.
+- **UI:** provider lists, provider detail, routes with the simulator, a health dashboard, and live provider health on the admin dashboard.
+- **Seed:** your routing examples.
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- **Providers package:** 28 tests, covering:
+  - your routing examples (Merchant A → P1, Merchant B → P2, slabs, fallback when DOWN);
+  - tie-breaks, capabilities and time windows;
+  - failover never calling a second provider after an ambiguous outcome;
+  - real-socket classification of refused connections, timeouts, 4xx/5xx, malformed bodies and invalid endpoints;
+  - provider-a request signing;
+  - mock determinism and webhook HMAC.
+- **API:** 88 integration tests (10 new). They cover the seeded routing, maintenance failover, write-only credentials (never in responses or audit), connection classification, and signed, deduplicated webhooks where forgeries are not stored.
+- **Worker:** an integration test of the full breaker cycle (ACTIVE → DOWN → DEGRADED → ACTIVE, with audit and outbox rows) that also confirms manual statuses are untouched.
+- **Dev stack:** the worker probes the seeded providers with no spurious status changes.
+
+**Notes:**
+- The provider-a and provider-b templates are not connected to real partners and stay DISABLED until a real API spec is mapped.
+- Processing of stored inbound provider events arrives with Payin and Payout (Phases 5–6).
+- The latency list used for p95 is not trimmed by the last status change. Only the counters are trimmed. This is acceptable for now; revisit in Phase 10.

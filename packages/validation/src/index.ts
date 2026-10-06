@@ -6,3 +6,4 @@ export * from './limits';
 export * from './merchant';
 export * from './sales';
 export * from './ledger';
+export * from './providers';
