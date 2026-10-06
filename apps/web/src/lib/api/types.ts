@@ -647,3 +647,86 @@ export interface DeadLetterRow {
   created_at: string;
   requeued_at: string | null;
 }
+
+export interface SettlementRow {
+  settlement_id: string;
+  merchant_id: string;
+  settlement_date: string;
+  cycle: 'T0' | 'T1' | 'T2' | 'CUSTOM';
+  destination: 'WALLET' | 'BANK';
+  period_start: string | null;
+  period_end: string;
+  status: 'PROCESSING' | 'PROCESSED' | 'FAILED';
+  payment_count: number;
+  gross: string;
+  fees: string;
+  tax: string;
+  refunds: string;
+  net: string;
+  bank: { account_number_masked: string; ifsc: string; bank_name: string | null; account_holder_name: string } | null;
+  utr: string | null;
+  bank_reference: string | null;
+  failure_reason: string | null;
+  processed_at: string | null;
+  created_at: string;
+  payments?: { payment_id: string; merchant_order_id: string; amount: string; fee: string; tax: string; net: string; refunded: string; success_at: string; utr: string | null; status: string }[];
+}
+
+export interface SettlementConfigView {
+  cycle: 'T0' | 'T1' | 'T2' | 'CUSTOM';
+  custom_days: number | null;
+  cutoff_time: string;
+  min_amount: string;
+  destination: 'WALLET' | 'BANK';
+  auto_settle: boolean;
+  is_default: boolean;
+}
+
+export interface FeeSummary {
+  month: string;
+  payin: { count: number; volume: string; fees: string; gst: string };
+  payout: { count: number; volume: string; fees: string; gst: string };
+  refunds: { count: number; amount: string };
+  total_fees: string;
+  total_gst: string;
+  total_charged: string;
+}
+
+export interface ReconRun {
+  run_id: string;
+  provider_id: string;
+  provider: string | null;
+  kind: 'PAYIN' | 'PAYOUT';
+  file_name: string;
+  status: 'QUEUED' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+  period_from: string | null;
+  period_to: string | null;
+  total_rows: number;
+  matched: number;
+  mismatched: number;
+  missing_internal: number;
+  missing_provider: number;
+  duplicates: number;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+  open_items?: number;
+}
+
+export interface ReconEntry {
+  entry_id: string;
+  run_id: string;
+  line_no: number | null;
+  result: 'MATCHED' | 'AMOUNT_MISMATCH' | 'STATUS_MISMATCH' | 'MISSING_INTERNAL' | 'MISSING_PROVIDER' | 'DUPLICATE';
+  external_ref: string | null;
+  external_utr: string | null;
+  external_amount: string | null;
+  external_status: string | null;
+  internal_type: string | null;
+  internal_id: string | null;
+  internal_amount: string | null;
+  internal_status: string | null;
+  resolution: 'NOT_REQUIRED' | 'OPEN' | 'RESOLVED';
+  resolution_note: string | null;
+  resolved_at: string | null;
+}

@@ -131,7 +131,7 @@ export class RefundsService {
   async processDue(limit = 20): Promise<number> {
     const claimed = await this.prisma.$transaction(async (tx) => {
       const due = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM refunds WHERE status IN ('CREATED', 'PENDING') AND next_attempt_at <= now()
+        SELECT id FROM refunds WHERE status IN ('CREATED', 'PENDING') AND next_attempt_at <= ${new Date()}
         ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       for (const { id } of due) {
         await tx.refund.update({ where: { id }, data: { attempts: { increment: 1 }, nextAttemptAt: new Date(Date.now() + 5 * 60_000) } });

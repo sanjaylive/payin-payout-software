@@ -45,7 +45,7 @@ export class WebhookSender {
   async sendDue(limit = 25): Promise<number> {
     const due = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM webhook_deliveries WHERE status = 'PENDING' AND next_attempt_at <= now()
+        SELECT id FROM webhook_deliveries WHERE status = 'PENDING' AND next_attempt_at <= ${new Date()}
          ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       if (rows.length) await tx.webhookDelivery.updateMany({ where: { id: { in: rows.map((r) => r.id) } }, data: { nextAttemptAt: new Date(Date.now() + 2 * 60_000) } });
       return rows.map((r) => r.id);

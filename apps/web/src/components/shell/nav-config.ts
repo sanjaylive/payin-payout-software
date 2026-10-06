@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 /** Highest delivered phase — nav entries above it render roadmap placeholders. */
-export const CURRENT_PHASE = 7;
+export const CURRENT_PHASE = 8;
 
 export interface NavLeaf {
   label: string;
@@ -72,7 +72,7 @@ export const MERCHANT_NAV: NavItem[] = [
     children: [
       { label: 'Balance', href: '/accounts/balance', phase: 3, permission: 'ledger.read' },
       { label: 'Ledger', href: '/accounts/ledger', phase: 3, permission: 'ledger.read' },
-      { label: 'Fees & invoices', href: '/accounts/fees', phase: 8, permission: 'ledger.read' },
+      { label: 'Fees', href: '/accounts/fees', phase: 8, permission: 'ledger.read' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },
@@ -107,6 +107,7 @@ export const RESELLER_NAV: NavItem[] = [
   { label: 'Merchants', href: '/reseller/merchants', icon: Building2, phase: 1, permission: 'merchant.read' },
   { label: 'Payin', href: '/reseller/payin', icon: ArrowDownToLine, phase: 5, permission: 'payin.read' },
   { label: 'Payout', href: '/reseller/payout', icon: ArrowUpFromLine, phase: 6, permission: 'payout.read' },
+  { label: 'Settlements', href: '/settlements', icon: Landmark, phase: 8, permission: 'settlement.read' },
   { label: 'Pricing', href: '/reseller/pricing', icon: Tags, phase: 9, permission: 'pricing.read' },
   { label: 'Commissions', href: '/reseller/commissions', icon: Receipt, phase: 9 },
   { label: 'Earnings', href: '/reseller/earnings', icon: Landmark, phase: 9 },

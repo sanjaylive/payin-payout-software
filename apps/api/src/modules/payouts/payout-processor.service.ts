@@ -55,9 +55,9 @@ export class PayoutProcessorService {
     const claimed = await this.transitions.ledgerRun(async (tx) => {
       const rows = onlyId
         ? await tx.$queryRaw<{ id: string }[]>`
-            SELECT id FROM payouts WHERE id = ${onlyId} AND status = 'QUEUED' AND next_attempt_at <= now() FOR UPDATE SKIP LOCKED`
+            SELECT id FROM payouts WHERE id = ${onlyId} AND status = 'QUEUED' AND next_attempt_at <= ${new Date()} FOR UPDATE SKIP LOCKED`
         : await tx.$queryRaw<{ id: string }[]>`
-            SELECT id FROM payouts WHERE status = 'QUEUED' AND next_attempt_at <= now()
+            SELECT id FROM payouts WHERE status = 'QUEUED' AND next_attempt_at <= ${new Date()}
              ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       const ids: string[] = [];
       for (const { id } of rows) {
@@ -168,7 +168,7 @@ export class PayoutProcessorService {
   async pollInFlight(limit = 25): Promise<number> {
     const claimed = await this.prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string; poll_count: number }[]>`
-        SELECT id, poll_count FROM payouts WHERE status IN ('PROCESSING', 'PENDING') AND next_attempt_at <= now()
+        SELECT id, poll_count FROM payouts WHERE status IN ('PROCESSING', 'PENDING') AND next_attempt_at <= ${new Date()}
          ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       for (const r of rows) {
         await tx.payout.update({ where: { id: r.id }, data: { pollCount: { increment: 1 }, nextAttemptAt: new Date(Date.now() + POLL_BACKOFF_MS[Math.min(r.poll_count + 1, POLL_BACKOFF_MS.length - 1)]!) } });
