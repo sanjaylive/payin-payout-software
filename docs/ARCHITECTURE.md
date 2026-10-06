@@ -259,7 +259,7 @@ interface PayoutProvider { createPayout; getPayoutStatus; verifyBeneficiary; get
 
 | Adapter | Purpose |
 | --- | --- |
-| `mock` | Deterministic, stateless sandbox for payin and payout. Outcomes are scripted by the amount's paise (`.13`, `.17`, `.50`, `.77`, `.88`, `.99`). It is idempotent on the request reference and HMAC-signs its webhooks. |
+| `mock` | Deterministic, stateless sandbox for payin and payout. Outcomes are scripted by the amount's paise (`.13`, `.17`, `.50`, `.77`, `.88`, `.91`, `.92`, `.99`; see `packages/providers/src/mock`). It is idempotent on the request reference and HMAC-signs its webhooks. |
 | `provider-a` | Integration **template** for an HMAC-signed REST PSP (payin + payout). Tested against a local stub. |
 | `provider-b` | Integration **template** for a bank payout API: bearer token and numeric status codes. |
 

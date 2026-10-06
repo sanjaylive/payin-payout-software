@@ -73,14 +73,14 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - [x] Provider health: Redis rolling windows, circuit breaker with half-open recovery, single-writer worker job, snapshots
 - [x] Inbound provider webhook endpoint (raw-body signature verification, de-duplication)
 
-## Phase 5 — Payin ⬜
+## Phase 5 — Payin ✅
 
-- [ ] Pricing engine + `TransactionPricingSnapshot`
-- [ ] Idempotency middleware + `IdempotencyRecord`
-- [ ] `POST/GET /v1/payments`, list with filters, attempts, QR/intent response
-- [ ] Provider callbacks → state machine → ledger → outbox
-- [ ] Expiry sweeper, status polling, refunds
-- [ ] Dashboard: payin transactions, details drawer, create payment, refunds
+- [x] Pricing engine + `TransactionPricingSnapshot`
+- [x] Idempotency service + `IdempotencyRecord` (stored-response replay, conflict detection, sweeper)
+- [x] `POST/GET /v1/payments`, list with filters, attempts, QR/intent response, stats
+- [x] Provider callbacks → state machine → ledger → outbox
+- [x] Expiry sweeper, status polling, refunds (jobs process)
+- [x] Dashboard: payin transactions, details drawer, create payment, QR codes, payment links, refunds, live payin charts; admin payin/refunds and pricing
 
 ## Phase 6 — Payout ⬜
 
@@ -121,7 +121,7 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 
 ## Open decisions (need Pay2All confirmation)
 
-1. **Public API amount format.** The proposal is a string decimal in rupees (`"1000.00"`), with JSON numbers rejected. The alternative is integer paise. This must be decided before Phase 5.
+1. ~~**Public API amount format.**~~ Decided before Phase 5: string decimal rupees (`"1000.00"`), JSON numbers rejected.
 2. **Settlement partner model.** Which partner bank, nodal or escrow arrangement holds merchant funds. This affects the chart of accounts labels, not the structure.
 3. **Retention periods** for transactions, audit logs and KYC documents (legal input required).
 4. **MFA for merchant OWNER/ADMIN roles.** Currently optional. Recommended to make it mandatory before go-live.
@@ -228,3 +228,47 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 - The provider-a and provider-b templates are not connected to real partners and stay DISABLED until a real API spec is mapped.
 - Processing of stored inbound provider events arrives with Payin and Payout (Phases 5–6).
 - The latency list used for p95 is not trimmed by the last status change. Only the counters are trimmed. This is acceptable for now; revisit in Phase 10.
+
+### Phase 5 — Payin (completed 2026-10-06)
+
+**Delivered:**
+- **API:**
+  - payments (create / get / list / stats), refunds, idempotency (`Idempotency-Key`, replay with `Idempotent-Replayed: true`);
+  - the single payment transition service (callback / poll / expiry / sandbox / review), with `PAYIN_CAPTURE` posted in the same transaction;
+  - amount-mismatch and late-success holds, and the review-accept endpoint;
+  - pricing plans, assignments, quotes and immutable snapshots;
+  - inline processing and retry of inbound provider events;
+  - the sandbox payment simulator.
+- **Jobs process** (`jobs.main.ts`): poller, expiry, refund dispatch, inbound retry and idempotency sweeper. The scheduler moved to `@pay2all/events` and a failing tick (e.g. Redis down) is now logged instead of crashing the process.
+- **UI:**
+  - merchant: transactions (filters, details drawer, refunds), create payment with live QR / status, QR codes, payment links, refunds, live dashboard cards and charts;
+  - reseller: payin overview;
+  - admin: payin with routing attempts and review, refunds, pricing plans, plan assignment and fee calculator.
+- **Seed:** default pricing (merchant 0.18% / ₹5, wholesale 0.14% / ₹4, provider cost 0.10% / ₹3, GST 18%), the fallback sandbox provider `mock-upi-2`, and demo payments created through the real services (`seed:demo-payments`).
+
+**Verification:**
+- `turbo run lint typecheck test` is green.
+- **API:** 111 integration tests (23 new in `payments.e2e-spec.ts`), covering:
+  - exact fee snapshot (₹1000 → 1.80 + 0.32 GST, margins 0.40 / 0.40);
+  - numeric amounts rejected; replay, conflict and concurrent same-key creating exactly one payment; `DUPLICATE_ORDER`;
+  - KYC / payin-disabled / suspended / limit errors;
+  - failover on `.91` and no failover on ambiguous `.92`;
+  - capture entries exact and duplicate callbacks no-ops; amount mismatch held;
+  - late success under both policies;
+  - cross-tenant 404 and masked lists;
+  - partial / full / over / concurrent refunds and exact reversal on refund failure;
+  - poller, expiry and sandbox paths;
+  - snapshot immutability after a plan change.
+- **Mutation check:** removing the payment row lock in refund creation fails the concurrent-refund test.
+- **Events:** a new scheduler unit test covers the outage-survival fix.
+- **Dev stack:** the jobs process boots, ticks and shuts down gracefully. An API smoke run (create → sandbox complete → SUCCESS with UTR, net 997.88) and every new route compile cleanly.
+
+**Notes:** see PAYIN_FLOW.md §13 for deliberate deferrals:
+- Redis idempotency cache;
+- the risk / ops-review queue;
+- re-quoting provider cost on failover;
+- exact limit counters;
+- webhook delivery (Phase 7);
+- API-key authentication (Phase 9).
+
+The dashboard charts were not checked visually in a browser this phase (the browser extension was unavailable), only compiled and verified against live stats data.

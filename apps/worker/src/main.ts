@@ -7,7 +7,7 @@ import { createLogger } from '@pay2all/logger';
 import Redis from 'ioredis';
 import { balanceSnapshotJob, ledgerVerificationJob } from './jobs/ledger-jobs';
 import { providerHealthJob, providerSnapshotJob } from './jobs/provider-health-job';
-import { Scheduler } from './jobs/scheduler';
+import { Scheduler } from '@pay2all/events';
 
 /**
  * Pay2All worker process.

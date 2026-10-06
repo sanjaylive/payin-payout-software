@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 /** Highest delivered phase — nav entries above it render roadmap placeholders. */
-export const CURRENT_PHASE = 4;
+export const CURRENT_PHASE = 5;
 
 export interface NavLeaf {
   label: string;
@@ -72,7 +72,7 @@ export const MERCHANT_NAV: NavItem[] = [
     children: [
       { label: 'Balance', href: '/accounts/balance', phase: 3, permission: 'ledger.read' },
       { label: 'Ledger', href: '/accounts/ledger', phase: 3, permission: 'ledger.read' },
-      { label: 'Fees', href: '/accounts/fees', phase: 5, permission: 'ledger.read' },
+      { label: 'Fees & invoices', href: '/accounts/fees', phase: 8, permission: 'ledger.read' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },

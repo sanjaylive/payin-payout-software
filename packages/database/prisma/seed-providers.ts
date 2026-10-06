@@ -2,6 +2,7 @@
 /**
  * Demo providers and routing rules (development only). Idempotent.
  *  - mock-upi       PAYIN  sandbox (ACTIVE)
+ *  - mock-upi-2     PAYIN  sandbox fallback (ACTIVE) — demonstrates failover on rejected orders
  *  - mock-payout    PAYOUT sandbox "Provider 1" (ACTIVE)
  *  - mock-payout-2  PAYOUT sandbox "Provider 2" (ACTIVE)
  *  - provider-a / provider-b  integration templates (DISABLED — no real endpoints)
@@ -20,6 +21,7 @@ export async function seedProviders(db: PrismaClient, sharmaId: string): Promise
 
   const defs = [
     { code: 'mock-upi', name: 'Sandbox UPI collections', kind: 'PAYIN', adapter: 'mock', status: 'ACTIVE', capabilities: { payin_methods: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK'], min_amount_minor: '100', max_amount_minor: '10000000' }, costs: { payin_rate_micros: '100000' }, config: { auto_success_after_ms: 3000, timeout_ms: 8000 } },
+    { code: 'mock-upi-2', name: 'Sandbox UPI collections — fallback', kind: 'PAYIN', adapter: 'mock', status: 'ACTIVE', capabilities: { payin_methods: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK'], min_amount_minor: '100', max_amount_minor: '10000000' }, costs: { payin_rate_micros: '110000' }, config: { auto_success_after_ms: 3000, timeout_ms: 8000, collect_vpa: 'pay2all.mock2@upi', scripted_create_failures: false } },
     { code: 'mock-payout', name: 'Sandbox payouts — Provider 1', kind: 'PAYOUT', adapter: 'mock', status: 'ACTIVE', capabilities: { payout_modes: ['IMPS', 'NEFT', 'UPI'], max_amount_minor: '50000000' }, costs: { payout_flat_minor: '300' }, config: { auto_success_after_ms: 3000, timeout_ms: 10000 } },
     { code: 'mock-payout-2', name: 'Sandbox payouts — Provider 2', kind: 'PAYOUT', adapter: 'mock', status: 'ACTIVE', capabilities: { payout_modes: ['IMPS', 'NEFT', 'RTGS', 'UPI'] }, costs: { payout_flat_minor: '450' }, config: { auto_success_after_ms: 5000, timeout_ms: 10000 } },
     { code: 'provider-a', name: 'Provider A (integration template)', kind: 'BOTH', adapter: 'provider-a', status: 'DISABLED', capabilities: { payin_methods: ['UPI_QR', 'UPI_INTENT'], payout_modes: ['IMPS', 'NEFT'] }, costs: { payin_rate_micros: '90000', payout_flat_minor: '250' }, config: { base_url: 'https://sandbox.provider-a.example', timeout_ms: 10000 } },
@@ -74,5 +76,9 @@ export async function seedProviders(db: PrismaClient, sharmaId: string): Promise
       ],
     });
   }
-  console.log('  Providers: mock-upi, mock-payout, mock-payout-2 (active); provider-a, provider-b (disabled templates).');
+  const upi2 = ids.get('mock-upi-2')!;
+  if (!(await db.providerRoute.count({ where: { providerId: upi2 } }))) {
+    await db.providerRoute.create({ data: { id: newId('providerRoute'), name: 'Fallback UPI collections', service: 'PAYIN', providerId: upi2, tier: 'FALLBACK', priority: 100 } });
+  }
+  console.log('  Providers: mock-upi, mock-upi-2, mock-payout, mock-payout-2 (active); provider-a, provider-b (disabled templates).');
 }

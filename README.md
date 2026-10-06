@@ -15,6 +15,7 @@ pnpm install
 pnpm prisma:migrate                        # applies migrations to the dev DB
 SEED_PASSWORD='Choose-A-Dev-Password' pnpm db:seed
 pnpm dev                                   # API :4000, web :3000, worker health :4001
+pnpm dev:jobs                              # payin jobs: status polling, expiry, refunds (separate terminal)
 ```
 
 | Service | URL |

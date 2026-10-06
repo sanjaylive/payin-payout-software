@@ -7,3 +7,5 @@ export * from './merchant';
 export * from './sales';
 export * from './ledger';
 export * from './providers';
+export * from './payments';
+export * from './pricing';

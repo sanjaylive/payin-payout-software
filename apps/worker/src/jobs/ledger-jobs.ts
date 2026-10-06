@@ -1,7 +1,7 @@
 import { newId } from '@pay2all/auth';
 import type { PrismaClient } from '@pay2all/database';
 import type { Logger } from '@pay2all/logger';
-import type { ScheduledJob } from './scheduler';
+import type { ScheduledJob } from '@pay2all/events';
 
 const IST_OFFSET_MS = 330 * 60 * 1000;
 

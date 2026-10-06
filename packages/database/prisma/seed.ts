@@ -5,8 +5,8 @@
  * Never runs in production. Demo users get the password from SEED_PASSWORD, or a freshly generated
  * random password printed once at the end. There are no hardcoded credentials in this repository.
  *
- * Phase 1 seeds identity & tenancy only. Providers, payins, payouts, ledger and settlements are
- * seeded by the phases that introduce them (docs/ROADMAP.md).
+ * Each phase adds its own seed module (merchants, providers, pricing …); demo transactions are
+ * created through the real services by apps/api scripts so they carry correct ledger entries.
  */
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -14,6 +14,7 @@ import { config as loadDotenv } from 'dotenv';
 import { checkPasswordPolicy, hashPassword, newId, PERMISSIONS, PERMISSION_KEYS, SYSTEM_ROLES } from '@pay2all/auth';
 import { createPrismaClient, type OrganizationType, type PrismaClient } from '../src/index';
 import { ensureMerchantAggregates, seedMerchantOnboarding } from './seed-merchants';
+import { seedPricing } from './seed-pricing';
 import { seedProviders } from './seed-providers';
 
 loadDotenv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
@@ -149,6 +150,7 @@ async function main() {
     nimbusOwnerId: created.get('owner@nimbus-software.local')!,
   });
   await seedProviders(prisma, m1.id);
+  await seedPricing(prisma, platform.id);
   const salesId = created.get('sales@pay2all.local')!;
   await prisma.organization.updateMany({ where: { id: { in: [reseller.id, m1.id, m2.id] } }, data: { assignedSalesUserId: salesId } });
   if ((await prisma.salesLead.count()) === 0) {
