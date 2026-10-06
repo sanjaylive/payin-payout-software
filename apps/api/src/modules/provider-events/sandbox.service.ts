@@ -53,4 +53,33 @@ export class SandboxService {
     const signature = createHmac('sha256', secret).update(body).digest('hex');
     return this.inbound.receive(provider.code, body, { 'x-mock-signature': signature });
   }
+
+  /** Simulate the bank's answer for a sent payout (success, failure, or a later bank return). */
+  async completePayout(actor: Actor, payoutId: string, outcome: 'SUCCESS' | 'FAILED' | 'REVERSED') {
+    if (this.config.isProduction) throw new AppError(ErrorCode.NOT_FOUND);
+    const ids = await this.scope.accessibleOrganizationIds(actor);
+    const p = await this.prisma.payout.findFirst({ where: { id: payoutId, ...(ids ? { merchantId: { in: ids } } : {}) } });
+    if (!p) throw new AppError(ErrorCode.TRANSACTION_NOT_FOUND);
+    const attempt = await this.prisma.payoutAttempt.findFirst({ where: { payoutId, status: { in: ['ACCEPTED', 'UNKNOWN', 'INITIATED'] } }, orderBy: { attemptNo: 'desc' } });
+    if (!attempt) throw new AppError(ErrorCode.INVALID_REQUEST, 'The payout has not been sent to a provider yet');
+    const provider = await this.prisma.provider.findUniqueOrThrow({ where: { id: attempt.providerId } });
+    if (provider.adapter !== 'mock' || provider.environment !== 'TEST') throw new AppError(ErrorCode.FORBIDDEN, 'Simulation is only available for sandbox providers');
+    const secret = (await this.registry.context(provider)).credentials.webhook_secret;
+    if (!secret) throw new AppError(ErrorCode.INVALID_REQUEST, 'Sandbox provider has no webhook secret');
+    const utr = String(Math.floor(1e11 + Math.random() * 9e11));
+    const body = Buffer.from(
+      JSON.stringify({
+        event_id: `sbx_${randomUUID()}`,
+        type: 'payout.status',
+        data: {
+          reference: attempt.reference,
+          ...(attempt.providerReference ? { provider_reference: attempt.providerReference } : {}),
+          status: outcome,
+          ...(outcome === 'FAILED' ? { failure_reason: 'Beneficiary account closed (sandbox)' } : outcome === 'REVERSED' ? { utr: p.utr ?? utr, failure_reason: 'Credit returned by beneficiary bank (sandbox)' } : { utr }),
+        },
+      }),
+    );
+    const signature = createHmac('sha256', secret).update(body).digest('hex');
+    return this.inbound.receive(provider.code, body, { 'x-mock-signature': signature });
+  }
 }

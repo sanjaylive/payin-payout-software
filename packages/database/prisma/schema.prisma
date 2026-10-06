@@ -1434,3 +1434,250 @@ model WebhookEvent {
   @@index([resourceId])
   @@map("webhook_events")
 }
+
+// ------------------------------------------------------------------------------------------------
+// Payouts (Phase 6) — docs/PAYOUT_FLOW.md
+// ------------------------------------------------------------------------------------------------
+
+enum BeneficiaryType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum BeneficiaryVerificationStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  BLOCKED
+}
+
+/// A payout destination owned by one merchant. The account number is stored encrypted, masked and
+/// as a keyed blind index (duplicate / risk lookups without decrypting). Never returned in full.
+model Beneficiary {
+  id                     String                        @id
+  merchantId             String                        @map("merchant_id")
+  name                   String                        @db.VarChar(120)
+  type                   BeneficiaryType               @default(INDIVIDUAL)
+  accountNumberEncrypted String?                       @map("account_number_encrypted")
+  accountNumberMasked    String?                       @map("account_number_masked") @db.VarChar(40)
+  accountNumberHash      String?                       @map("account_number_hash") @db.VarChar(64)
+  ifsc                   String?                       @db.VarChar(11)
+  bankName               String?                       @map("bank_name") @db.VarChar(120)
+  upiId                  String?                       @map("upi_id") @db.VarChar(255)
+  mobile                 String?                       @db.VarChar(20)
+  email                  String?                       @db.VarChar(254)
+  verificationStatus     BeneficiaryVerificationStatus @default(PENDING) @map("verification_status")
+  verificationReference  String?                       @map("verification_reference") @db.VarChar(120)
+  verifiedName           String?                       @map("verified_name") @db.VarChar(160)
+  nameMatchScore         Int?                          @map("name_match_score")
+  verifiedAt             DateTime?                     @map("verified_at") @db.Timestamptz(3)
+  verificationFailure    String?                       @map("verification_failure") @db.VarChar(300)
+  blockedReason          String?                       @map("blocked_reason") @db.VarChar(300)
+  createdById            String?                       @map("created_by_id")
+  version                Int                           @default(1)
+  createdAt              DateTime                      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime                      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  payouts Payout[]
+
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([accountNumberHash])
+  @@map("beneficiaries")
+}
+
+enum PayoutStatus {
+  CREATED
+  VALIDATING
+  APPROVAL_PENDING
+  MANUAL_REVIEW
+  QUEUED
+  PROCESSING
+  PENDING
+  SUCCESS
+  FAILED
+  REJECTED
+  REVERSED
+}
+
+enum PayoutSource {
+  DASHBOARD
+  API
+  BULK
+}
+
+model Payout {
+  id                  String       @id
+  merchantId          String       @map("merchant_id")
+  resellerId          String?      @map("reseller_id")
+  merchantOrderId     String       @map("merchant_order_id") @db.VarChar(64)
+  mode                String       @db.VarChar(10)
+  purpose             String       @db.VarChar(30)
+  status              PayoutStatus @default(CREATED)
+  source              PayoutSource @default(DASHBOARD)
+  amountMinor         BigInt       @map("amount_minor")
+  feeMinor            BigInt       @default(0) @map("fee_minor")
+  taxMinor            BigInt       @default(0) @map("tax_minor")
+  /// amount + fee + tax: what is reserved from AVAILABLE.
+  totalDebitMinor     BigInt       @map("total_debit_minor")
+  currency            String       @default("INR") @db.Char(3)
+  beneficiaryId       String       @map("beneficiary_id")
+  /// Masked copy at creation time (name, masked account, IFSC / VPA) — never the full number.
+  beneficiarySnapshot Json         @map("beneficiary_snapshot")
+  narration           String?      @db.VarChar(100)
+  metadata            Json?
+  approvalsRequired   Int          @default(0) @map("approvals_required")
+  approvalsReceived   Int          @default(0) @map("approvals_received")
+  approvalExpiresAt   DateTime?    @map("approval_expires_at") @db.Timestamptz(3)
+  providerId          String?      @map("provider_id")
+  routeId             String?      @map("route_id")
+  providerReference   String?      @map("provider_reference") @db.VarChar(120)
+  utr                 String?      @db.VarChar(40)
+  failureCode         String?      @map("failure_code") @db.VarChar(60)
+  failureReason       String?      @map("failure_reason") @db.VarChar(300)
+  reviewReason        String?      @map("review_reason") @db.VarChar(300)
+  reserveJournalId    String?      @map("reserve_journal_id")
+  settleJournalId     String?      @map("settle_journal_id")
+  releaseJournalId    String?      @map("release_journal_id")
+  reversalJournalId   String?      @map("reversal_journal_id")
+  queuedAt            DateTime?    @map("queued_at") @db.Timestamptz(3)
+  processedAt         DateTime?    @map("processed_at") @db.Timestamptz(3)
+  reversedAt          DateTime?    @map("reversed_at") @db.Timestamptz(3)
+  nextAttemptAt       DateTime?    @map("next_attempt_at") @db.Timestamptz(3)
+  pollCount           Int          @default(0) @map("poll_count")
+  requeueCount        Int          @default(0) @map("requeue_count")
+  bulkBatchId         String?      @map("bulk_batch_id")
+  bulkRowNo           Int?         @map("bulk_row_no")
+  createdById         String?      @map("created_by_id")
+  requestId           String?      @map("request_id") @db.VarChar(64)
+  version             Int          @default(1)
+  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  beneficiary Beneficiary      @relation(fields: [beneficiaryId], references: [id], onDelete: Restrict)
+  attempts    PayoutAttempt[]
+  approvals   PayoutApproval[]
+
+  @@unique([merchantId, merchantOrderId])
+  @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([status, createdAt])
+  @@index([beneficiaryId])
+  @@index([bulkBatchId])
+  @@map("payouts")
+}
+
+enum PayoutAttemptStatus {
+  /// Committed before the provider call — an INITIATED attempt with no result means "outcome unknown".
+  INITIATED
+  ACCEPTED
+  FAILED
+  UNKNOWN
+}
+
+model PayoutAttempt {
+  id                String              @id
+  payoutId          String              @map("payout_id")
+  attemptNo         Int                 @map("attempt_no")
+  providerId        String              @map("provider_id")
+  /// Our idempotency reference sent to the provider (`pout_X-1`); a new one only after a definitive failure.
+  reference         String              @unique @db.VarChar(60)
+  providerReference String?             @map("provider_reference") @db.VarChar(120)
+  status            PayoutAttemptStatus @default(INITIATED)
+  errorKind         String?             @map("error_kind") @db.VarChar(20)
+  errorCode         String?             @map("error_code") @db.VarChar(60)
+  errorMessage      String?             @map("error_message") @db.VarChar(300)
+  latencyMs         Int?                @map("latency_ms")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  completedAt       DateTime?           @map("completed_at") @db.Timestamptz(3)
+
+  payout Payout @relation(fields: [payoutId], references: [id], onDelete: Restrict)
+
+  @@unique([payoutId, attemptNo])
+  @@map("payout_attempts")
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+/// Maker-checker votes. Append-only; one vote per approver per payout.
+model PayoutApproval {
+  id         String           @id
+  payoutId   String           @map("payout_id")
+  approverId String           @map("approver_id")
+  decision   ApprovalDecision
+  reason     String?          @db.VarChar(300)
+  createdAt  DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  payout Payout @relation(fields: [payoutId], references: [id], onDelete: Restrict)
+
+  @@unique([payoutId, approverId])
+  @@map("payout_approvals")
+}
+
+enum BulkBatchStatus {
+  VALIDATED
+  VALIDATION_FAILED
+  CONFIRMED
+  PROCESSING
+  COMPLETED
+  CANCELLED
+}
+
+model BulkPayoutBatch {
+  id               String          @id
+  merchantId       String          @map("merchant_id")
+  fileName         String          @map("file_name") @db.VarChar(200)
+  fileHash         String          @map("file_hash") @db.VarChar(64)
+  status           BulkBatchStatus
+  totalRows        Int             @map("total_rows")
+  validRows        Int             @map("valid_rows")
+  totalAmountMinor BigInt          @map("total_amount_minor")
+  /// Approval tier applied to every row: the stricter of the batch total and the row amount.
+  batchApprovals   Int             @default(0) @map("batch_approvals")
+  createdCount     Int             @default(0) @map("created_count")
+  failedCount      Int             @default(0) @map("failed_count")
+  createdById      String?         @map("created_by_id")
+  confirmedById    String?         @map("confirmed_by_id")
+  confirmedAt      DateTime?       @map("confirmed_at") @db.Timestamptz(3)
+  completedAt      DateTime?       @map("completed_at") @db.Timestamptz(3)
+  version          Int             @default(1)
+  createdAt        DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  rows BulkPayoutRow[]
+
+  @@unique([merchantId, fileHash])
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@map("bulk_payout_batches")
+}
+
+enum BulkRowStatus {
+  VALID
+  INVALID
+  CREATED
+  FAILED
+}
+
+/// A parsed CSV row. Holds a beneficiary reference, never the raw account number.
+model BulkPayoutRow {
+  id               String        @id
+  batchId          String        @map("batch_id")
+  rowNo            Int           @map("row_no")
+  merchantOrderId  String?       @map("merchant_order_id") @db.VarChar(64)
+  amountMinor      BigInt?       @map("amount_minor")
+  mode             String?       @db.VarChar(10)
+  purpose          String?       @db.VarChar(30)
+  narration        String?       @db.VarChar(100)
+  beneficiaryId    String?       @map("beneficiary_id")
+  /// Masked display copy for the review screen.
+  beneficiaryLabel String?       @map("beneficiary_label") @db.VarChar(200)
+  status           BulkRowStatus
+  errors           Json?
+  payoutId         String?       @map("payout_id")
+
+  batch BulkPayoutBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+
+  @@unique([batchId, rowNo])
+  @@map("bulk_payout_rows")
+}

@@ -5,6 +5,7 @@ import { ApiConfig } from '../config/api-config';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { MailService } from './mail.service';
+import { MerchantEventsService } from './merchant-events.service';
 import { OutboxService } from './outbox.service';
 import { StorageService } from './storage.service';
 import { PRISMA, REDIS } from './tokens';
@@ -37,8 +38,9 @@ import { PRISMA, REDIS } from './tokens';
     StorageService,
     OutboxService,
     IdempotencyService,
+    MerchantEventsService,
   ],
-  exports: [PRISMA, REDIS, RateLimitService, MailService, StorageService, OutboxService, IdempotencyService],
+  exports: [PRISMA, REDIS, RateLimitService, MailService, StorageService, OutboxService, IdempotencyService, MerchantEventsService],
 })
 export class InfraModule implements OnApplicationShutdown {
   private readonly logger = new Logger(InfraModule.name);

@@ -9,8 +9,9 @@ import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
-import { type ProviderOutcome, PaymentTransitionsService } from './payment-transitions.service';
-import { RefundsService } from './refunds.service';
+import { type ProviderOutcome, PaymentTransitionsService } from '../payments/payment-transitions.service';
+import { RefundsService } from '../payments/refunds.service';
+import { PayoutTransitionsService } from '../payouts/payout-transitions.service';
 
 const PAYMENT_STATUS: Record<string, ProviderOutcome['status']> = {
   success: 'SUCCESS', captured: 'SUCCESS', paid: 'SUCCESS',
@@ -19,6 +20,12 @@ const PAYMENT_STATUS: Record<string, ProviderOutcome['status']> = {
   expired: 'EXPIRED',
 };
 const REFUND_STATUS: Record<string, 'SUCCESS' | 'FAILED'> = { success: 'SUCCESS', processed: 'SUCCESS', failed: 'FAILED' };
+const PAYOUT_STATUS: Record<string, 'PENDING' | 'SUCCESS' | 'FAILED' | 'REVERSED'> = {
+  accepted: 'PENDING', pending: 'PENDING', processing: 'PENDING',
+  success: 'SUCCESS', processed: 'SUCCESS', completed: 'SUCCESS',
+  failed: 'FAILED', rejected: 'FAILED',
+  reversed: 'REVERSED', returned: 'REVERSED',
+};
 
 /**
  * Provider callbacks: verify (raw bytes) → store once → process through the same transition service
@@ -34,6 +41,7 @@ export class InboundEventsService {
     private readonly registry: ProviderRegistryService,
     private readonly transitions: PaymentTransitionsService,
     private readonly refunds: RefundsService,
+    private readonly payouts: PayoutTransitionsService,
     private readonly ledger: LedgerService,
     private readonly audit: AuditService,
   ) {}
@@ -109,7 +117,22 @@ export class InboundEventsService {
         await mark('PROCESSED');
         return;
       }
-      await mark('IGNORED', 'Payout callbacks are processed from Phase 6');
+      if (e.type === 'payout.status') {
+        // Match on the provider's reference, else on our attempt reference (`pout_X-n`), within this provider.
+        const attempt = await this.prisma.payoutAttempt.findFirst({
+          where: { providerId: ev.providerId, OR: [...(e.providerReference ? [{ providerReference: e.providerReference }] : []), ...(e.reference ? [{ reference: e.reference }] : [])] },
+          select: { payoutId: true },
+        });
+        const status = PAYOUT_STATUS[e.status.toLowerCase()];
+        if (!attempt) return void (await mark('IGNORED', 'Unknown payout (reconciliation will flag it)'));
+        if (!status) return void (await mark('IGNORED', `Unrecognised status ${e.status}`));
+        await this.ledger.run(async (tx) => {
+          await this.payouts.applyOutcome(tx, attempt.payoutId, { status, utr: e.utr, providerReference: e.providerReference, failureReason: e.failureReason }, 'CALLBACK');
+          await tx.providerWebhookEvent.update({ where: { id: eventId }, data: { status: 'PROCESSED', error: null, processedAt: new Date() } });
+        });
+        return;
+      }
+      await mark('IGNORED', `Unsupported event type ${String(e.type)}`);
     } catch (err) {
       await this.prisma.providerWebhookEvent.update({ where: { id: eventId }, data: { status: 'FAILED', error: (err instanceof Error ? err.message : String(err)).slice(0, 500) } });
       throw err;

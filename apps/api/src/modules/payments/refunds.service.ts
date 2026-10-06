@@ -14,7 +14,7 @@ import { TenantScopeService } from '../access/tenant-scope.service';
 import type { Actor } from '../auth/actor';
 import { LedgerService } from '../ledger/ledger.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
-import { MerchantEventsService } from './merchant-events.service';
+import { MerchantEventsService } from '../../infra/merchant-events.service';
 import { PaymentTransitionsService } from './payment-transitions.service';
 import { presentRefund } from './payment.presenter';
 import { healthOutcomeOf } from './payments.service';

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { createPaymentSchema, createRefundSchema, idSchema, listPaymentsQuerySchema, listRefundsQuerySchema, paymentStatsQuerySchema, sandboxCompleteSchema } from '@pay2all/validation';
+import { createPaymentSchema, createRefundSchema, idSchema, listPaymentsQuerySchema, listRefundsQuerySchema, paymentStatsQuerySchema } from '@pay2all/validation';
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
@@ -8,7 +8,6 @@ import { CurrentActor, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { PaymentsService } from './payments.service';
 import { RefundsService } from './refunds.service';
-import { SandboxService } from './sandbox.service';
 
 const paymentIdPipe = new ZodValidationPipe(idSchema('pay'));
 const reviewSchema = z.strictObject({ reason: z.string().trim().min(5).max(500) });
@@ -20,7 +19,6 @@ export class PaymentsController {
   constructor(
     private readonly payments: PaymentsService,
     private readonly refunds: RefundsService,
-    private readonly sandbox: SandboxService,
   ) {}
 
   @Post('payments')
@@ -79,12 +77,4 @@ export class PaymentsController {
     return this.payments.acceptLateSuccess(actor, id, body.reason);
   }
 
-  @Post('sandbox/payments/:id/complete')
-  @HttpCode(200)
-  @RequirePermissions('payin.read')
-  @ApiOperation({ summary: 'Sandbox only: simulate the customer paying (or declining) via a signed mock callback' })
-  @ApiZodBody(sandboxCompleteSchema)
-  simulate(@CurrentActor() actor: Actor, @Param('id', paymentIdPipe) id: string, @Body(new ZodValidationPipe(sandboxCompleteSchema)) body: z.output<typeof sandboxCompleteSchema>) {
-    return this.sandbox.completePayment(actor, id, body.outcome);
-  }
 }

@@ -501,3 +501,87 @@ export interface PricingQuote {
   reseller_margin: string;
   platform_margin: string;
 }
+
+export type PayoutStatus = 'CREATED' | 'VALIDATING' | 'APPROVAL_PENDING' | 'MANUAL_REVIEW' | 'QUEUED' | 'PROCESSING' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'REJECTED' | 'REVERSED';
+export type PayoutMode = 'IMPS' | 'NEFT' | 'RTGS' | 'UPI';
+
+export interface Beneficiary {
+  beneficiary_id: string;
+  merchant_id: string;
+  name: string;
+  type: 'INDIVIDUAL' | 'BUSINESS';
+  account_number_masked: string | null;
+  ifsc: string | null;
+  bank_name: string | null;
+  upi_id: string | null;
+  mobile: string | null;
+  email: string | null;
+  verification_status: 'PENDING' | 'VERIFIED' | 'FAILED' | 'BLOCKED';
+  verified_name: string | null;
+  name_match_score: number | null;
+  verified_at: string | null;
+  verification_failure: string | null;
+  blocked_reason: string | null;
+  created_at: string;
+}
+
+export interface PayoutBeneficiarySnapshot {
+  beneficiary_id: string;
+  name: string;
+  account_number_masked: string | null;
+  ifsc: string | null;
+  bank_name: string | null;
+  upi_id: string | null;
+  verification_status: string;
+}
+
+export interface Payout {
+  payout_id: string;
+  merchant_id: string;
+  merchant_order_id: string;
+  amount: string;
+  fee: string;
+  tax: string;
+  total_debit: string;
+  currency: string;
+  mode: PayoutMode;
+  purpose: string;
+  status: PayoutStatus;
+  source: 'DASHBOARD' | 'API' | 'BULK';
+  beneficiary: PayoutBeneficiarySnapshot;
+  narration: string | null;
+  approvals_required: number;
+  approvals_received: number;
+  approval_expires_at: string | null;
+  utr: string | null;
+  failure_code: string | null;
+  failure_reason: string | null;
+  review_reason: string | null;
+  bulk_batch_id: string | null;
+  created_by_id: string | null;
+  processed_at: string | null;
+  reversed_at: string | null;
+  created_at: string;
+  updated_at: string;
+  can_approve?: boolean;
+  provider?: string | null;
+  provider_reference?: string | null;
+  approvals?: { approver_id: string; approver_name: string | null; decision: 'APPROVED' | 'REJECTED'; reason: string | null; created_at: string }[];
+  attempts?: { attempt_no: number; provider: string; reference: string; status: string; error_kind: string | null; error_code: string | null; error_message: string | null; latency_ms: number | null; created_at: string }[];
+}
+
+export interface BulkBatch {
+  batch_id: string;
+  file_name: string;
+  status: 'VALIDATED' | 'VALIDATION_FAILED' | 'CONFIRMED' | 'PROCESSING' | 'COMPLETED' | 'CANCELLED';
+  total_rows: number;
+  valid_rows: number;
+  total_amount: string;
+  approvals_required: number;
+  created_count: number;
+  failed_count: number;
+  created_at: string;
+  confirmed_at: string | null;
+  completed_at: string | null;
+  rows?: { row_no: number; merchant_order_id: string | null; amount: string | null; mode: string | null; beneficiary: string | null; status: 'VALID' | 'INVALID' | 'CREATED' | 'FAILED'; errors: string[] | null; payout_id: string | null }[];
+}

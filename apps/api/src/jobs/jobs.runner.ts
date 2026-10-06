@@ -3,6 +3,9 @@ import { everySeconds, type ScheduledJob, Scheduler } from '@pay2all/events';
 import type Redis from 'ioredis';
 import { REDIS } from '../infra/tokens';
 import { PayinJobsService } from '../modules/payments/payin-jobs.service';
+import { BulkPayoutsService } from '../modules/payouts/bulk-payouts.service';
+import { PayoutProcessorService } from '../modules/payouts/payout-processor.service';
+import { InboundEventsService } from '../modules/provider-events/inbound-events.service';
 
 const job = (name: string, seconds: number, run: () => Promise<unknown>): ScheduledJob => ({
   name,
@@ -19,6 +22,9 @@ export class JobsRunner implements OnApplicationShutdown {
   constructor(
     @Inject(REDIS) private readonly redis: Redis,
     private readonly payin: PayinJobsService,
+    private readonly payouts: PayoutProcessorService,
+    private readonly bulk: BulkPayoutsService,
+    private readonly inbound: InboundEventsService,
   ) {}
 
   async start(): Promise<void> {
@@ -35,13 +41,17 @@ export class JobsRunner implements OnApplicationShutdown {
         job('payin-poller', 15, () => this.payin.pollOpenPayments()),
         job('payin-expiry', 60, () => this.payin.expireStalePayments()),
         job('refund-processor', 20, () => this.payin.processRefunds()),
-        job('inbound-retry', 60, () => this.payin.retryInboundEvents()),
+        job('inbound-retry', 60, () => this.inbound.retryPending()),
+        job('payout-processor', 5, () => this.payouts.processQueued()),
+        job('payout-poller', 15, () => this.payouts.pollInFlight()),
+        job('payout-approval-expiry', 300, () => this.payouts.expireApprovals()),
+        job('bulk-payouts', 10, () => this.bulk.processConfirmed()),
         job('idempotency-sweeper', 60, () => this.payin.sweepIdempotency()),
       ],
       5_000,
     );
     this.scheduler.start();
-    this.logger.log('Payin jobs started');
+    this.logger.log('Payin and payout jobs started');
   }
 
   async onApplicationShutdown(): Promise<void> {
