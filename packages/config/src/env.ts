@@ -89,6 +89,9 @@ export const apiEnvSchema = z
         message: 'public Swagger UI must be disabled in production (serve docs separately)',
       });
     }
+    if (!env.SMTP_URL) {
+      ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required in production' });
+    }
     if (env.CORS_ALLOWED_ORIGINS.some((o) => !o.startsWith('https://'))) {
       ctx.addIssue({ code: 'custom', path: ['CORS_ALLOWED_ORIGINS'], message: 'production origins must be https' });
     }
