@@ -12,18 +12,21 @@
     "test:integration": "vitest run --project integration"
   },
   "dependencies": {
+    "@pay2all/auth": "workspace:*",
     "@pay2all/config": "workspace:*",
     "@pay2all/database": "workspace:*",
     "@pay2all/events": "workspace:*",
     "@pay2all/logger": "workspace:*",
+    "@pay2all/providers": "workspace:*",
     "dotenv": "^17.2.3",
     "ioredis": "^5.11.1",
-    "pino": "^10.4.0",
-    "@pay2all/auth": "workspace:*",
-    "@pay2all/providers": "workspace:*"
+    "kafkajs": "2.2.4",
+    "nodemailer": "^7.0.13",
+    "pino": "^10.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/nodemailer": "^7.0.12",
     "eslint": "^9.39.5",
     "typescript": "~5.9.3",
     "vitest": "^3.2.7"

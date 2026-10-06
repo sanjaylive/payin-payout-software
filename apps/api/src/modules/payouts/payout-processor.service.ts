@@ -47,12 +47,18 @@ export class PayoutProcessorService {
     private readonly transitions: PayoutTransitionsService,
   ) {}
 
-  /** Claim QUEUED payouts (txn A): re-check the merchant, move to PROCESSING. */
-  async processQueued(limit = 10): Promise<number> {
+  /**
+   * Claim QUEUED payouts (txn A): re-check the merchant, move to PROCESSING. `onlyId` is the Kafka
+   * fast path (`payout.queued`); the same claim makes it a no-op if a poller got there first.
+   */
+  async processQueued(limit = 10, onlyId?: string): Promise<number> {
     const claimed = await this.transitions.ledgerRun(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM payouts WHERE status = 'QUEUED' AND next_attempt_at <= now()
-         ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
+      const rows = onlyId
+        ? await tx.$queryRaw<{ id: string }[]>`
+            SELECT id FROM payouts WHERE id = ${onlyId} AND status = 'QUEUED' AND next_attempt_at <= now() FOR UPDATE SKIP LOCKED`
+        : await tx.$queryRaw<{ id: string }[]>`
+            SELECT id FROM payouts WHERE status = 'QUEUED' AND next_attempt_at <= now()
+             ORDER BY next_attempt_at LIMIT ${limit} FOR UPDATE SKIP LOCKED`;
       const ids: string[] = [];
       for (const { id } of rows) {
         const p = await tx.payout.findUniqueOrThrow({ where: { id } });

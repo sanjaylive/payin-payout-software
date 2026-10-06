@@ -65,7 +65,11 @@ export const apiEnvSchema = z
     AUTH_ENFORCE_MFA: bool(true),
     AUTH_MAX_FAILED_LOGINS: int(5, 1),
     AUTH_LOCKOUT_SECONDS: int(900, 60),
-    SMTP_URL: z.string().default(''),
+    /** Optional for the API's jobs process: empty = no Kafka fast path, DB polling only. */
+    KAFKA_BROKERS: csv,
+    KAFKA_CLIENT_ID: z.string().default('pay2all'),
+    /** Webhook endpoints must be https in production; http is accepted elsewhere for local receivers. */
+    WEBHOOK_REQUIRE_HTTPS: bool(false),
     S3_ENDPOINT: z.string().default(''),
     S3_REGION: z.string().default('ap-south-1'),
     S3_BUCKET: z.string().min(3).default('pay2all-documents'),
@@ -75,7 +79,6 @@ export const apiEnvSchema = z
     /** Server-side encryption header for uploads (e.g. AES256 or aws:kms). Empty = bucket default. */
     S3_SSE: z.string().default(''),
     MAX_DOCUMENT_BYTES: int(10 * 1024 * 1024, 1024),
-    MAIL_FROM: z.string().default('Pay2All Payments <no-reply@pay2all.local>'),
   })
   .superRefine((env, ctx) => {
     if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {
@@ -101,8 +104,8 @@ export const apiEnvSchema = z
     if (!env.S3_SSE) {
       ctx.addIssue({ code: 'custom', path: ['S3_SSE'], message: 'KYC documents must be encrypted at rest in production' });
     }
-    if (!env.SMTP_URL) {
-      ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required in production' });
+    if (!env.WEBHOOK_REQUIRE_HTTPS) {
+      ctx.addIssue({ code: 'custom', path: ['WEBHOOK_REQUIRE_HTTPS'], message: 'merchant webhook endpoints must be https in production' });
     }
     if (env.CORS_ALLOWED_ORIGINS.some((o) => !o.startsWith('https://'))) {
       ctx.addIssue({ code: 'custom', path: ['CORS_ALLOWED_ORIGINS'], message: 'production origins must be https' });
@@ -111,12 +114,28 @@ export const apiEnvSchema = z
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;
 
-export const workerEnvSchema = z.object({
-  ...base,
-  KAFKA_BROKERS: csv,
-  KAFKA_CLIENT_ID: z.string().default('pay2all'),
-  WORKER_HEALTH_PORT: int(4001, 1),
-});
+export const workerEnvSchema = z
+  .object({
+    ...base,
+    KAFKA_BROKERS: csv,
+    KAFKA_CLIENT_ID: z.string().default('pay2all'),
+    /** Replication factor for auto-provisioned topics. */
+    KAFKA_REPLICATION_FACTOR: int(1, 1),
+    WORKER_HEALTH_PORT: int(4001, 1),
+    /** Notification email (Mailpit locally). Empty = log-only transport (development/tests). */
+    SMTP_URL: z.string().default(''),
+    MAIL_FROM: z.string().default('Pay2All Payments <no-reply@pay2all.local>'),
+    /** Development only: let webhooks reach private/loopback addresses (local test receivers). */
+    WEBHOOK_ALLOW_PRIVATE_TARGETS: bool(false),
+  })
+  .superRefine((env, ctx) => {
+    if (env.KAFKA_BROKERS.length === 0) ctx.addIssue({ code: 'custom', path: ['KAFKA_BROKERS'], message: 'required' });
+    if (env.NODE_ENV !== 'production') return;
+    if (PLACEHOLDER_PATTERN.test(env.ENCRYPTION_KEY)) ctx.addIssue({ code: 'custom', path: ['ENCRYPTION_KEY'], message: 'placeholder value not allowed in production' });
+    if (!env.SMTP_URL) ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required in production' });
+    if (env.WEBHOOK_ALLOW_PRIVATE_TARGETS) ctx.addIssue({ code: 'custom', path: ['WEBHOOK_ALLOW_PRIVATE_TARGETS'], message: 'never allowed in production (SSRF)' });
+    if (env.KAFKA_REPLICATION_FACTOR < 3) ctx.addIssue({ code: 'custom', path: ['KAFKA_REPLICATION_FACTOR'], message: 'must be at least 3 in production' });
+  });
 
 export type WorkerEnv = z.infer<typeof workerEnvSchema>;
 

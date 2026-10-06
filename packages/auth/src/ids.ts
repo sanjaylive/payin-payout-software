@@ -53,6 +53,9 @@ export const ID_PREFIXES = {
   settlement: 'stl',
   webhookEvent: 'evt',
   webhookDelivery: 'whd',
+  webhookEndpoint: 'whe',
+  webhookAttempt: 'wha',
+  deadLetter: 'dlq',
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

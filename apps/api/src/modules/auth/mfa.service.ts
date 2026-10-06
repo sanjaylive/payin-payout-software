@@ -6,7 +6,7 @@ import type { PrismaClient } from '@pay2all/database';
 import { ErrorCode } from '@pay2all/types';
 import QRCode from 'qrcode';
 import { AppError } from '../../common/errors/app-error';
-import { MailService } from '../../infra/mail.service';
+import { NotificationsService } from '../../infra/notifications.service';
 import { ApiConfig } from '../../config/api-config';
 import { PRISMA } from '../../infra/tokens';
 import { AccessProfileService } from '../access/access-profile.service';
@@ -24,7 +24,7 @@ export class MfaService {
     private readonly profiles: AccessProfileService,
     private readonly audit: AuditService,
     private readonly config: ApiConfig,
-    private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   // ---- Recovery codes -------------------------------------------------------------------------
@@ -61,7 +61,8 @@ export class MfaService {
     await this.audit.record({ action: 'auth.mfa.recovery_code_used', resourceType: 'user', resourceId: userId, organizationId: null, actor: { type: 'USER', id: userId }, metadata: { remaining, severity: 'MEDIUM' } });
     const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
     if (user) {
-      this.mail.sendInBackground({
+      await this.notifications.queue(this.prisma, {
+        template: 'mfa_recovery_code_used',
         to: user.email,
         subject: 'A Pay2All recovery code was used',
         text: `A recovery code was just used to sign in to your account. ${remaining} codes remain. If this wasn't you, reset your password and contact support immediately.`,
@@ -94,7 +95,8 @@ export class MfaService {
       await this.audit.record({ action: 'auth.mfa.admin_reset', resourceType: 'user', resourceId: userId, organizationId: null, metadata: { reason, severity: 'HIGH' } }, tx);
     });
     await this.sessions.revokeAllForUser(userId, 'ADMIN_REVOKED');
-    this.mail.sendInBackground({
+    await this.notifications.queue(this.prisma, {
+        template: 'mfa_reset_by_admin',
       to: user.email,
       subject: 'Your Pay2All two-factor authentication was reset',
       text: 'An administrator reset two-factor authentication on your account. You will be asked to set it up again at your next sign-in. If you did not request this, contact support immediately.',

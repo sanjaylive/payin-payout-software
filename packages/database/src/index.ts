@@ -47,3 +47,4 @@ export function isUniqueViolation(err: unknown, target?: string): boolean {
   if (!target) return true;
   return JSON.stringify(err.meta ?? {}).includes(target);
 }
+export * from './consumer-store';

@@ -11,7 +11,7 @@ import type {
 } from '@pay2all/validation';
 import type { z } from 'zod';
 import { AppError } from '../../common/errors/app-error';
-import { MailService } from '../../infra/mail.service';
+import { NotificationsService } from '../../infra/notifications.service';
 import { OutboxService } from '../../infra/outbox.service';
 import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
@@ -52,7 +52,7 @@ export class ComplianceService {
     private readonly access: MerchantAccessService,
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
-    private readonly mail: MailService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   private async transition(tx: DbClient, actor: Actor, merchantId: string, action: MerchantTransition, opts: TransitionOptions = {}): Promise<MerchantStatus> {
@@ -277,6 +277,6 @@ export class ComplianceService {
     });
     const profile = await this.prisma.merchantProfile.findUnique({ where: { merchantId }, select: { contactEmail: true } });
     const emails = new Set([...recipients.map((r) => r.user.email), ...(profile?.contactEmail ? [profile.contactEmail] : [])]);
-    for (const to of emails) this.mail.sendInBackground({ to, subject, text });
+    for (const to of emails) await this.notifications.queue(this.prisma, { to, subject, text, template: 'compliance_update' });
   }
 }
