@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "pay2all-dev",
+      "credentials": [{ "accessKey": "pay2all", "secretKey": "pay2all_dev_only" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

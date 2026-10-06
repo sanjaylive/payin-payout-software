@@ -1,0 +1,5 @@
+{
+  "extends": "@pay2all/config/tsconfig/node-library.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist" },
+  "include": ["src"]
+}

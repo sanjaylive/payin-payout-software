@@ -1,0 +1,29 @@
+{
+  "name": "pay2all-payments",
+  "private": true,
+  "description": "Pay2All Payments \u2014 multi-tenant payin/payout platform (Pay2All Services Pvt. Ltd.)",
+  "packageManager": "pnpm@10.34.5",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --filter=@pay2all/api --filter=@pay2all/web --filter=@pay2all/worker",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration --concurrency=1",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prisma:generate": "pnpm --filter @pay2all/database prisma:generate",
+    "prisma:validate": "pnpm --filter @pay2all/database prisma:validate",
+    "prisma:migrate": "pnpm --filter @pay2all/database prisma:migrate",
+    "prisma:deploy": "pnpm --filter @pay2all/database prisma:deploy",
+    "db:seed": "turbo run build --filter=@pay2all/database... --output-logs=errors-only && pnpm --filter @pay2all/database db:seed"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.11.7",
+    "typescript": "~5.9.3"
+  }
+}

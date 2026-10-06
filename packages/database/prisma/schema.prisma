@@ -1,0 +1,340 @@
+// Pay2All Payments — Prisma schema.
+// Conventions (docs/DATABASE.md §1): prefixed ULID text PKs generated in the app, BIGINT minor units
+// for money, timestamptz(3) UTC, snake_case table/column names, append-only tables guarded by triggers
+// declared in migration SQL.
+//
+// Phase 1 scope: identity & access, sessions, MFA, audit, outbox, notifications.
+// Later phases add their models in their own migrations (see docs/ROADMAP.md).
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "cjs"
+  generatedFileExtension = "ts"
+  importFileExtension    = ""
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------------------------
+
+enum OrganizationType {
+  PLATFORM
+  RESELLER
+  API_PARTNER
+  MERCHANT
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  CLOSED
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+}
+
+enum MfaFactorType {
+  TOTP
+}
+
+enum MfaFactorStatus {
+  PENDING
+  ACTIVE
+  DISABLED
+}
+
+enum ActorType {
+  USER
+  API_KEY
+  SYSTEM
+}
+
+enum NotificationChannel {
+  EMAIL
+  SMS
+}
+
+enum NotificationStatus {
+  QUEUED
+  SENT
+  FAILED
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tenancy & identity
+// ---------------------------------------------------------------------------------------------
+
+/// Tenant root. Hierarchy PLATFORM -> RESELLER -> MERCHANT via parentId.
+model Organization {
+  id        String             @id
+  type      OrganizationType
+  status    OrganizationStatus @default(ACTIVE)
+  name      String             @db.VarChar(160)
+  slug      String             @unique @db.VarChar(80)
+  parentId  String?            @map("parent_id")
+  createdAt DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  parent   Organization?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Organization[] @relation("OrganizationHierarchy")
+  members  UserRole[]
+  roles    Role[]
+  sessions Session[]
+
+  @@index([parentId])
+  @@index([type, status, createdAt(sort: Desc)])
+  @@map("organizations")
+}
+
+/// A person. Global identity; access to organizations is granted through UserRole memberships.
+model User {
+  id                String     @id
+  name              String     @db.VarChar(120)
+  email             String     @unique @db.VarChar(254)
+  mobile            String?    @unique @db.VarChar(16)
+  passwordHash      String     @map("password_hash")
+  status            UserStatus @default(ACTIVE)
+  emailVerifiedAt   DateTime?  @map("email_verified_at") @db.Timestamptz(3)
+  failedLoginCount  Int        @default(0) @map("failed_login_count")
+  lockedUntil       DateTime?  @map("locked_until") @db.Timestamptz(3)
+  lastLoginAt       DateTime?  @map("last_login_at") @db.Timestamptz(3)
+  lastLoginIp       String?    @map("last_login_ip") @db.VarChar(45)
+  passwordChangedAt DateTime   @default(now()) @map("password_changed_at") @db.Timestamptz(3)
+  createdById       String?    @map("created_by_id")
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  memberships         UserRole[]           @relation("UserMemberships")
+  grantedMemberships  UserRole[]           @relation("MembershipGrantedBy")
+  sessions            Session[]
+  mfaFactors          MfaFactor[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@map("users")
+}
+
+model Role {
+  id             String           @id
+  /// Stable key, e.g. SUPER_ADMIN / MERCHANT_OWNER. Unique among system roles (partial index in SQL).
+  key            String           @db.VarChar(40)
+  name           String           @db.VarChar(80)
+  description    String           @default("") @db.VarChar(255)
+  /// Organization type this role can be granted in.
+  scope          OrganizationType
+  /// null = system role available to every org of `scope`; set = custom role owned by that org.
+  organizationId String?          @map("organization_id")
+  isSystem       Boolean          @default(false) @map("is_system")
+  requiresMfa    Boolean          @default(false) @map("requires_mfa")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization?    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  permissions  RolePermission[]
+  memberships  UserRole[]
+
+  @@unique([organizationId, key])
+  @@index([scope])
+  @@map("roles")
+}
+
+/// Permission catalog mirror of packages/auth/src/permissions.ts (synced by seed/sync script).
+model Permission {
+  key         String             @id @db.VarChar(60)
+  description String             @db.VarChar(255)
+  scopes      OrganizationType[]
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId        String   @map("role_id")
+  permissionKey String   @map("permission_key") @db.VarChar(60)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionKey], references: [key], onDelete: Restrict)
+
+  @@id([roleId, permissionKey])
+  @@index([permissionKey])
+  @@map("role_permissions")
+}
+
+/// Membership: user x role x organization.
+model UserRole {
+  id             String   @id
+  userId         String   @map("user_id")
+  roleId         String   @map("role_id")
+  organizationId String   @map("organization_id")
+  grantedById    String?  @map("granted_by_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user         User         @relation("UserMemberships", fields: [userId], references: [id], onDelete: Restrict)
+  role         Role         @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  grantedBy    User?        @relation("MembershipGrantedBy", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, roleId, organizationId])
+  @@index([organizationId, userId])
+  @@map("user_roles")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sessions & credentials
+// ---------------------------------------------------------------------------------------------
+
+model Session {
+  id                    String    @id
+  userId                String    @map("user_id")
+  /// Active organization for this session — the tenant context of every dashboard request.
+  organizationId        String    @map("organization_id")
+  ipAddress             String?   @map("ip_address") @db.VarChar(45)
+  userAgent             String?   @map("user_agent") @db.VarChar(512)
+  mfaVerifiedAt         DateTime? @map("mfa_verified_at") @db.Timestamptz(3)
+  /// Restricted session: user must enroll TOTP before reaching protected routes.
+  mfaEnrollmentRequired Boolean   @default(false) @map("mfa_enrollment_required")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  lastUsedAt            DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
+  expiresAt             DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt             DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason         String?   @map("revoked_reason") @db.VarChar(40)
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  organization  Organization   @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
+
+  @@index([userId, revokedAt])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+/// Rotating refresh token. Only SHA-256(token) is stored. Reuse of a used token revokes the session.
+model RefreshToken {
+  id           String    @id
+  sessionId    String    @map("session_id")
+  tokenHash    String    @unique @map("token_hash") @db.Char(64)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt       DateTime? @map("used_at") @db.Timestamptz(3)
+  replacedById String?   @map("replaced_by_id")
+
+  session Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("refresh_tokens")
+}
+
+model MfaFactor {
+  id              String          @id
+  userId          String          @map("user_id")
+  type            MfaFactorType   @default(TOTP)
+  status          MfaFactorStatus @default(PENDING)
+  /// AES-256-GCM envelope (v1.<keyId>.<iv>.<tag>.<ct>), AAD = user id.
+  secretEncrypted String          @map("secret_encrypted")
+  /// Last accepted TOTP time step — codes at or before it are rejected (replay protection).
+  lastUsedStep    Int?            @map("last_used_step")
+  confirmedAt     DateTime?       @map("confirmed_at") @db.Timestamptz(3)
+  disabledAt      DateTime?       @map("disabled_at") @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, status])
+  @@map("mfa_factors")
+}
+
+model PasswordResetToken {
+  id          String    @id
+  userId      String    @map("user_id")
+  tokenHash   String    @unique @map("token_hash") @db.Char(64)
+  requestedIp String?   @map("requested_ip") @db.VarChar(45)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt      DateTime? @map("used_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("password_reset_tokens")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Audit, outbox, notifications
+// ---------------------------------------------------------------------------------------------
+
+/// Append-only (UPDATE/DELETE blocked by trigger). No FKs so records outlive their subjects and the
+/// table can be range-partitioned later.
+model AuditLog {
+  id             String    @id
+  actorType      ActorType @map("actor_type")
+  actorId        String?   @map("actor_id")
+  actorRole      String?   @map("actor_role") @db.VarChar(200)
+  organizationId String?   @map("organization_id")
+  action         String    @db.VarChar(100)
+  resourceType   String    @map("resource_type") @db.VarChar(50)
+  resourceId     String?   @map("resource_id") @db.VarChar(60)
+  oldValue       Json?     @map("old_value")
+  newValue       Json?     @map("new_value")
+  metadata       Json?
+  ipAddress      String?   @map("ip_address") @db.VarChar(45)
+  userAgent      String?   @map("user_agent") @db.VarChar(512)
+  requestId      String?   @map("request_id") @db.VarChar(40)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([actorId, createdAt(sort: Desc)])
+  @@index([resourceType, resourceId])
+  @@index([action, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox (docs/ARCHITECTURE.md §8). Written in the same transaction as the business
+/// change; published to Kafka by the worker relay.
+model OutboxEvent {
+  id            String    @id
+  eventType     String    @map("event_type") @db.VarChar(80)
+  aggregateType String    @map("aggregate_type") @db.VarChar(40)
+  aggregateId   String    @map("aggregate_id") @db.VarChar(60)
+  version       Int       @default(1)
+  payload       Json
+  headers       Json      @default("{}")
+  occurredAt    DateTime  @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(3)
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error") @db.VarChar(1000)
+
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+model Notification {
+  id                String              @id
+  channel           NotificationChannel
+  template          String              @db.VarChar(80)
+  /// Masked recipient only (a***@example.com) — full address lives with the subject user.
+  recipientMasked   String              @map("recipient_masked") @db.VarChar(254)
+  userId            String?             @map("user_id")
+  status            NotificationStatus  @default(QUEUED)
+  providerMessageId String?             @map("provider_message_id") @db.VarChar(200)
+  error             String?             @db.VarChar(1000)
+  requestId         String?             @map("request_id") @db.VarChar(40)
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(3)
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("notifications")
+}
