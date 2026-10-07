@@ -1,6 +1,6 @@
-import { isIP } from 'node:net';
 import { z } from 'zod';
 import { idSchema, paginationQuerySchema } from './common';
+import { ipFamily } from './ip';
 
 /** Permissions an API key may carry (the public server-to-server surface). */
 export const API_KEY_PERMISSIONS = [
@@ -30,7 +30,7 @@ export const rotateApiKeySchema = z.strictObject({
 function isCidr(v: string): boolean {
   const [ip, bits, ...rest] = v.split('/');
   if (rest.length || !ip) return false;
-  const family = isIP(ip);
+  const family = ipFamily(ip);
   if (!family) return false;
   if (bits === undefined) return true;
   if (!/^\d{1,3}$/.test(bits)) return false;

@@ -164,7 +164,7 @@ export function RiskRules() {
             ),
           },
           { id: 'watch', header: 'Watches', cell: (r) => <div className="text-sm"><p>{RULE_TYPE_LABELS[r.type]}</p><p className="text-muted-foreground text-xs">{r.service === 'PAYIN' ? 'Payins' : 'Payouts'} · {INLINE_TYPES.includes(r.type) ? 'inline' : 'sweep'}</p></div> },
-          { id: 'params', header: 'Thresholds', cell: (r) => <span className="text-muted-foreground text-xs">{paramsSummary(r.type, r.params)}</span> },
+          { id: 'params', header: 'Thresholds', className: 'min-w-56 whitespace-normal', cell: (r) => <span className="text-muted-foreground text-xs">{paramsSummary(r.type, r.params)}</span> },
           { id: 'action', header: 'Action', cell: (r) => <span className="text-sm">{ACTION_LABELS[r.action]}</span> },
           {
             id: 'mode',

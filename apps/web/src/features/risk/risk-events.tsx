@@ -185,7 +185,7 @@ export function RiskEventsTable({ reviewQueue = false }: { reviewQueue?: boolean
                 </SelectContent>
               </Select>
               <Select value={enforced} onValueChange={(v) => { setEnforced(v); pager.reset(); }}>
-                <SelectTrigger className="w-40" aria-label="Mode"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-48" aria-label="Mode"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Enforced + monitor</SelectItem>
                   <SelectItem value="true">Enforced</SelectItem>
@@ -199,7 +199,7 @@ export function RiskEventsTable({ reviewQueue = false }: { reviewQueue?: boolean
           { id: 'time', header: 'Raised', cell: (e) => <span className="text-sm whitespace-nowrap">{formatDateTime(e.created_at)}</span> },
           { id: 'rule', header: 'Rule', cell: (e) => <span className="font-mono text-xs">{e.rule_code}</span> },
           { id: 'merchant', header: 'Merchant', cell: (e) => <span className="text-sm">{e.merchant_name ?? (e.merchant_id ? e.merchant_id : '—')}</span> },
-          { id: 'why', header: 'Why', cell: (e) => <span className="text-muted-foreground line-clamp-2 max-w-md text-sm">{e.reason}</span> },
+          { id: 'why', header: 'Why', className: 'min-w-56 whitespace-normal', cell: (e) => <span className="text-muted-foreground line-clamp-2 text-sm">{e.reason}</span> },
           { id: 'action', header: 'Action', cell: (e) => <span className="text-sm whitespace-nowrap">{ACTION_LABELS[e.action]}{!e.enforced && <span className="text-muted-foreground"> (monitor)</span>}</span> },
           { id: 'status', header: 'Status', cell: (e) => <StatusBadge status={e.status} tone={EVENT_STATUS_TONE[e.status]} /> },
         ]}
@@ -260,7 +260,7 @@ export function ActiveRiskControls() {
         columns={[
           { id: 'merchant', header: 'Merchant', cell: (a) => <span className="font-medium">{a.merchant_name ?? a.merchant_id}</span> },
           { id: 'control', header: 'Control', cell: (a) => <StatusBadge status={ACTION_LABELS[a.type].toUpperCase()} tone="warning" /> },
-          { id: 'rule', header: 'Rule', cell: (a) => <div className="space-y-0.5"><p className="font-mono text-xs">{a.rule_code}</p><p className="text-muted-foreground line-clamp-1 max-w-sm text-xs">{a.event_reason}</p></div> },
+          { id: 'rule', header: 'Rule', className: 'min-w-56 whitespace-normal', cell: (a) => <div className="space-y-0.5"><p className="font-mono text-xs">{a.rule_code}</p><p className="text-muted-foreground line-clamp-2 text-xs">{a.event_reason}</p></div> },
           { id: 'since', header: 'Since', cell: (a) => <span className="text-sm whitespace-nowrap">{formatDateTime(a.created_at)}</span> },
           { id: 'lift', header: '', align: 'right', cell: (a) => (can('risk.review') ? <Button size="sm" variant="outline" onClick={() => setLifting(a)}><Unlock /> Lift</Button> : null) },
         ]}

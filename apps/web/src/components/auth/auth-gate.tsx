@@ -3,7 +3,7 @@
 import { ErrorState } from '@pay2all/ui/components/states';
 import type { OrganizationType } from '@pay2all/types';
 import { usePathname, useRouter } from 'next/navigation';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import { refreshSession } from '@/lib/api/client';
 import type { Me } from '@/lib/api/types';
 import { useAuthStore } from '@/lib/auth/store';
@@ -27,16 +27,16 @@ export function AuthGate({
   const router = useRouter();
   const pathname = usePathname();
   const token = useAuthStore((s) => s.accessToken);
-  const [restoring, setRestoring] = useState(!token);
   const me = useMe();
 
   useEffect(() => {
     if (token) return;
     let cancelled = false;
     void refreshSession().then((ok) => {
-      if (cancelled) return;
-      if (!ok) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
-      setRestoring(false);
+      // Success needs no handling here: refresh stores the token, which re-renders this gate. (Flipping
+      // a local "restoring" flag here used to hang on the spinner: storing the token re-runs this
+      // effect and cancels this callback before it runs.)
+      if (!ok && !cancelled) router.replace(`/login?next=${encodeURIComponent(pathname)}`);
     });
     return () => {
       cancelled = true;
@@ -49,7 +49,7 @@ export function AuthGate({
     if (data && wrongPortal) router.replace(homePathFor(data));
   }, [data, wrongPortal, router]);
 
-  if (restoring || !token || me.isPending || wrongPortal) return <FullPageSpinner />;
+  if (!token || me.isPending || wrongPortal) return <FullPageSpinner />;
   if (me.isError || !data) {
     return <ErrorState className="min-h-dvh" message="We couldn't load your account." onRetry={() => void me.refetch()} />;
   }
