@@ -136,7 +136,7 @@ export function ReportExports({ allowMerchantFilter = false }: { allowMerchantFi
         columns={[
           { id: 'report', header: 'Report', cell: (e) => <div className="space-y-0.5"><p className="font-medium">{label(e.type)}</p><p className="text-muted-foreground text-xs">{e.filters.from} → {e.filters.to}{e.filters.status ? ` · ${e.filters.status.toLowerCase()}` : ''}{e.filters.merchant_id ? ` · ${e.filters.merchant_id}` : ''}</p></div> },
           { id: 'requested', header: 'Requested', cell: (e) => <span className="text-sm whitespace-nowrap">{formatDateTime(e.created_at)}</span> },
-          { id: 'status', header: 'Status', cell: (e) => <div className="space-y-0.5"><StatusBadge status={e.status === 'RUNNING' ? 'PROCESSING' : e.status} />{e.error && <p className="text-destructive max-w-xs text-xs">{e.error}</p>}</div> },
+          { id: 'status', header: 'Status', className: 'whitespace-normal', cell: (e) => <div className="space-y-0.5"><StatusBadge status={e.status === 'RUNNING' ? 'PROCESSING' : e.status} />{e.error && <p className="text-destructive max-w-xs text-xs">{e.error}</p>}</div> },
           { id: 'rows', header: 'Rows', align: 'right', cell: (e) => <span className="tabular text-sm">{e.row_count === null ? '—' : e.row_count.toLocaleString('en-IN')}</span> },
           { id: 'size', header: 'Size', align: 'right', cell: (e) => <span className="tabular text-muted-foreground text-sm">{size(e.file_size)}</span> },
           { id: 'expires', header: 'Available until', cell: (e) => <span className="text-muted-foreground text-sm whitespace-nowrap">{e.expires_at && e.status === 'COMPLETED' ? formatDateTime(e.expires_at) : '—'}</span> },
