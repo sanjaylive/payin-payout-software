@@ -12,6 +12,7 @@ import {
   recordProbe,
   recordSample,
 } from '@pay2all/providers';
+import { metrics } from '@pay2all/telemetry';
 import { ErrorCode } from '@pay2all/types';
 import type Redis from 'ioredis';
 import { RequestContextStore } from '../../common/context/request-context';
@@ -26,6 +27,9 @@ const DEFAULT_TIMEOUT_MS = 10_000;
  */
 @Injectable()
 export class ProviderRegistryService {
+  /** id → code for metric labels (a handful of providers; codes read better than ids on dashboards). */
+  private readonly codes = new Map<string, string>();
+
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     @Inject(REDIS) private readonly redis: Redis,
@@ -57,6 +61,7 @@ export class ProviderRegistryService {
   private async load(providerId: string): Promise<Provider> {
     const provider = await this.prisma.provider.findUnique({ where: { id: providerId } });
     if (!provider) throw new AppError(ErrorCode.NOT_FOUND, 'Provider not found');
+    this.codes.set(provider.id, provider.code);
     return provider;
   }
 
@@ -72,6 +77,9 @@ export class ProviderRegistryService {
 
   /** Every provider call reports its outcome here; the worker turns samples into status changes. */
   recordOutcome(providerId: string, service: 'PAYIN' | 'PAYOUT', outcome: HealthOutcome, latencyMs: number) {
+    const provider = this.codes.get(providerId) ?? providerId;
+    metrics.providerCalls.inc({ provider, service, outcome });
+    metrics.providerLatency.observe({ provider, service }, latencyMs / 1000);
     return recordSample(this.redis, providerId, service, outcome, latencyMs);
   }
 

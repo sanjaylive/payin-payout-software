@@ -6,6 +6,7 @@ import { LedgerModule } from '../ledger/ledger.module';
 import { LimitsModule } from '../limits/limits.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ProvidersModule } from '../providers/providers.module';
+import { RiskEngineModule } from '../risk/risk-engine.module';
 import { BeneficiariesService } from './beneficiaries.service';
 import { BulkPayoutsService } from './bulk-payouts.service';
 import { PayoutProcessorService } from './payout-processor.service';
@@ -14,7 +15,7 @@ import { BeneficiariesController, PayoutsController } from './payouts.controller
 import { PayoutsService } from './payouts.service';
 
 @Module({
-  imports: [AccessModule, AuditModule, AuthModule, LedgerModule, LimitsModule, PricingModule, ProvidersModule],
+  imports: [AccessModule, AuditModule, AuthModule, LedgerModule, LimitsModule, PricingModule, ProvidersModule, RiskEngineModule],
   controllers: [PayoutsController, BeneficiariesController],
   providers: [BeneficiariesService, PayoutTransitionsService, PayoutsService, PayoutProcessorService, BulkPayoutsService],
   exports: [PayoutTransitionsService, PayoutProcessorService, BulkPayoutsService, PayoutsService],

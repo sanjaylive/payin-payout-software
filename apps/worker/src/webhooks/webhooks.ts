@@ -1,3 +1,4 @@
+import { metrics } from '@pay2all/telemetry';
 import type { FieldEncryptor } from '@pay2all/auth';
 import { newId } from '@pay2all/auth';
 import type { PrismaClient, TransactionClient, WebhookDelivery } from '@pay2all/database';
@@ -119,6 +120,7 @@ export class WebhookSender {
         if (res.count === 1) await this.notifyDisabled(tx, d.endpoint.merchantId, d.endpoint.url);
       }
     });
+    metrics.webhookDeliveries.inc({ outcome: ok ? 'delivered' : disable ? 'disabled' : final ? 'failed' : 'retry' });
     if (!ok) this.logger.warn({ deliveryId: d.id, endpointId: d.endpoint.id, attemptNo, status: r.status, final }, 'Webhook delivery attempt failed');
   }
 

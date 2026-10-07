@@ -1,8 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import { type Beneficiary, isUniqueViolation, type Payout, type Prisma, type PrismaClient, type TransactionClient } from '@pay2all/database';
+import { type Beneficiary, isUniqueViolation, type Payout, type Prisma, type PrismaClient } from '@pay2all/database';
 import { minorToMajorString } from '@pay2all/ledger';
 import { Accounts } from '@pay2all/ledger/engine';
+import { metrics } from '@pay2all/telemetry';
 import { ErrorCode } from '@pay2all/types';
 import { type createPayoutSchema, type listPayoutsQuerySchema, MODE_RULES, type paymentStatsQuerySchema, type resolvePayoutReviewSchema } from '@pay2all/validation';
 import type { z } from 'zod';
@@ -16,13 +17,14 @@ import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/actor';
 import { LedgerService } from '../ledger/ledger.service';
 import { LimitsService } from '../limits/limits.service';
+import { PeriodUsageService, periodLimitsOf } from '../limits/period-usage.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RoutingService } from '../providers/routing.service';
+import { RiskEngineService } from '../risk/risk-engine.service';
 import { BeneficiariesService } from './beneficiaries.service';
 import { PayoutTransitionsService } from './payout-transitions.service';
 import { presentPayout } from './payout.presenter';
 
-const IST_OFFSET_MS = 330 * 60_000;
 
 function isLockContention(err: unknown): boolean {
   return err instanceof Error && /55P03|lock timeout|40P01|deadlock detected/.test(`${err.message} ${JSON.stringify((err as { meta?: unknown }).meta ?? {})}`);
@@ -30,12 +32,6 @@ function isLockContention(err: unknown): boolean {
 /** Payouts above this need a verified beneficiary (PAYOUT_FLOW.md §3 policy default). */
 export const VERIFIED_BENEFICIARY_ABOVE_MINOR = 2_500_000n; // ₹25,000
 export const APPROVAL_TTL_MS = 72 * 3600_000;
-
-function istStart(unit: 'day' | 'month', now = new Date()): Date {
-  const ist = new Date(now.getTime() + IST_OFFSET_MS);
-  const start = unit === 'day' ? Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) : Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1);
-  return new Date(start - IST_OFFSET_MS);
-}
 
 export interface CreatePayoutOptions {
   source?: 'DASHBOARD' | 'API' | 'BULK';
@@ -55,6 +51,8 @@ export class PayoutsService {
     private readonly beneficiaries: BeneficiariesService,
     private readonly transitions: PayoutTransitionsService,
     private readonly audit: AuditService,
+    private readonly risk: RiskEngineService,
+    private readonly usage: PeriodUsageService,
   ) {}
 
   private async assertMerchantCanPay(merchantId: string) {
@@ -77,21 +75,6 @@ export class PayoutsService {
     if (needs === 'ACCOUNT' && !b.accountNumberEncrypted) throw new AppError(ErrorCode.INVALID_REQUEST, `${mode} payouts need a beneficiary with a bank account`);
   }
 
-  /** Daily/monthly limits, evaluated under the merchant AVAILABLE lock so they are exact. */
-  private async assertWithinPeriodLimits(tx: TransactionClient, merchantId: string, amountMinor: bigint, l: Awaited<ReturnType<LimitsService['resolveForMerchant']>>) {
-    const counted = { merchantId, status: { notIn: ['FAILED', 'REJECTED'] as Payout['status'][] } };
-    for (const [unit, amountLimit, countLimit] of [
-      ['day', l.dailyAmountMinor.value, l.dailyCount.value],
-      ['month', l.monthlyAmountMinor.value, l.monthlyCount.value],
-    ] as const) {
-      if (amountLimit === null && countLimit === null) continue;
-      const agg = await tx.payout.aggregate({ where: { ...counted, createdAt: { gte: istStart(unit) } }, _sum: { amountMinor: true }, _count: true });
-      const label = unit === 'day' ? 'daily' : 'monthly';
-      if (amountLimit !== null && (agg._sum.amountMinor ?? 0n) + amountMinor > BigInt(amountLimit)) throw new AppError(ErrorCode.LIMIT_EXCEEDED, `Payout ${label} amount limit exceeded`);
-      if (countLimit !== null && agg._count + 1 > Number(countLimit)) throw new AppError(ErrorCode.LIMIT_EXCEEDED, `Payout ${label} count limit exceeded`);
-    }
-  }
-
   async create(actor: Actor, input: z.output<typeof createPayoutSchema>, rawBody: unknown, idempotencyKey: string | undefined, opts: CreatePayoutOptions = {}) {
     if (actor.organizationType !== 'MERCHANT') throw new AppError(ErrorCode.FORBIDDEN, 'Payouts are created by merchant accounts');
     const merchantId = actor.organizationId;
@@ -108,7 +91,23 @@ export class PayoutsService {
           : (await this.beneficiaries.upsert(this.prisma, merchantId, input.beneficiary, actor.userId)).beneficiary;
       if (!beneficiary) throw new AppError(ErrorCode.NOT_FOUND, 'Beneficiary not found');
       this.assertBeneficiaryUsable(beneficiary, input.mode, input.amount);
-      // Risk pre-check (velocity, beneficiary hash fan-out) hooks in here — Phase 10.
+
+      // Risk pre-check (docs/RISK.md §4): BLOCK rejects; MANUAL_REVIEW holds the payout (funds
+      // reserved, nothing sent) until a risk reviewer clears or confirms it.
+      const id = newId('payout');
+      const risk = await this.risk.assess({
+        service: 'PAYOUT',
+        merchantId,
+        amountMinor: input.amount,
+        subjectType: 'PAYOUT',
+        subjectId: id,
+        destination: { accountHash: beneficiary.accountNumberHash, upiId: beneficiary.accountNumberHash ? null : beneficiary.upiId },
+      });
+      if (risk.decision === 'BLOCK') {
+        await this.risk.record(this.prisma, risk);
+        metrics.payoutsCreated.inc({ mode: input.mode, outcome: 'blocked' });
+        throw new AppError(ErrorCode.RISK_BLOCKED, 'This payout was declined by risk controls. Contact support if you believe this is a mistake.');
+      }
 
       const decision = await this.routing.decide({ service: 'PAYOUT', merchantId, amountMinor: input.amount, method: input.mode });
       const primary = decision.candidates[0];
@@ -118,8 +117,8 @@ export class PayoutsService {
       // Tier frozen at creation; bulk rows use the stricter of the row and the batch total.
       const approvals = Math.max(await this.limits.approvalsRequiredFor(merchantId, input.amount, 'PAYOUT'), opts.bulk?.approvalsFloor ?? 0);
 
-      const id = newId('payout');
       try {
+        const createdAt = new Date();
         const payout = await this.ledger.run(async (tx) => {
           // Everything that needs no lock first; then the short critical section below. Nothing in this
           // transaction may use a second pool connection while holding the merchant lock.
@@ -129,6 +128,8 @@ export class PayoutsService {
               merchantId,
               resellerId: merchant.resellerId,
               merchantOrderId: input.merchant_order_id,
+              // Same instant the period usage is keyed by, so a later release hits the same rows.
+              createdAt,
               mode: input.mode,
               purpose: input.purpose,
               source: opts.source ?? 'DASHBOARD',
@@ -151,10 +152,11 @@ export class PayoutsService {
           });
           await this.pricing.snapshot(tx, 'PAYOUT', id, merchantId, quote);
           await this.idempotency.attachResource(tx, recordId, id);
+          const recorded = await this.risk.record(tx, risk);
           // Critical section: serialize this merchant's payouts on its AVAILABLE row; period limits
           // and balance are exact under it. Reserve at creation, so an approved payout never bounces.
           await tx.$queryRaw`SELECT id FROM ledger_accounts WHERE code = ${Accounts.merchant(merchantId, 'AVAILABLE')} FOR UPDATE`;
-          await this.assertWithinPeriodLimits(tx, merchantId, input.amount, l);
+          await this.usage.consume(tx, merchantId, 'PAYOUT', input.amount, periodLimitsOf(l), createdAt);
           const journal = await this.ledger.post(tx, {
             type: 'PAYOUT_RESERVE',
             idempotencyKey: `payout:${id}:reserve`,
@@ -163,20 +165,25 @@ export class PayoutsService {
             lines: this.transitions.reserveLines(merchantId, total),
           });
           const now = new Date();
-          const next = await this.transitions.transition(
-            tx,
-            created,
-            approvals > 0 ? 'APPROVAL_PENDING' : 'QUEUED',
-            approvals > 0 ? { reserveJournalId: journal.journalId, approvalExpiresAt: new Date(now.getTime() + APPROVAL_TTL_MS) } : { reserveJournalId: journal.journalId, queuedAt: now, nextAttemptAt: now },
-          );
+          const held = risk.decision === 'REVIEW';
+          const next = held
+            ? await this.transitions.transition(tx, created, 'MANUAL_REVIEW', { reserveJournalId: journal.journalId, reviewKind: 'RISK', reviewReason: `Held for risk review (${recorded.openEventIds.length} rule${recorded.openEventIds.length === 1 ? '' : 's'})` })
+            : await this.transitions.transition(
+                tx,
+                created,
+                approvals > 0 ? 'APPROVAL_PENDING' : 'QUEUED',
+                approvals > 0 ? { reserveJournalId: journal.journalId, approvalExpiresAt: new Date(now.getTime() + APPROVAL_TTL_MS) } : { reserveJournalId: journal.journalId, queuedAt: now, nextAttemptAt: now },
+              );
           await this.transitions.emit(tx, next, 'payout.created');
           if (next.status === 'QUEUED') await this.transitions.emit(tx, next, 'payout.queued');
           return next;
         });
+        metrics.payoutsCreated.inc({ mode: input.mode, outcome: payout.status === 'MANUAL_REVIEW' ? 'review' : payout.status === 'QUEUED' ? 'queued' : 'approval' });
         return { status: 202, data: presentPayout(payout), resourceId: id };
       } catch (err) {
         if (isUniqueViolation(err, 'merchant_order_id')) throw new AppError(ErrorCode.DUPLICATE_ORDER, 'merchant_order_id has already been used');
         if (isLockContention(err)) {
+          metrics.lockContention.inc({ operation: 'payout.create' });
           // Still contended after bounded retries: nothing was committed. A 5xx releases the
           // idempotency key, so the client can safely retry with the same key.
           throw new AppError(ErrorCode.SERVICE_UNAVAILABLE, 'Too many payouts are being created for this account at once; retry shortly with the same Idempotency-Key');
@@ -258,6 +265,9 @@ export class PayoutsService {
   async resolveReview(actor: Actor, payoutId: string, input: z.output<typeof resolvePayoutReviewSchema>) {
     const p = await this.prisma.payout.findUnique({ where: { id: payoutId } });
     if (!p || p.status !== 'MANUAL_REVIEW') throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'Payout is not in manual review');
+    // A risk hold was never sent: it is released or rejected through the risk review queue, never
+    // "resolved" as SUCCESS (that would post a settlement for money that never left).
+    if (p.reviewKind === 'RISK') throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'This payout is held by risk review; resolve it from the risk review queue');
     const result = await this.transitions.apply(payoutId, input.outcome === 'SUCCESS' ? { status: 'SUCCESS', utr: input.utr } : { status: 'FAILED', failureCode: 'MANUAL_REVIEW_FAILED', failureReason: input.reason }, 'REVIEW');
     await this.audit.record({ action: 'payout.review_resolved', resourceType: 'payout', resourceId: payoutId, organizationId: p.merchantId, metadata: { outcome: input.outcome, utr: input.utr ?? null, reason: input.reason, result, severity: 'HIGH' } });
     return this.get(actor, payoutId);

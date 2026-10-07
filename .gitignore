@@ -14,3 +14,7 @@ generated/
 .idea/
 .vscode/*
 !.vscode/extensions.json
+
+# Load tests: generated credentials and raw k6 output never leave the machine.
+load/k6/.loadtest.env
+load/k6/results/

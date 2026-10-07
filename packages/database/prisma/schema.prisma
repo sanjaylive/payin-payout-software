@@ -1246,6 +1246,8 @@ model Payment {
   lateSuccess           Boolean       @default(false) @map("late_success")
   requiresReview        Boolean       @default(false) @map("requires_review")
   reviewReason          String?       @map("review_reason") @db.VarChar(300)
+  /// Set once the reseller commission for this payin has been accrued (or found to be zero).
+  commissionAccruedAt   DateTime?     @map("commission_accrued_at") @db.Timestamptz(3)
   captureJournalId      String?       @map("capture_journal_id")
   nextPollAt            DateTime?     @map("next_poll_at") @db.Timestamptz(3)
   pollCount             Int           @default(0) @map("poll_count")
@@ -1507,6 +1509,13 @@ enum PayoutStatus {
   REVERSED
 }
 
+enum PayoutReviewKind {
+  /// Held by a risk rule before anything was sent; funds reserved.
+  RISK
+  /// Sent, but the outcome could not be established; needs bank/provider evidence.
+  UNKNOWN_OUTCOME
+}
+
 enum PayoutSource {
   DASHBOARD
   API
@@ -1514,52 +1523,56 @@ enum PayoutSource {
 }
 
 model Payout {
-  id                  String       @id
-  merchantId          String       @map("merchant_id")
-  resellerId          String?      @map("reseller_id")
-  merchantOrderId     String       @map("merchant_order_id") @db.VarChar(64)
-  mode                String       @db.VarChar(10)
-  purpose             String       @db.VarChar(30)
-  status              PayoutStatus @default(CREATED)
-  source              PayoutSource @default(DASHBOARD)
-  amountMinor         BigInt       @map("amount_minor")
-  feeMinor            BigInt       @default(0) @map("fee_minor")
-  taxMinor            BigInt       @default(0) @map("tax_minor")
+  id                  String            @id
+  merchantId          String            @map("merchant_id")
+  resellerId          String?           @map("reseller_id")
+  merchantOrderId     String            @map("merchant_order_id") @db.VarChar(64)
+  mode                String            @db.VarChar(10)
+  purpose             String            @db.VarChar(30)
+  status              PayoutStatus      @default(CREATED)
+  source              PayoutSource      @default(DASHBOARD)
+  amountMinor         BigInt            @map("amount_minor")
+  feeMinor            BigInt            @default(0) @map("fee_minor")
+  taxMinor            BigInt            @default(0) @map("tax_minor")
   /// amount + fee + tax: what is reserved from AVAILABLE.
-  totalDebitMinor     BigInt       @map("total_debit_minor")
-  currency            String       @default("INR") @db.Char(3)
-  beneficiaryId       String       @map("beneficiary_id")
+  totalDebitMinor     BigInt            @map("total_debit_minor")
+  currency            String            @default("INR") @db.Char(3)
+  beneficiaryId       String            @map("beneficiary_id")
   /// Masked copy at creation time (name, masked account, IFSC / VPA) — never the full number.
-  beneficiarySnapshot Json         @map("beneficiary_snapshot")
-  narration           String?      @db.VarChar(100)
+  beneficiarySnapshot Json              @map("beneficiary_snapshot")
+  narration           String?           @db.VarChar(100)
   metadata            Json?
-  approvalsRequired   Int          @default(0) @map("approvals_required")
-  approvalsReceived   Int          @default(0) @map("approvals_received")
-  approvalExpiresAt   DateTime?    @map("approval_expires_at") @db.Timestamptz(3)
-  providerId          String?      @map("provider_id")
-  routeId             String?      @map("route_id")
-  providerReference   String?      @map("provider_reference") @db.VarChar(120)
-  utr                 String?      @db.VarChar(40)
-  failureCode         String?      @map("failure_code") @db.VarChar(60)
-  failureReason       String?      @map("failure_reason") @db.VarChar(300)
-  reviewReason        String?      @map("review_reason") @db.VarChar(300)
-  reserveJournalId    String?      @map("reserve_journal_id")
-  settleJournalId     String?      @map("settle_journal_id")
-  releaseJournalId    String?      @map("release_journal_id")
-  reversalJournalId   String?      @map("reversal_journal_id")
-  queuedAt            DateTime?    @map("queued_at") @db.Timestamptz(3)
-  processedAt         DateTime?    @map("processed_at") @db.Timestamptz(3)
-  reversedAt          DateTime?    @map("reversed_at") @db.Timestamptz(3)
-  nextAttemptAt       DateTime?    @map("next_attempt_at") @db.Timestamptz(3)
-  pollCount           Int          @default(0) @map("poll_count")
-  requeueCount        Int          @default(0) @map("requeue_count")
-  bulkBatchId         String?      @map("bulk_batch_id")
-  bulkRowNo           Int?         @map("bulk_row_no")
-  createdById         String?      @map("created_by_id")
-  requestId           String?      @map("request_id") @db.VarChar(64)
-  version             Int          @default(1)
-  createdAt           DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  approvalsRequired   Int               @default(0) @map("approvals_required")
+  approvalsReceived   Int               @default(0) @map("approvals_received")
+  approvalExpiresAt   DateTime?         @map("approval_expires_at") @db.Timestamptz(3)
+  providerId          String?           @map("provider_id")
+  routeId             String?           @map("route_id")
+  providerReference   String?           @map("provider_reference") @db.VarChar(120)
+  utr                 String?           @db.VarChar(40)
+  failureCode         String?           @map("failure_code") @db.VarChar(60)
+  failureReason       String?           @map("failure_reason") @db.VarChar(300)
+  reviewReason        String?           @map("review_reason") @db.VarChar(300)
+  /// Why the payout is in MANUAL_REVIEW: held by risk before sending, or outcome unknown after.
+  reviewKind          PayoutReviewKind? @map("review_kind")
+  reserveJournalId    String?           @map("reserve_journal_id")
+  /// Set once the reseller commission for this payout has been accrued (or found to be zero).
+  commissionAccruedAt DateTime?         @map("commission_accrued_at") @db.Timestamptz(3)
+  settleJournalId     String?           @map("settle_journal_id")
+  releaseJournalId    String?           @map("release_journal_id")
+  reversalJournalId   String?           @map("reversal_journal_id")
+  queuedAt            DateTime?         @map("queued_at") @db.Timestamptz(3)
+  processedAt         DateTime?         @map("processed_at") @db.Timestamptz(3)
+  reversedAt          DateTime?         @map("reversed_at") @db.Timestamptz(3)
+  nextAttemptAt       DateTime?         @map("next_attempt_at") @db.Timestamptz(3)
+  pollCount           Int               @default(0) @map("poll_count")
+  requeueCount        Int               @default(0) @map("requeue_count")
+  bulkBatchId         String?           @map("bulk_batch_id")
+  bulkRowNo           Int?              @map("bulk_row_no")
+  createdById         String?           @map("created_by_id")
+  requestId           String?           @map("request_id") @db.VarChar(64)
+  version             Int               @default(1)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   beneficiary Beneficiary      @relation(fields: [beneficiaryId], references: [id], onDelete: Restrict)
   attempts    PayoutAttempt[]
@@ -1568,8 +1581,10 @@ model Payout {
   @@unique([merchantId, merchantOrderId])
   @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([status, createdAt])
-  @@index([beneficiaryId])
+  @@index([beneficiaryId, createdAt])
   @@index([bulkBatchId])
+  @@index([resellerId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("payouts")
 }
 
@@ -2094,4 +2109,203 @@ model CommissionPayout {
   @@unique([resellerId, utr])
   @@index([resellerId, createdAt(sort: Desc)])
   @@map("commission_payouts")
+}
+
+// ---- Risk (docs/RISK.md) ---------------------------------------------------------------------------
+
+enum RiskRuleType {
+  VELOCITY
+  AMOUNT_ANOMALY
+  NEW_MERCHANT_VOLUME
+  BENEFICIARY_FAN_IN
+  VOLUME_SPIKE
+  FAILED_ATTEMPTS
+  SHARED_BANK_ACCOUNT
+}
+
+enum RiskService {
+  PAYIN
+  PAYOUT
+}
+
+enum RiskActionType {
+  ALLOW
+  BLOCK
+  MANUAL_REVIEW
+  HOLD_SETTLEMENT
+  DISABLE_PAYIN
+  DISABLE_PAYOUT
+}
+
+enum RiskRuleMode {
+  /// Record events and apply the action.
+  ENFORCE
+  /// Shadow mode: record what would have happened; take no action.
+  MONITOR
+}
+
+enum RiskEventStatus {
+  /// Recorded; no human decision needed.
+  RECORDED
+  /// Waiting in the manual review queue.
+  OPEN
+  /// Reviewed as a false positive: actions lifted, held payout released.
+  CLEARED
+  /// Reviewed as genuine risk: actions kept, held payout rejected.
+  CONFIRMED
+}
+
+/// A configurable risk rule. Edits bump `version`; events keep the params they were evaluated with.
+model RiskRule {
+  id          String         @id
+  code        String         @unique @db.VarChar(60)
+  name        String         @db.VarChar(120)
+  description String?        @db.VarChar(500)
+  type        RiskRuleType
+  service     RiskService
+  /// Type-specific thresholds, validated by riskRuleParamsSchema.
+  params      Json
+  action      RiskActionType
+  mode        RiskRuleMode   @default(MONITOR)
+  enabled     Boolean        @default(true)
+  /// Lower runs first; only affects ordering in event lists (all matching rules are recorded).
+  priority    Int            @default(100)
+  version     Int            @default(1)
+  updatedById String?        @map("updated_by_id")
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  events RiskEvent[]
+
+  @@index([service, enabled])
+  @@map("risk_rules")
+}
+
+/// One rule firing. `evidence` stores exactly why: observed values, thresholds and window.
+model RiskEvent {
+  id           String          @id
+  ruleId       String          @map("rule_id")
+  ruleCode     String          @map("rule_code") @db.VarChar(60)
+  ruleVersion  Int             @map("rule_version")
+  merchantId   String?         @map("merchant_id")
+  /// What the rule fired on: PAYMENT, PAYOUT, MERCHANT or BENEFICIARY_ACCOUNT.
+  subjectType  String          @map("subject_type") @db.VarChar(30)
+  subjectId    String          @map("subject_id") @db.VarChar(80)
+  action       RiskActionType
+  mode         RiskRuleMode
+  /// True when the action was actually applied (ENFORCE mode).
+  enforced     Boolean
+  reason       String          @db.VarChar(500)
+  evidence     Json
+  status       RiskEventStatus @default(RECORDED)
+  /// Async rules: one event per rule/subject/window (prevents duplicate sweeps).
+  dedupeKey    String?         @unique @map("dedupe_key") @db.VarChar(200)
+  reviewedById String?         @map("reviewed_by_id")
+  reviewedAt   DateTime?       @map("reviewed_at") @db.Timestamptz(3)
+  reviewNote   String?         @map("review_note") @db.VarChar(500)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  rule    RiskRule           @relation(fields: [ruleId], references: [id], onDelete: Restrict)
+  actions RiskActionRecord[]
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@index([ruleId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@index([subjectType, subjectId])
+  @@map("risk_events")
+}
+
+/// A merchant-level control applied by an enforced risk event (hold, disable). Lifted by review.
+model RiskActionRecord {
+  id            String         @id
+  eventId       String         @map("event_id")
+  merchantId    String         @map("merchant_id")
+  type          RiskActionType
+  /// Settlement hold created for HOLD_SETTLEMENT.
+  holdId        String?        @map("hold_id")
+  /// DISABLE_*: whether the service was enabled before (only then is it re-enabled on lift).
+  previousValue Boolean?       @map("previous_value")
+  active        Boolean        @default(true)
+  liftedById    String?        @map("lifted_by_id")
+  liftedAt      DateTime?      @map("lifted_at") @db.Timestamptz(3)
+  liftReason    String?        @map("lift_reason") @db.VarChar(300)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  event RiskEvent @relation(fields: [eventId], references: [id], onDelete: Restrict)
+
+  @@index([merchantId, active])
+  @@index([active, createdAt(sort: Desc)])
+  @@index([eventId])
+  @@map("risk_actions")
+}
+
+// ---- Report exports (docs/REPORTS.md) --------------------------------------------------------------
+
+enum ReportType {
+  PAYMENTS
+  REFUNDS
+  PAYOUTS
+  SETTLEMENTS
+}
+
+enum ReportFormat {
+  CSV
+  /// Reserved: the writer interface supports it; no implementation yet.
+  XLSX
+}
+
+enum ReportExportStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  EXPIRED
+}
+
+/// An asynchronous export. Generated by the jobs process in batches and streamed to object storage.
+model ReportExport {
+  id             String             @id
+  /// Requesting organization (merchant, reseller/partner or platform).
+  organizationId String             @map("organization_id")
+  /// Tenant scope frozen at request time: PLATFORM, RESELLER or MERCHANT plus its id.
+  scopeKind      String             @map("scope_kind") @db.VarChar(20)
+  scopeId        String?            @map("scope_id")
+  type           ReportType
+  format         ReportFormat       @default(CSV)
+  /// Validated filters (date range, status, merchant).
+  filters        Json
+  status         ReportExportStatus @default(QUEUED)
+  rowCount       Int?               @map("row_count")
+  fileSize       BigInt?            @map("file_size")
+  sha256         String?            @db.Char(64)
+  storageKey     String?            @map("storage_key") @db.VarChar(300)
+  error          String?            @db.VarChar(300)
+  attempts       Int                @default(0)
+  requestedById  String?            @map("requested_by_id")
+  startedAt      DateTime?          @map("started_at") @db.Timestamptz(3)
+  completedAt    DateTime?          @map("completed_at") @db.Timestamptz(3)
+  expiresAt      DateTime?          @map("expires_at") @db.Timestamptz(3)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("report_exports")
+}
+
+/// Running totals per merchant, service and IST period ("D2026-10-07" / "M2026-10") for daily and
+/// monthly limits (docs/perf/INDEX_REVIEW.md §3). Incremented atomically — with the limit as the
+/// update condition — in the transaction that creates the payin/payout; decremented when it fails,
+/// expires or is rejected. Replaces per-request SUM() over the merchant's whole month.
+model MerchantPeriodUsage {
+  merchantId  String      @map("merchant_id")
+  service     ServiceType
+  period      String      @db.VarChar(11)
+  amountMinor BigInt      @default(0) @map("amount_minor")
+  count       Int         @default(0)
+  updatedAt   DateTime    @map("updated_at") @db.Timestamptz(3)
+
+  @@id([merchantId, service, period])
+  @@index([updatedAt])
+  @@map("merchant_period_usage")
 }

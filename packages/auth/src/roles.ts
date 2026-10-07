@@ -45,7 +45,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     description: 'KYC/KYB review, merchant approval and risk review',
     permissions: [
       'organization.read', 'user.read', 'audit.read', 'merchant.read', 'merchant.approve',
-      'merchant.suspend', 'compliance.read', 'compliance.approve', 'risk.read', 'risk.review',
+      'merchant.suspend', 'compliance.read', 'compliance.approve', 'risk.read', 'risk.review', 'risk.manage',
       'payin.read', 'payout.read', 'settlement.read', 'settlement.hold', 'limit.read', 'report.read',
     ],
   },

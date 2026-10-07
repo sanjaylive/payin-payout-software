@@ -1,3 +1,4 @@
+import { metrics } from '@pay2all/telemetry';
 import { randomUUID } from 'node:crypto';
 import type { PrismaClient } from '@pay2all/database';
 import { type EventEnvelope, type EventPublisher, topicFor } from '@pay2all/events';
@@ -121,6 +122,7 @@ export class OutboxRelay {
           return 0;
         }
         await tx.outboxEvent.updateMany({ where: { id: { in: ids } }, data: { publishedAt: new Date(), lastError: null } });
+        metrics.outboxPublished.inc(ids.length);
         return ids.length;
       },
       { timeout: 60_000, maxWait: 5_000 },

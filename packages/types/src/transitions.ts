@@ -70,11 +70,12 @@ export const PAYOUT_STATUSES = [
 export type PayoutStatusValue = (typeof PAYOUT_STATUSES)[number];
 
 export const PAYOUT_TRANSITIONS: Record<PayoutStatusValue, readonly PayoutStatusValue[]> = {
-  CREATED: ['VALIDATING', 'APPROVAL_PENDING', 'QUEUED', 'FAILED'],
+  CREATED: ['VALIDATING', 'APPROVAL_PENDING', 'QUEUED', 'MANUAL_REVIEW', 'FAILED'],
   VALIDATING: ['APPROVAL_PENDING', 'QUEUED', 'MANUAL_REVIEW', 'FAILED'],
   APPROVAL_PENDING: ['QUEUED', 'REJECTED'],
-  // Pre-send risk review, or post-send unknown outcome (resolved only with evidence + audit reason).
-  MANUAL_REVIEW: ['QUEUED', 'REJECTED', 'SUCCESS', 'FAILED'],
+  // Pre-send risk review (cleared → approvals or queue; confirmed → REJECTED), or post-send unknown
+  // outcome (resolved only with evidence + audit reason → SUCCESS / FAILED).
+  MANUAL_REVIEW: ['APPROVAL_PENDING', 'QUEUED', 'REJECTED', 'SUCCESS', 'FAILED'],
   QUEUED: ['PROCESSING', 'REJECTED'],
   // PROCESSING → QUEUED only when every attempt provably never reached a provider (requeue).
   PROCESSING: ['QUEUED', 'PENDING', 'SUCCESS', 'FAILED', 'MANUAL_REVIEW'],

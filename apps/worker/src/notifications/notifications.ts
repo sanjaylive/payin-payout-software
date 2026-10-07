@@ -1,3 +1,4 @@
+import { metrics } from '@pay2all/telemetry';
 import type { FieldEncryptor } from '@pay2all/auth';
 import { newId } from '@pay2all/auth';
 import type { DbClient, PrismaClient } from '@pay2all/database';
@@ -56,6 +57,7 @@ export class NotificationSender {
       const msg = JSON.parse(this.encryptor.decrypt(n.contentEncrypted, aad(id))) as { to: string; subject: string; text: string };
       const info = (await this.transport.sendMail({ from: this.opts.from, to: msg.to, subject: msg.subject, text: msg.text })) as { messageId?: string };
       await this.prisma.notification.update({ where: { id }, data: { status: 'SENT', sentAt: new Date(), contentEncrypted: null, providerMessageId: info.messageId?.slice(0, 200) ?? null, attempts: { increment: 1 }, error: null } });
+      metrics.notificationsSent.inc({ channel: n.channel, outcome: 'sent' });
     } catch (err) {
       const attempts = n.attempts + 1;
       const final = attempts >= MAX_ATTEMPTS;
@@ -63,6 +65,7 @@ export class NotificationSender {
         where: { id },
         data: { attempts, error: (err instanceof Error ? err.message : String(err)).slice(0, 1000), ...(final ? { status: 'FAILED', contentEncrypted: null, nextAttemptAt: null } : { nextAttemptAt: new Date(Date.now() + RETRY_MS[attempts - 1]!) }) },
       });
+      metrics.notificationsSent.inc({ channel: n.channel, outcome: final ? 'failed' : 'retry' });
       this.logger.warn({ notificationId: id, template: n.template, attempts, final }, 'Notification send failed');
     }
   }

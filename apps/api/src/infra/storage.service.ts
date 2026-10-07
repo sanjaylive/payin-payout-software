@@ -1,16 +1,18 @@
 import { Readable } from 'node:stream';
 import {
   CreateBucketCommand,
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { ApiConfig } from '../config/api-config';
 
 /**
- * S3-compatible object storage for KYC documents. The database only holds metadata and the object
+ * S3-compatible object storage for KYC documents, reconciliation files and report exports. The database only holds metadata and the object
  * key (docs/DATABASE.md §2.2). Objects are private; reads go through the API, which authorizes and
  * audits each access.
  */
@@ -58,6 +60,26 @@ export class StorageService implements OnModuleInit {
         ...(this.config.env.S3_SSE ? { ServerSideEncryption: this.config.env.S3_SSE as 'AES256' } : {}),
       }),
     );
+  }
+
+  /** Multipart streaming upload (bounded memory: one 5 MB part at a time) for large generated files. */
+  async putStream(key: string, body: Readable, contentType: string): Promise<void> {
+    await new Upload({
+      client: this.client,
+      queueSize: 2,
+      partSize: 5 * 1024 * 1024,
+      params: {
+        Bucket: this.bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+        ...(this.config.env.S3_SSE ? { ServerSideEncryption: this.config.env.S3_SSE as 'AES256' } : {}),
+      },
+    }).done();
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
   }
 
   async getStream(key: string): Promise<Readable> {

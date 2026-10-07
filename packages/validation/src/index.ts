@@ -13,3 +13,5 @@ export * from './payouts';
 export * from './webhooks';
 export * from './settlements';
 export * from './api-keys';
+export * from './risk';
+export * from './reports';

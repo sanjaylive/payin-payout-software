@@ -236,7 +236,7 @@ export class PayoutProcessorService {
     await this.transitions.ledgerRun(async (tx) => {
       const cur = await this.transitions.lock(tx, p.id);
       if (cur.status !== 'PROCESSING' && cur.status !== 'PENDING') return;
-      await this.transitions.transition(tx, cur, 'MANUAL_REVIEW', { reviewReason: reason, nextAttemptAt: null });
+      await this.transitions.transition(tx, cur, 'MANUAL_REVIEW', { reviewReason: reason, reviewKind: 'UNKNOWN_OUTCOME', nextAttemptAt: null });
     });
     this.logger.error({ payoutId: p.id }, 'Payout moved to manual review (unknown outcome)');
   }

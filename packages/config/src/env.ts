@@ -43,14 +43,28 @@ const base = {
     .string()
     .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be a base64-encoded 32-byte key'),
   ENCRYPTION_KEY_ID: z.string().regex(/^[a-z0-9]{1,16}$/, 'must be 1-16 lowercase alphanumerics').default('k1'),
+  /** Sentry-protocol DSN for unexpected errors. Empty = error reporting off. */
   SENTRY_DSN: z.string().default(''),
+  /** Release identifier attached to error reports and traces (e.g. git SHA). */
+  APP_RELEASE: z.string().max(64).default(''),
+  /** OTLP/HTTP collector base URL (…/v1/traces is appended). Empty = tracing off. */
   OTEL_EXPORTER_OTLP_ENDPOINT: z.string().default(''),
+  /** Fraction of new traces sampled (children follow their parent). */
+  OTEL_TRACES_SAMPLE_RATIO: z.coerce.number().min(0).max(1).default(0.1),
+  /** Interface for the internal Prometheus listener; use 0.0.0.0 inside containers. */
+  METRICS_HOST: z.string().default('127.0.0.1'),
+  /** Optional bearer token Prometheus must present on /metrics. */
+  METRICS_TOKEN: z.string().default(''),
 };
 
 export const apiEnvSchema = z
   .object({
     ...base,
     PORT: int(4000, 1),
+    /** Internal Prometheus port for the API process (0 = off). Never the public port. */
+    METRICS_PORT: int(9464),
+    /** Internal Prometheus port for the API's jobs process (0 = off). */
+    JOBS_METRICS_PORT: int(9465),
     API_PUBLIC_URL: z.url().default('http://localhost:4000'),
     WEB_PUBLIC_URL: z.url().default('http://localhost:3000'),
     CORS_ALLOWED_ORIGINS: csv,
@@ -109,6 +123,9 @@ export const apiEnvSchema = z
     if (!env.WEBHOOK_REQUIRE_HTTPS) {
       ctx.addIssue({ code: 'custom', path: ['WEBHOOK_REQUIRE_HTTPS'], message: 'merchant webhook endpoints must be https in production' });
     }
+    if (env.METRICS_PORT !== 0 && env.METRICS_PORT === env.PORT) {
+      ctx.addIssue({ code: 'custom', path: ['METRICS_PORT'], message: 'metrics must not share the public API port' });
+    }
     if (env.CORS_ALLOWED_ORIGINS.some((o) => !o.startsWith('https://'))) {
       ctx.addIssue({ code: 'custom', path: ['CORS_ALLOWED_ORIGINS'], message: 'production origins must be https' });
     }
@@ -124,6 +141,8 @@ export const workerEnvSchema = z
     /** Replication factor for auto-provisioned topics. */
     KAFKA_REPLICATION_FACTOR: int(1, 1),
     WORKER_HEALTH_PORT: int(4001, 1),
+    /** Internal Prometheus port for the worker (0 = off). */
+    WORKER_METRICS_PORT: int(9466),
     /** Notification email (Mailpit locally). Empty = log-only transport (development/tests). */
     SMTP_URL: z.string().default(''),
     MAIL_FROM: z.string().default('Pay2All Payments <no-reply@pay2all.local>'),
