@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import type { DbClient, PricingPlan, PricingPlanKind, PricingRule, PricingSubjectType, Prisma, PrismaClient } from '@pay2all/database';
-import { computeFee, minorToMajorString, parseRateMicros, RATE_SCALE, selectRule, taxOn } from '@pay2all/ledger';
+import type { DbClient, PricingPlan, PricingPlanKind, PricingRule, PricingSubjectType, Prisma, PrismaClient, Scheme, SchemeRate } from '@pay2all/database';
+import { computeFee, minorToMajorString, parseRateMicros, RATE_SCALE, schemeCharge, selectRule, selectSchemeRate, taxOn } from '@pay2all/ledger';
 import { ErrorCode } from '@pay2all/types';
 import type { assignPricingPlanSchema, createPricingPlanSchema } from '@pay2all/validation';
 import type { z } from 'zod';
@@ -11,9 +11,12 @@ import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/actor';
 
 type PlanWithRules = PricingPlan & { rules: PricingRule[] };
+type SchemeWithRates = Scheme & { rates: SchemeRate[] };
 
 export interface PricingQuote {
   merchantFeeMinor: bigint;
+  /** Scheme commission credited to the merchant (fee is then 0). */
+  merchantCommissionMinor: bigint;
   taxMinor: bigint;
   taxRateMicros: bigint;
   wholesaleFeeMinor: bigint | null;
@@ -71,29 +74,99 @@ export class PricingService {
     return null;
   }
 
+  /**
+   * Which pricing applies to a merchant, in order (docs/PRICING_SCHEMES.md §4):
+   * assigned scheme → merchant rate-card assignment → its reseller's default rate card → default
+   * scheme → platform default rate card.
+   */
+  async resolveMerchantPricing(merchantId: string, at = new Date()): Promise<{ source: 'ASSIGNED_SCHEME' | 'DEFAULT_SCHEME'; scheme: SchemeWithRates } | { source: 'RATE_CARD'; plan: PlanWithRules } | null> {
+    const merchant = await this.prisma.merchant.findUniqueOrThrow({ where: { id: merchantId }, select: { resellerId: true, scheme: { include: { rates: true } } } });
+    if (merchant.scheme?.status === 'ACTIVE') return { source: 'ASSIGNED_SCHEME', scheme: merchant.scheme };
+    const assigned = await this.planFor('MERCHANT', { type: 'MERCHANT', id: merchantId }, merchant.resellerId ? [merchant.resellerId] : [], at);
+    if (assigned) return { source: 'RATE_CARD', plan: assigned };
+    const scheme = await this.prisma.scheme.findFirst({ where: { isDefault: true, status: 'ACTIVE' }, include: { rates: true } });
+    if (scheme) return { source: 'DEFAULT_SCHEME', scheme };
+    const platform = await this.prisma.organization.findFirstOrThrow({ where: { type: 'PLATFORM' }, select: { id: true } });
+    const plan = await this.planFor('MERCHANT', null, [platform.id], at);
+    return plan ? { source: 'RATE_CARD', plan } : null;
+  }
+
+  /** The active pricing provider (1 = Payout, 2 = Dynamic QR, …) that covers a method. */
+  async pricingProviderFor(service: 'PAYIN' | 'PAYOUT', method: string) {
+    return this.prisma.pricingProvider.findFirst({ where: { service, isActive: true, methods: { has: method } }, orderBy: { id: 'asc' } });
+  }
+
+  /** Fee or commission from a scheme; throws a clear error when the scheme does not cover it. */
+  async schemeQuote(scheme: SchemeWithRates, service: 'PAYIN' | 'PAYOUT', method: string, amountMinor: bigint) {
+    const disabled = service === 'PAYIN' ? ErrorCode.PAYIN_DISABLED : ErrorCode.PAYOUT_DISABLED;
+    const provider = await this.pricingProviderFor(service, method);
+    if (!provider) throw new AppError(disabled, `No pricing provider covers ${method}; add it in Settings → Pricing Providers`);
+    const rate = selectSchemeRate(scheme.rates, provider.id, amountMinor);
+    if (!rate) throw new AppError(disabled, `Pricing scheme "${scheme.name}" has no rate for ${provider.name} at ₹${minorToMajorString(amountMinor)}`);
+    const { feeMinor, commissionMinor } = schemeCharge(rate, amountMinor);
+    return { provider, rate, feeMinor, commissionMinor, taxMinor: taxOn(feeMinor, scheme.taxRateMicros) };
+  }
+
   async quote(input: { merchantId: string; service: 'PAYIN' | 'PAYOUT'; method: string; providerId: string | null; amountMinor: bigint; at?: Date }): Promise<PricingQuote> {
     const at = input.at ?? new Date();
     const merchant = await this.prisma.merchant.findUniqueOrThrow({ where: { id: input.merchantId }, select: { resellerId: true } });
     const platform = await this.prisma.organization.findFirstOrThrow({ where: { type: 'PLATFORM' }, select: { id: true } });
     const ctx = { service: input.service, method: input.method, providerId: input.providerId, amountMinor: input.amountMinor };
+    const costPlanFor = async () => {
+      const costPlan = input.providerId ? await this.planFor('PROVIDER_COST', { type: 'PROVIDER', id: input.providerId }, [platform.id], at) : null;
+      const costRule = costPlan ? selectRule(costPlan.rules, ctx) : null;
+      return { costPlan, costRule, providerCost: costRule ? computeFee(costRule, input.amountMinor) : 0n };
+    };
 
-    const merchantPlan = await this.planFor('MERCHANT', { type: 'MERCHANT', id: input.merchantId }, merchant.resellerId ? [merchant.resellerId, platform.id] : [platform.id], at);
+    const resolved = await this.resolveMerchantPricing(input.merchantId, at);
+    if (resolved && resolved.source !== 'RATE_CARD') {
+      // A platform scheme replaces the reseller layer: no wholesale, no reseller margin.
+      const { scheme } = resolved;
+      const q = await this.schemeQuote(scheme, input.service, input.method, input.amountMinor);
+      const { costPlan, costRule, providerCost } = await costPlanFor();
+      return {
+        merchantFeeMinor: q.feeMinor,
+        merchantCommissionMinor: q.commissionMinor,
+        taxMinor: q.taxMinor,
+        taxRateMicros: scheme.taxRateMicros,
+        wholesaleFeeMinor: null,
+        providerCostMinor: providerCost,
+        resellerMarginMinor: 0n,
+        platformMarginMinor: q.feeMinor - q.commissionMinor - providerCost,
+        refundFee: false,
+        detail: {
+          at: at.toISOString(),
+          context: { service: input.service, method: input.method, provider_id: input.providerId, amount_minor: input.amountMinor.toString() },
+          scheme: {
+            id: scheme.id,
+            name: scheme.name,
+            source: resolved.source,
+            version: scheme.version,
+            tax_rate_micros: scheme.taxRateMicros.toString(),
+            pricing_provider: { id: q.provider.id, name: q.provider.name },
+            rate: { id: q.rate.id, min_amount_minor: q.rate.minAmountMinor.toString(), max_amount_minor: q.rate.maxAmountMinor?.toString() ?? null, type: q.rate.valueType, value: q.rate.value.toString() },
+          },
+          provider_cost_plan: costPlan ? { id: costPlan.id, name: costPlan.name, rule: ruleJson(costRule) } : null,
+        },
+      };
+    }
+
+    const merchantPlan = resolved?.plan ?? null;
     const merchantRule = merchantPlan ? selectRule(merchantPlan.rules, ctx) : null;
     if (!merchantPlan || !merchantRule) {
       throw new AppError(input.service === 'PAYIN' ? ErrorCode.PAYIN_DISABLED : ErrorCode.PAYOUT_DISABLED, 'Pricing is not configured for this transaction type');
     }
     const wholesalePlan = merchant.resellerId ? await this.planFor('WHOLESALE', { type: 'RESELLER', id: merchant.resellerId }, [platform.id], at) : null;
     const wholesaleRule = wholesalePlan ? selectRule(wholesalePlan.rules, ctx) : null;
-    const costPlan = input.providerId ? await this.planFor('PROVIDER_COST', { type: 'PROVIDER', id: input.providerId }, [platform.id], at) : null;
-    const costRule = costPlan ? selectRule(costPlan.rules, ctx) : null;
+    const { costPlan, costRule, providerCost } = await costPlanFor();
 
     const merchantFee = computeFee(merchantRule, input.amountMinor);
     const tax = taxOn(merchantFee, merchantPlan.taxRateMicros);
     const wholesaleFee = merchant.resellerId ? (wholesaleRule ? computeFee(wholesaleRule, input.amountMinor) : merchantFee) : null;
-    const providerCost = costRule ? computeFee(costRule, input.amountMinor) : 0n;
 
     return {
       merchantFeeMinor: merchantFee,
+      merchantCommissionMinor: 0n,
       taxMinor: tax,
       taxRateMicros: merchantPlan.taxRateMicros,
       wholesaleFeeMinor: wholesaleFee,
@@ -121,6 +194,7 @@ export class PricingService {
         merchantId,
         pricing: q.detail as Prisma.InputJsonValue,
         merchantFeeMinor: q.merchantFeeMinor,
+        merchantCommissionMinor: q.merchantCommissionMinor,
         taxMinor: q.taxMinor,
         taxRateMicros: q.taxRateMicros,
         wholesaleFeeMinor: q.wholesaleFeeMinor,
@@ -300,6 +374,7 @@ export class PricingService {
   presentQuote(q: PricingQuote) {
     return {
       merchant_fee: minorToMajorString(q.merchantFeeMinor),
+      merchant_commission: minorToMajorString(q.merchantCommissionMinor),
       tax: minorToMajorString(q.taxMinor),
       wholesale_fee: q.wholesaleFeeMinor === null ? null : minorToMajorString(q.wholesaleFeeMinor),
       provider_cost: minorToMajorString(q.providerCostMinor),

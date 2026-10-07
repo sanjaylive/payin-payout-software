@@ -43,6 +43,7 @@ export function presentPayout(p: Payout, opts: PayoutPresentOptions = {}) {
     merchant_order_id: p.merchantOrderId,
     amount: major(p.amountMinor),
     fee: major(p.feeMinor),
+    commission: major(p.commissionMinor),
     tax: major(p.taxMinor),
     total_debit: major(p.totalDebitMinor),
     currency: p.currency,

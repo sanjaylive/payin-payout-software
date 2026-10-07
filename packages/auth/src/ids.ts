@@ -39,6 +39,8 @@ export const ID_PREFIXES = {
   pricingRule: 'prl',
   pricingAssignment: 'pas',
   pricingSnapshot: 'tps',
+  scheme: 'sch',
+  schemeRate: 'scr',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

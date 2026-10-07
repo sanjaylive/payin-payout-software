@@ -60,3 +60,52 @@ export function computeFee(rule: PricingRuleLike, amountMinor: bigint): bigint {
       return clamp(percentOf(amountMinor, rule.rateMicros), rule.minFeeMinor, rule.maxFeeMinor);
   }
 }
+
+// ---- Schemes (docs/PRICING_SCHEMES.md) -----------------------------------------------------------
+
+export interface SchemeRateLike {
+  id: string;
+  providerId: number;
+  minAmountMinor: bigint;
+  maxAmountMinor: bigint | null;
+  valueType: 'FLAT' | 'PERCENT';
+  /** Signed: negative = charge to the merchant, positive = commission to the merchant. */
+  value: bigint;
+}
+
+/** The slab containing the amount (slabs within a provider never overlap). */
+export function selectSchemeRate<R extends SchemeRateLike>(rates: R[], providerId: number, amountMinor: bigint): R | null {
+  return rates.find((r) => r.providerId === providerId && amountMinor >= r.minAmountMinor && (r.maxAmountMinor === null || amountMinor <= r.maxAmountMinor)) ?? null;
+}
+
+/** A scheme value applied to an amount: exactly one of fee / commission is non-zero (or neither). */
+export function schemeCharge(rate: SchemeRateLike, amountMinor: bigint): { feeMinor: bigint; commissionMinor: bigint } {
+  const magnitude = rate.value < 0n ? -rate.value : rate.value;
+  const v = rate.valueType === 'FLAT' ? magnitude : percentOf(amountMinor, magnitude);
+  return rate.value < 0n ? { feeMinor: v, commissionMinor: 0n } : { feeMinor: 0n, commissionMinor: v };
+}
+
+/** Slabs for one provider must not overlap. Returns the first overlapping pair, or null. */
+export function findSlabOverlap<R extends Pick<SchemeRateLike, 'providerId' | 'minAmountMinor' | 'maxAmountMinor'>>(rates: R[]): [R, R] | null {
+  const byProvider = new Map<number, R[]>();
+  for (const r of rates) byProvider.set(r.providerId, [...(byProvider.get(r.providerId) ?? []), r]);
+  for (const list of byProvider.values()) {
+    const sorted = [...list].sort((a, b) => (a.minAmountMinor < b.minAmountMinor ? -1 : a.minAmountMinor > b.minAmountMinor ? 1 : 0));
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1]!;
+      if (prev.maxAmountMinor === null || sorted[i]!.minAmountMinor <= prev.maxAmountMinor) return [prev, sorted[i]!];
+    }
+  }
+  return null;
+}
+
+/**
+ * Commission claw-back for a refund, pro rata to the cumulative refunded amount, so that a full
+ * refund takes back exactly the commission credited (no rounding drift across partial refunds).
+ */
+export function commissionClawback(commissionMinor: bigint, paymentAmountMinor: bigint, refundedBeforeMinor: bigint, refundMinor: bigint, clawedBeforeMinor: bigint): bigint {
+  if (commissionMinor === 0n) return 0n;
+  const cumulative = refundedBeforeMinor + refundMinor;
+  const target = cumulative >= paymentAmountMinor ? commissionMinor : (commissionMinor * cumulative) / paymentAmountMinor;
+  return target > clawedBeforeMinor ? target - clawedBeforeMinor : 0n;
+}

@@ -102,6 +102,8 @@ export class PayoutTransitionsService {
     ];
     if (p.feeMinor > 0n) lines.push({ accountCode: Accounts.FEE_REVENUE, direction: 'CREDIT', amountMinor: p.feeMinor, currency: 'INR' });
     if (p.taxMinor > 0n) lines.push({ accountCode: Accounts.GST_PAYABLE, direction: 'CREDIT', amountMinor: p.taxMinor, currency: 'INR' });
+    // Scheme commission: the merchant was debited less than the amount sent; the platform pays the rest.
+    if (p.commissionMinor > 0n) lines.push({ accountCode: Accounts.MERCHANT_COMMISSION, direction: 'DEBIT', amountMinor: p.commissionMinor, currency: 'INR' });
     const journal = await this.ledger.post(tx, { type: 'PAYOUT_SETTLE', idempotencyKey: `payout:${p.id}:settle`, source: { type: 'PAYOUT', id: p.id }, description: `Payout ${p.merchantOrderId}`, metadata: { utr: o.utr ?? '' }, lines });
     const next = await this.transition(tx, p, 'SUCCESS', {
       settleJournalId: journal.journalId,
@@ -124,13 +126,15 @@ export class PayoutTransitionsService {
   private async reverse(tx: TransactionClient, p: Payout, o: PayoutOutcome): Promise<Payout> {
     const code = await this.providerCode(tx, p);
     const snap = await tx.transactionPricingSnapshot.findUnique({ where: { transactionId: p.id }, select: { refundFee: true } });
-    const credit = snap?.refundFee ? p.totalDebitMinor : p.amountMinor;
+    // A returned payout earns no commission: the merchant gets back exactly what it was debited.
+    const credit = snap?.refundFee || p.commissionMinor > 0n ? p.totalDebitMinor : p.amountMinor;
     const lines: PostingLine[] = [
       { accountCode: Accounts.providerClearing(code), direction: 'DEBIT', amountMinor: p.amountMinor, currency: 'INR' },
       { accountCode: Accounts.merchant(p.merchantId, 'AVAILABLE'), direction: 'CREDIT', amountMinor: credit, currency: 'INR' },
     ];
     if (snap?.refundFee && p.feeMinor > 0n) lines.push({ accountCode: Accounts.FEE_REVENUE, direction: 'DEBIT', amountMinor: p.feeMinor, currency: 'INR' });
     if (snap?.refundFee && p.taxMinor > 0n) lines.push({ accountCode: Accounts.GST_PAYABLE, direction: 'DEBIT', amountMinor: p.taxMinor, currency: 'INR' });
+    if (p.commissionMinor > 0n) lines.push({ accountCode: Accounts.MERCHANT_COMMISSION, direction: 'CREDIT', amountMinor: p.commissionMinor, currency: 'INR' });
     const journal = await this.ledger.post(tx, {
       type: 'PAYOUT_REVERSAL',
       idempotencyKey: `payout:${p.id}:reversal`,

@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
 import { isUniqueViolation, type Payment, type Prisma, type PrismaClient, type Refund, type TransactionClient } from '@pay2all/database';
+import { commissionClawback } from '@pay2all/ledger';
 import { Accounts, type PostingLine } from '@pay2all/ledger/engine';
 import { classify, type RefundResult } from '@pay2all/providers';
 import { ErrorCode, PAYMENT_CAPTURED_STATUSES } from '@pay2all/types';
@@ -58,10 +59,12 @@ export class RefundsService {
           if (input.amount > refundable) throw new AppError(ErrorCode.REFUND_NOT_ALLOWED, `Amount exceeds the refundable balance of ₹${(refundable / 100n).toString()}.${String(refundable % 100n).padStart(2, '0')}`);
 
           const id = newId('refund');
-          const lines = await this.debitLines(tx, p, input.amount);
+          const clawed = await tx.refund.aggregate({ where: { paymentId, status: { not: 'FAILED' } }, _sum: { commissionClawbackMinor: true } });
+          const clawback = commissionClawback(p.commissionMinor, p.amountMinor, p.amountMinor - refundable, input.amount, clawed._sum.commissionClawbackMinor ?? 0n);
+          const lines = await this.debitLines(tx, p, input.amount, clawback);
           const journal = await this.ledger.post(tx, { type: 'REFUND', idempotencyKey: `refund:${id}`, source: { type: 'REFUND', id }, description: `Refund of ${p.merchantOrderId}`, lines });
           const created = await tx.refund.create({
-            data: { id, paymentId, merchantId, merchantRefundId: input.merchant_refund_id ?? null, amountMinor: input.amount, reason: input.reason ?? null, providerId: p.providerId!, journalId: journal.journalId, createdById: actor.userId },
+            data: { id, paymentId, merchantId, merchantRefundId: input.merchant_refund_id ?? null, amountMinor: input.amount, commissionClawbackMinor: clawback, reason: input.reason ?? null, providerId: p.providerId!, journalId: journal.journalId, createdById: actor.userId },
           });
           if (p.status !== 'REFUND_PENDING') await this.transitions.transition(tx, p, 'REFUND_PENDING');
           await this.idempotency.attachResource(tx, recordId, id);
@@ -76,13 +79,18 @@ export class RefundsService {
     });
   }
 
-  /** Draw from UNSETTLED first, then AVAILABLE; the engine re-checks under row locks. */
-  private async debitLines(tx: TransactionClient, p: Payment, amount: bigint): Promise<PostingLine[]> {
+  /**
+   * Draw from UNSETTLED first, then AVAILABLE; the engine re-checks under row locks. The merchant
+   * also gives back the refunded share of any scheme commission.
+   */
+  private async debitLines(tx: TransactionClient, p: Payment, refundAmount: bigint, clawback: bigint): Promise<PostingLine[]> {
+    const amount = refundAmount + clawback;
     const provider = await tx.provider.findUniqueOrThrow({ where: { id: p.providerId! }, select: { code: true } });
     const unsettled = await tx.ledgerAccount.findUnique({ where: { code: Accounts.merchant(p.merchantId, 'UNSETTLED') }, select: { balanceMinor: true } });
     const fromUnsettled = p.settledAt ? 0n : [unsettled?.balanceMinor ?? 0n, amount].reduce((a, b) => (a < b ? a : b));
     const fromAvailable = amount - fromUnsettled;
-    const lines: PostingLine[] = [{ accountCode: Accounts.providerClearing(provider.code), direction: 'CREDIT', amountMinor: amount, currency: p.currency }];
+    const lines: PostingLine[] = [{ accountCode: Accounts.providerClearing(provider.code), direction: 'CREDIT', amountMinor: refundAmount, currency: p.currency }];
+    if (clawback > 0n) lines.push({ accountCode: Accounts.MERCHANT_COMMISSION, direction: 'CREDIT', amountMinor: clawback, currency: p.currency });
     if (fromUnsettled > 0n) lines.push({ accountCode: Accounts.merchant(p.merchantId, 'UNSETTLED'), direction: 'DEBIT', amountMinor: fromUnsettled, currency: p.currency });
     if (fromAvailable > 0n) lines.push({ accountCode: Accounts.merchant(p.merchantId, 'AVAILABLE'), direction: 'DEBIT', amountMinor: fromAvailable, currency: p.currency });
     return lines;

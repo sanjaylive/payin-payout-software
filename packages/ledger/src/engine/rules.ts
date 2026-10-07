@@ -20,7 +20,7 @@ const D = (bucket: Bucket): Leg => ({ bucket, direction: 'DEBIT' });
 const C = (bucket: Bucket): Leg => ({ bucket, direction: 'CREDIT' });
 
 const RULES: Partial<Record<JournalType, Rule>> = {
-  PAYIN_CAPTURE: { allowedMerchantLegs: [C('UNSETTLED'), C('PENDING')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
+  PAYIN_CAPTURE: { allowedMerchantLegs: [C('UNSETTLED'), C('PENDING')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE', 'platform:MERCHANT_COMMISSION'] },
   HOLD_RELEASE: { exactMerchantLegs: [D('PENDING'), C('UNSETTLED')], allowedPlatform: [] },
   SETTLEMENT: { allowedMerchantLegs: [D('UNSETTLED'), C('AVAILABLE'), C('SETTLED')], allowedPlatform: ['platform:bank:', 'platform:memo:SETTLED_CONTRA'] },
   // Bank settlement: out of UNSETTLED into transit at creation; to the bank (+ SETTLED memo) once paid;
@@ -29,15 +29,16 @@ const RULES: Partial<Record<JournalType, Rule>> = {
   SETTLEMENT_PAID: { exactMerchantLegs: [C('SETTLED')], allowedPlatform: ['platform:SETTLEMENT_CLEARING', 'platform:bank:', 'platform:memo:SETTLED_CONTRA'] },
   SETTLEMENT_RETURN: { exactMerchantLegs: [C('UNSETTLED')], allowedPlatform: ['platform:SETTLEMENT_CLEARING'] },
   PAYOUT_RESERVE: { exactMerchantLegs: [D('AVAILABLE'), C('RESERVED')], allowedPlatform: [] },
-  PAYOUT_SETTLE: { exactMerchantLegs: [D('RESERVED')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
+  PAYOUT_SETTLE: { exactMerchantLegs: [D('RESERVED')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE', 'platform:MERCHANT_COMMISSION'] },
   PAYOUT_RELEASE: { exactMerchantLegs: [D('RESERVED'), C('AVAILABLE')], allowedPlatform: [] },
-  PAYOUT_REVERSAL: { allowedMerchantLegs: [C('AVAILABLE')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
+  PAYOUT_REVERSAL: { allowedMerchantLegs: [C('AVAILABLE')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE', 'platform:MERCHANT_COMMISSION'] },
   LIEN_PLACE: { allowedMerchantLegs: [D('AVAILABLE'), D('UNSETTLED'), C('LIEN')], allowedPlatform: [] },
   LIEN_RELEASE: { exactMerchantLegs: [D('LIEN'), C('AVAILABLE')], allowedPlatform: [] },
   ADJUSTMENT_CREDIT: { exactMerchantLegs: [C('AVAILABLE')], allowedPlatform: ['platform:ADJUSTMENT_SUSPENSE'] },
   ADJUSTMENT_DEBIT: { exactMerchantLegs: [D('AVAILABLE')], allowedPlatform: ['platform:ADJUSTMENT_SUSPENSE'] },
-  REFUND: { allowedMerchantLegs: [D('UNSETTLED'), D('AVAILABLE')], allowedPlatform: ['platform:provider:'] },
-  REFUND_REVERSAL: { allowedMerchantLegs: [C('UNSETTLED'), C('AVAILABLE')], allowedPlatform: ['platform:provider:'] },
+  // A refund also takes back the payment's share of scheme commission.
+  REFUND: { allowedMerchantLegs: [D('UNSETTLED'), D('AVAILABLE')], allowedPlatform: ['platform:provider:', 'platform:MERCHANT_COMMISSION'] },
+  REFUND_REVERSAL: { allowedMerchantLegs: [C('UNSETTLED'), C('AVAILABLE')], allowedPlatform: ['platform:provider:', 'platform:MERCHANT_COMMISSION'] },
   CHARGEBACK_LIEN: { allowedMerchantLegs: [D('AVAILABLE'), D('UNSETTLED'), D('RECEIVABLE'), C('LIEN')], allowedPlatform: [] },
   CHARGEBACK_DEBIT: { allowedMerchantLegs: [D('LIEN'), D('AVAILABLE'), D('RECEIVABLE')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
   CHARGEBACK_RELEASE: { exactMerchantLegs: [D('LIEN'), C('AVAILABLE')], allowedPlatform: [] },

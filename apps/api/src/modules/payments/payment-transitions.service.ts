@@ -73,6 +73,8 @@ export class PaymentTransitionsService {
     ];
     if (p.feeMinor > 0n) lines.push({ accountCode: Accounts.FEE_REVENUE, direction: 'CREDIT', amountMinor: p.feeMinor, currency: p.currency });
     if (p.taxMinor > 0n) lines.push({ accountCode: Accounts.GST_PAYABLE, direction: 'CREDIT', amountMinor: p.taxMinor, currency: p.currency });
+    // Scheme commission: the platform pays it on top of the collected amount.
+    if (p.commissionMinor > 0n) lines.push({ accountCode: Accounts.MERCHANT_COMMISSION, direction: 'DEBIT', amountMinor: p.commissionMinor, currency: p.currency });
     return lines;
   }
 

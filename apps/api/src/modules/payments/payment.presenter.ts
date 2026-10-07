@@ -44,6 +44,7 @@ export function presentPayment(p: Payment, opts: PresentOptions = {}) {
     amount: major(p.amountMinor),
     currency: p.currency,
     fee: major(p.feeMinor),
+    commission: major(p.commissionMinor),
     tax: major(p.taxMinor),
     net_amount: major(p.netAmountMinor),
     refunded_amount: major(p.refundedAmountMinor),

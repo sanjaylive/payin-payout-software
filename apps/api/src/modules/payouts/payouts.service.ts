@@ -113,7 +113,9 @@ export class PayoutsService {
       const primary = decision.candidates[0];
       if (!primary) throw new AppError(ErrorCode.PROVIDER_UNAVAILABLE, `No provider can send ${input.mode} payouts of this amount right now`);
       const quote = await this.pricing.quote({ merchantId, service: 'PAYOUT', method: input.mode, providerId: primary.providerId, amountMinor: input.amount });
-      const total = input.amount + quote.merchantFeeMinor + quote.taxMinor;
+      // A scheme commission reduces the debit; it can never make the payout free or negative.
+      if (quote.merchantCommissionMinor >= input.amount) throw new AppError(ErrorCode.INVALID_REQUEST, 'Commission cannot exceed the payout amount; check the pricing scheme');
+      const total = input.amount + quote.merchantFeeMinor + quote.taxMinor - quote.merchantCommissionMinor;
       // Tier frozen at creation; bulk rows use the stricter of the row and the batch total.
       const approvals = Math.max(await this.limits.approvalsRequiredFor(merchantId, input.amount, 'PAYOUT'), opts.bulk?.approvalsFloor ?? 0);
 
@@ -136,6 +138,7 @@ export class PayoutsService {
               amountMinor: input.amount,
               feeMinor: quote.merchantFeeMinor,
               taxMinor: quote.taxMinor,
+              commissionMinor: quote.merchantCommissionMinor,
               totalDebitMinor: total,
               beneficiaryId: beneficiary.id,
               beneficiarySnapshot: this.beneficiaries.snapshot(beneficiary),

@@ -997,3 +997,62 @@ export interface StorageOverview {
   local: { available: boolean; root: string | null };
   backends: StorageBackendRow[];
 }
+
+// ---- Pricing schemes (docs/PRICING_SCHEMES.md) ----------------------------------------------------
+export type PricingService = 'PAYIN' | 'PAYOUT';
+export interface PricingProviderRow {
+  id: number;
+  name: string;
+  service: PricingService;
+  methods: string[];
+  description: string | null;
+  is_active: boolean;
+  version: number;
+  used_by_schemes: number;
+  updated_at: string;
+}
+export interface SchemeRateRow {
+  id: string;
+  provider_id: number;
+  provider_name: string;
+  service: PricingService;
+  min_amount: string;
+  max_amount: string | null;
+  type: 'PERCENT' | 'FLAT';
+  /** Signed: negative = charge, positive = commission. */
+  value: string;
+  kind: 'CHARGE' | 'COMMISSION' | 'FREE';
+}
+export interface Scheme {
+  id: string;
+  name: string;
+  description: string | null;
+  status: 'ACTIVE' | 'ARCHIVED';
+  is_default: boolean;
+  tax_rate: string;
+  version: number;
+  merchants: number;
+  rates: SchemeRateRow[];
+  created_at: string;
+  updated_at: string;
+}
+export interface SchemeList {
+  schemes: Scheme[];
+  merchants_without_scheme: number;
+}
+export type PricingSource = 'ASSIGNED_SCHEME' | 'DEFAULT_SCHEME' | 'RATE_CARD' | 'NONE';
+export interface SchemeMerchantRow {
+  id: string;
+  name: string;
+  status: string;
+  reseller: { id: string; name: string } | null;
+  scheme: { id: string; name: string } | null;
+  effective: { source: PricingSource; id: string | null; name: string | null };
+}
+export interface MerchantPricing {
+  merchant_id: string;
+  has_reseller: boolean;
+  assigned: { id: string; name: string } | null;
+  effective: { source: PricingSource; id: string | null; name: string | null };
+  scheme: Scheme | null;
+}

@@ -19,6 +19,7 @@ import { BalanceCards } from '../ledger/balance-cards';
 import { BankAccountsSection } from './bank-accounts-section';
 import { DocumentsSection } from './documents-section';
 import { isEditableStatus, REVIEW_ACTION_LABELS } from './labels';
+import { MerchantSchemePanel } from '@/features/schemes/merchant-scheme-panel';
 import { MerchantLimitsPanel } from './limits-panel';
 import { PeopleSection } from './people-section';
 import { ProfileForm } from './profile-form';
@@ -66,6 +67,7 @@ export function MerchantDetail({ merchantId, backHref }: { merchantId: string; b
           {app.screening?.risk_notes !== undefined && <TabsTrigger value="screening">Screening</TabsTrigger>}
           {can('ledger.read') && (app.status === 'APPROVED' || app.status === 'SUSPENDED') && <TabsTrigger value="ledger">Balances</TabsTrigger>}
           {can('limit.read') && <TabsTrigger value="limits">Limits</TabsTrigger>}
+          {platform && can('pricing.read') && <TabsTrigger value="pricing">Pricing</TabsTrigger>}
           {platform && can('webhook.read') && <TabsTrigger value="webhooks">Webhooks</TabsTrigger>}
           {platform && can('merchant.read') && <TabsTrigger value="ip">IP allowlist</TabsTrigger>}
           {can('user.read') && <TabsTrigger value="logins">Login activity</TabsTrigger>}
@@ -90,6 +92,7 @@ export function MerchantDetail({ merchantId, backHref }: { merchantId: string; b
           {can('ledger.platform.read') && <JournalsTable merchantId={app.id} />}
         </TabsContent>
         <TabsContent value="limits" className="mt-4"><MerchantLimitsPanel merchantId={app.id} /></TabsContent>
+        <TabsContent value="pricing" className="mt-4"><MerchantSchemePanel merchantId={app.id} /></TabsContent>
         <TabsContent value="webhooks" className="mt-4 space-y-3">
           <p className="text-muted-foreground text-sm">Endpoints you add here belong to {app.name}: they see and manage them in their own dashboard. Every change is recorded in the audit log as made by Pay2All on their behalf.</p>
           <WebhookEndpoints merchantId={app.id} />

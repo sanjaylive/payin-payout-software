@@ -119,6 +119,7 @@ Each account has a `normal_balance`. **ASSET** and **EXPENSE** accounts are DEBI
 | `platform:GST_PAYABLE` | LIABILITY | CR | No | Output GST collected on fees. |
 | `platform:PROVIDER_COST` | EXPENSE | DR | No | Provider MDR and payout charges. |
 | `platform:COMMISSION_EXPENSE` | EXPENSE | DR | No | Reseller commissions earned on Pay2All's fee. |
+| `platform:MERCHANT_COMMISSION` | EXPENSE | DR | No | Commission paid to merchants by pricing schemes; taken back on refunds and payout returns (docs/PRICING_SCHEMES.md §3.1). |
 | `platform:ADJUSTMENT_SUSPENSE` | CLEARING | DR | No | Counter-leg for manual adjustments, cleared by finance against a reference. |
 | `platform:SUSPENSE` | CLEARING | DR | No | Unidentified money (e.g. recon `MISSING_INTERNAL`). Must trend to zero. |
 | `platform:memo:SETTLED_CONTRA` | CLEARING (memo) | DR | No | Contra for the memo SETTLED bucket (§3.3). |

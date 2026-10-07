@@ -495,6 +495,8 @@ model Merchant {
   riskCategory      RiskCategory?     @map("risk_category")
   /// What to do when a provider reports success after we expired/failed a payment.
   lateSuccessPolicy LateSuccessPolicy @default(AUTO_ACCEPT) @map("late_success_policy")
+  /// Pricing scheme assigned by the platform (null = the default scheme / rate cards; docs/PRICING_SCHEMES.md).
+  schemeId          String?           @map("scheme_id")
   submittedAt       DateTime?         @map("submitted_at") @db.Timestamptz(3)
   approvedAt        DateTime?         @map("approved_at") @db.Timestamptz(3)
   /// Optimistic concurrency for status transitions.
@@ -503,6 +505,7 @@ model Merchant {
   updatedAt         DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   organization Organization          @relation(fields: [id], references: [id], onDelete: Restrict)
+  scheme       Scheme?               @relation(fields: [schemeId], references: [id], onDelete: Restrict)
   profile      MerchantProfile?
   kyc          MerchantKyc?
   persons      MerchantPerson[]
@@ -512,6 +515,7 @@ model Merchant {
 
   @@index([status, createdAt(sort: Desc), id(sort: Desc)])
   @@index([resellerId, createdAt(sort: Desc)])
+  @@index([schemeId])
   @@map("merchants")
 }
 
@@ -1228,6 +1232,8 @@ model Payment {
   currency              String        @default("INR") @db.Char(3)
   feeMinor              BigInt        @default(0) @map("fee_minor")
   taxMinor              BigInt        @default(0) @map("tax_minor")
+  /// Scheme commission credited to the merchant (instead of a fee).
+  commissionMinor       BigInt        @default(0) @map("commission_minor")
   netAmountMinor        BigInt        @map("net_amount_minor")
   refundedAmountMinor   BigInt        @default(0) @map("refunded_amount_minor")
   providerId            String?       @map("provider_id")
@@ -1300,26 +1306,28 @@ model PaymentAttempt {
 }
 
 model Refund {
-  id                String       @id
-  paymentId         String       @map("payment_id")
-  merchantId        String       @map("merchant_id")
-  merchantRefundId  String?      @map("merchant_refund_id") @db.VarChar(64)
-  amountMinor       BigInt       @map("amount_minor")
-  currency          String       @default("INR") @db.Char(3)
-  reason            String?      @db.VarChar(300)
-  status            RefundStatus @default(CREATED)
-  providerId        String       @map("provider_id")
-  providerRefundId  String?      @map("provider_refund_id") @db.VarChar(120)
-  failureReason     String?      @map("failure_reason") @db.VarChar(300)
-  attempts          Int          @default(0)
-  nextAttemptAt     DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
-  journalId         String?      @map("journal_id")
-  reversalJournalId String?      @map("reversal_journal_id")
-  createdById       String?      @map("created_by_id")
-  completedAt       DateTime?    @map("completed_at") @db.Timestamptz(3)
-  version           Int          @default(1)
-  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                      String       @id
+  paymentId               String       @map("payment_id")
+  merchantId              String       @map("merchant_id")
+  merchantRefundId        String?      @map("merchant_refund_id") @db.VarChar(64)
+  amountMinor             BigInt       @map("amount_minor")
+  /// Share of the payment's scheme commission taken back with this refund.
+  commissionClawbackMinor BigInt       @default(0) @map("commission_clawback_minor")
+  currency                String       @default("INR") @db.Char(3)
+  reason                  String?      @db.VarChar(300)
+  status                  RefundStatus @default(CREATED)
+  providerId              String       @map("provider_id")
+  providerRefundId        String?      @map("provider_refund_id") @db.VarChar(120)
+  failureReason           String?      @map("failure_reason") @db.VarChar(300)
+  attempts                Int          @default(0)
+  nextAttemptAt           DateTime     @default(now()) @map("next_attempt_at") @db.Timestamptz(3)
+  journalId               String?      @map("journal_id")
+  reversalJournalId       String?      @map("reversal_journal_id")
+  createdById             String?      @map("created_by_id")
+  completedAt             DateTime?    @map("completed_at") @db.Timestamptz(3)
+  version                 Int          @default(1)
+  createdAt               DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt               DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
 
@@ -1417,23 +1425,96 @@ model PricingAssignment {
   @@map("pricing_assignments")
 }
 
+enum SchemeStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum SchemeValueType {
+  FLAT
+  PERCENT
+}
+
+/// A numbered pricing line (1 = Payout, 2 = Dynamic QR, 3 = Static QR, …) covering one service and
+/// its payin methods / payout modes. Schemes price by these numbers. Not a bank/PSP (`Provider`).
+model PricingProvider {
+  id          Int         @id @default(autoincrement())
+  name        String      @db.VarChar(80)
+  service     ServiceType
+  /// Payin methods or payout modes this line covers. A method belongs to at most one active line.
+  methods     String[]
+  description String?     @db.VarChar(300)
+  isActive    Boolean     @default(true) @map("is_active")
+  version     Int         @default(1)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  rates SchemeRate[]
+
+  @@map("pricing_providers")
+}
+
+/// Merchant pricing scheme: per provider, amount slabs with a signed value
+/// (negative = charge to the merchant, positive = commission to the merchant), % or flat.
+model Scheme {
+  id            String       @id
+  name          String       @db.VarChar(80)
+  description   String?      @db.VarChar(300)
+  status        SchemeStatus @default(ACTIVE)
+  /// Merchants without an assigned scheme join this one (at most one, enforced by a partial index).
+  isDefault     Boolean      @default(false) @map("is_default")
+  /// GST on charges, as rate micros (18% = 18000000). Commissions carry no GST.
+  taxRateMicros BigInt       @default(18000000) @map("tax_rate_micros")
+  createdById   String?      @map("created_by_id")
+  version       Int          @default(1)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  rates     SchemeRate[]
+  merchants Merchant[]
+
+  @@index([status])
+  @@map("schemes")
+}
+
+model SchemeRate {
+  id             String          @id
+  schemeId       String          @map("scheme_id")
+  providerId     Int             @map("provider_id")
+  /// Slab, inclusive. Null max = no upper limit.
+  minAmountMinor BigInt          @map("min_amount_minor")
+  maxAmountMinor BigInt?         @map("max_amount_minor")
+  valueType      SchemeValueType @map("value_type")
+  /// Signed. FLAT: paise. PERCENT: rate micros (1% = 1000000). Negative = charge, positive = commission.
+  value          BigInt
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  scheme   Scheme          @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  provider PricingProvider @relation(fields: [providerId], references: [id], onDelete: Restrict)
+
+  @@index([schemeId, providerId])
+  @@index([providerId])
+  @@map("scheme_rates")
+}
+
 /// Immutable record of exactly how a transaction was priced. Fees are never recomputed.
 model TransactionPricingSnapshot {
-  id                  String   @id
-  transactionType     String   @map("transaction_type") @db.VarChar(20)
-  transactionId       String   @unique @map("transaction_id")
-  merchantId          String   @map("merchant_id")
+  id                      String   @id
+  transactionType         String   @map("transaction_type") @db.VarChar(20)
+  transactionId           String   @unique @map("transaction_id")
+  merchantId              String   @map("merchant_id")
   /// Plans and the exact rules applied (JSON copies — later plan edits can't change this).
-  pricing             Json
-  merchantFeeMinor    BigInt   @map("merchant_fee_minor")
-  taxMinor            BigInt   @map("tax_minor")
-  taxRateMicros       BigInt   @map("tax_rate_micros")
-  wholesaleFeeMinor   BigInt?  @map("wholesale_fee_minor")
-  providerCostMinor   BigInt   @map("provider_cost_minor")
-  resellerMarginMinor BigInt   @map("reseller_margin_minor")
-  platformMarginMinor BigInt   @map("platform_margin_minor")
-  refundFee           Boolean  @default(false) @map("refund_fee")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  pricing                 Json
+  merchantFeeMinor        BigInt   @map("merchant_fee_minor")
+  merchantCommissionMinor BigInt   @default(0) @map("merchant_commission_minor")
+  taxMinor                BigInt   @map("tax_minor")
+  taxRateMicros           BigInt   @map("tax_rate_micros")
+  wholesaleFeeMinor       BigInt?  @map("wholesale_fee_minor")
+  providerCostMinor       BigInt   @map("provider_cost_minor")
+  resellerMarginMinor     BigInt   @map("reseller_margin_minor")
+  platformMarginMinor     BigInt   @map("platform_margin_minor")
+  refundFee               Boolean  @default(false) @map("refund_fee")
+  createdAt               DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([merchantId, createdAt])
   @@map("transaction_pricing_snapshots")
@@ -1543,6 +1624,8 @@ model Payout {
   amountMinor         BigInt            @map("amount_minor")
   feeMinor            BigInt            @default(0) @map("fee_minor")
   taxMinor            BigInt            @default(0) @map("tax_minor")
+  /// Scheme commission: reduces what the merchant is debited.
+  commissionMinor     BigInt            @default(0) @map("commission_minor")
   /// amount + fee + tax: what is reserved from AVAILABLE.
   totalDebitMinor     BigInt            @map("total_debit_minor")
   currency            String            @default("INR") @db.Char(3)

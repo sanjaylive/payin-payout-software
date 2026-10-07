@@ -147,7 +147,7 @@ export const ADMIN_NAV: NavItem[] = [
       { label: 'Sales Leads', href: '/admin/sales', phase: 2, permission: 'sales.read' },
       { label: 'Suspended', href: '/admin/merchants?status=SUSPENDED', phase: 1, permission: 'merchant.read' },
       { label: 'Limits', href: '/admin/merchants/limits', phase: 2, permission: 'limit.read' },
-      { label: 'Pricing', href: '/admin/merchants/pricing', phase: 5, permission: 'pricing.read' },
+      { label: 'Schemes', href: '/admin/merchants/pricing', phase: 5, permission: 'pricing.read' },
     ],
   },
   { label: 'Resellers', href: '/admin/resellers', icon: Network, phase: 1, permission: 'reseller.read' },
@@ -171,7 +171,7 @@ export const ADMIN_NAV: NavItem[] = [
       { label: 'Adjustments', href: '/admin/ledger/adjustments', phase: 3, permission: 'ledger.adjust.approve' },
     ],
   },
-  { label: 'Pricing', href: '/admin/pricing', icon: Tags, phase: 5, permission: 'pricing.read' },
+  { label: 'Pricing', href: '/admin/pricing', icon: Tags, phase: 5, permission: 'pricing.read', matchPrefix: true },
   {
     label: 'Risk',
     icon: ShieldAlert,
