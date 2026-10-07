@@ -30,37 +30,46 @@ export class CommissionsService {
     private readonly audit: AuditService,
   ) {}
 
-  /** Jobs: accrue commissions for captured payins and completed payouts not yet accrued. */
+  /**
+   * Jobs: accrue commissions for captured payins and completed payouts not yet accrued. Candidates
+   * come from partial indexes holding only un-accrued rows, so the sweep costs O(backlog), not
+   * O(history). Each row is marked in the same transaction as its journal (zero margins are marked
+   * without one); the journal idempotency key still guarantees at most one accrual per transaction.
+   */
   async accrueDue(limit = 200): Promise<number> {
     const due = await this.prisma.$queryRaw<{ id: string; kind: 'PAYMENT' | 'PAYOUT'; reseller_id: string; margin: bigint; merchant_id: string }[]>`
-      SELECT p.id, 'PAYMENT' AS kind, p.reseller_id, s.reseller_margin_minor AS margin, p.merchant_id
-        FROM payments p JOIN transaction_pricing_snapshots s ON s.transaction_id = p.id
-       WHERE p.capture_journal_id IS NOT NULL AND p.reseller_id IS NOT NULL AND s.reseller_margin_minor > 0
-         AND NOT EXISTS (SELECT 1 FROM ledger_journals j WHERE j.idempotency_key = 'commission:' || p.id)
+      (SELECT p.id, 'PAYMENT' AS kind, p.reseller_id, COALESCE(s.reseller_margin_minor, 0)::bigint AS margin, p.merchant_id
+         FROM payments p LEFT JOIN transaction_pricing_snapshots s ON s.transaction_id = p.id
+        WHERE p.reseller_id IS NOT NULL AND p.capture_journal_id IS NOT NULL AND p.commission_accrued_at IS NULL
+        ORDER BY p.created_at LIMIT ${limit})
       UNION ALL
-      SELECT o.id, 'PAYOUT' AS kind, o.reseller_id, s.reseller_margin_minor AS margin, o.merchant_id
-        FROM payouts o JOIN transaction_pricing_snapshots s ON s.transaction_id = o.id
-       WHERE o.settle_journal_id IS NOT NULL AND o.reseller_id IS NOT NULL AND s.reseller_margin_minor > 0
-         AND NOT EXISTS (SELECT 1 FROM ledger_journals j WHERE j.idempotency_key = 'commission:' || o.id)
-       LIMIT ${limit}`;
+      (SELECT o.id, 'PAYOUT' AS kind, o.reseller_id, COALESCE(s.reseller_margin_minor, 0)::bigint AS margin, o.merchant_id
+         FROM payouts o LEFT JOIN transaction_pricing_snapshots s ON s.transaction_id = o.id
+        WHERE o.reseller_id IS NOT NULL AND o.settle_journal_id IS NOT NULL AND o.commission_accrued_at IS NULL
+        ORDER BY o.created_at LIMIT ${limit})`;
     let n = 0;
     for (const d of due) {
       try {
-        await this.ledger.run((tx) =>
-          this.ledger.post(tx, {
-            type: 'COMMISSION_ACCRUAL',
-            idempotencyKey: `commission:${d.id}`,
-            source: { type: d.kind, id: d.id },
-            description: `Commission on ${d.kind === 'PAYMENT' ? 'payin' : 'payout'} ${d.id}`,
-            metadata: { merchant_id: d.merchant_id, reseller_id: d.reseller_id },
-            actor: { userId: null, requestId: null },
-            lines: [
-              { accountCode: Accounts.COMMISSION_EXPENSE, direction: 'DEBIT', amountMinor: d.margin, currency: 'INR' },
-              { accountCode: Accounts.resellerCommission(d.reseller_id), direction: 'CREDIT', amountMinor: d.margin, currency: 'INR' },
-            ],
-          }),
-        );
-        n++;
+        await this.ledger.run(async (tx) => {
+          if (d.margin > 0n) {
+            await this.ledger.post(tx, {
+              type: 'COMMISSION_ACCRUAL',
+              idempotencyKey: `commission:${d.id}`,
+              source: { type: d.kind, id: d.id },
+              description: `Commission on ${d.kind === 'PAYMENT' ? 'payin' : 'payout'} ${d.id}`,
+              metadata: { merchant_id: d.merchant_id, reseller_id: d.reseller_id },
+              actor: { userId: null, requestId: null },
+              lines: [
+                { accountCode: Accounts.COMMISSION_EXPENSE, direction: 'DEBIT', amountMinor: d.margin, currency: 'INR' },
+                { accountCode: Accounts.resellerCommission(d.reseller_id), direction: 'CREDIT', amountMinor: d.margin, currency: 'INR' },
+              ],
+            });
+          }
+          const now = new Date();
+          if (d.kind === 'PAYMENT') await tx.$executeRaw`UPDATE payments SET commission_accrued_at = ${now} WHERE id = ${d.id} AND commission_accrued_at IS NULL`;
+          else await tx.$executeRaw`UPDATE payouts SET commission_accrued_at = ${now} WHERE id = ${d.id} AND commission_accrued_at IS NULL`;
+        });
+        if (d.margin > 0n) n++;
       } catch (err) {
         this.logger.error({ err, txn: d.id }, 'Commission accrual failed; will retry');
       }

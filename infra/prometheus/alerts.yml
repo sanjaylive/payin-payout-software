@@ -1,0 +1,86 @@
+# Pay2All alert rules (docs/OBSERVABILITY.md §5). Thresholds are starting points; tune on real traffic.
+# Every alert names a runbook section so the on-call engineer knows the first three things to check.
+groups:
+  - name: pay2all-api
+    rules:
+      - alert: ApiHigh5xxRate
+        expr: sum(rate(http_server_requests_total{status_class="5xx"}[5m])) / clamp_min(sum(rate(http_server_requests_total[5m])), 1) > 0.02
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "More than 2% of API requests are failing with 5xx"
+          runbook: "docs/RUNBOOK.md#api-5xx"
+      - alert: ApiLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le, route) (rate(http_server_request_duration_seconds_bucket{route=~"/v1/payments|/v1/payouts"}[5m]))) > 1.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 latency above 1.5s on {{ $labels.route }}"
+          runbook: "docs/RUNBOOK.md#latency"
+      - alert: LedgerLockContention
+        expr: sum(increase(ledger_lock_contention_total[10m])) > 20
+        labels: { severity: warning }
+        annotations:
+          summary: "Requests are giving up on ledger row locks (hot merchant account?)"
+          runbook: "docs/RUNBOOK.md#lock-contention"
+
+  - name: pay2all-providers
+    rules:
+      - alert: ProviderDown
+        expr: max by (provider, service) (provider_health_state) == 2
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Provider {{ $labels.provider }} ({{ $labels.service }}) is DOWN — traffic is failing over"
+          runbook: "docs/RUNBOOK.md#provider-down"
+      - alert: ProviderErrorRateHigh
+        expr: sum by (provider, service) (rate(provider_calls_total{outcome=~"FAILURE|TIMEOUT"}[5m])) / clamp_min(sum by (provider, service) (rate(provider_calls_total[5m])), 0.01) > 0.2
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 20% of calls to {{ $labels.provider }} fail or time out"
+          runbook: "docs/RUNBOOK.md#provider-down"
+
+  - name: pay2all-pipeline
+    rules:
+      - alert: OutboxBacklog
+        expr: max(outbox_oldest_pending_age_seconds) > 120
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Outbox events are not reaching Kafka (oldest {{ $value | humanizeDuration }})"
+          runbook: "docs/RUNBOOK.md#outbox-backlog"
+      - alert: DeadLettersAccumulating
+        expr: max(dead_letter_events_open) > 0 and delta(dead_letter_events_open[30m]) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Consumer events are being dead-lettered"
+          runbook: "docs/RUNBOOK.md#dead-letters"
+      - alert: WebhookFailuresHigh
+        expr: sum(rate(webhook_deliveries_total{outcome!="delivered"}[15m])) / clamp_min(sum(rate(webhook_deliveries_total[15m])), 0.01) > 0.5
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Most merchant webhook attempts are failing"
+          runbook: "docs/RUNBOOK.md#webhooks"
+      - alert: ScheduledJobFailing
+        expr: sum by (job) (increase(job_runs_total{outcome="error"}[15m])) > 3
+        labels: { severity: warning }
+        annotations:
+          summary: "Job {{ $labels.job }} failed repeatedly in 15 minutes"
+          runbook: "docs/RUNBOOK.md#jobs"
+
+  - name: pay2all-risk
+    rules:
+      - alert: RiskEvaluationErrors
+        expr: sum(increase(risk_evaluation_errors_total[10m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: "Risk rules are being skipped (fail-open) because they cannot be evaluated"
+          runbook: "docs/RUNBOOK.md#risk"
+      - alert: RiskBlocksSpike
+        expr: sum(increase(risk_decisions_total{decision="BLOCK"}[15m])) > 100
+        labels: { severity: warning }
+        annotations:
+          summary: "Unusually many transactions blocked by risk rules — check for an attack or a mis-tuned rule"
+          runbook: "docs/RUNBOOK.md#risk"

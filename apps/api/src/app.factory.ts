@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import type { NextFunction, Request, Response } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
+import { metrics, statusClass } from '@pay2all/telemetry';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { ResponseEnvelopeInterceptor } from './common/http/response-envelope.interceptor';
@@ -44,6 +45,18 @@ export async function createApp(config: ApiConfig): Promise<NestExpressApplicati
   app.use((req: Request, res: Response, next: NextFunction) =>
     req.path.startsWith(`/${DOCS_PATH}`) ? docsHelmet(req, res, next) : apiHelmet(req, res, next),
   );
+
+  // RED metrics per route template (never the raw path: ids would explode label cardinality).
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const started = process.hrtime.bigint();
+    res.once('finish', () => {
+      const route = req.route ? `${req.baseUrl}${(req.route as { path: string }).path}` : 'unmatched';
+      const labels = { method: req.method, route, status_class: statusClass(res.statusCode) };
+      metrics.httpRequests.inc(labels);
+      metrics.httpDuration.observe(labels, Number(process.hrtime.bigint() - started) / 1e9);
+    });
+    next();
+  });
 
   app.use(cookieParser());
   app.useBodyParser('json', { limit: '1mb' });

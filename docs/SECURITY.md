@@ -108,7 +108,7 @@ approve(@Actor() actor: ActorContext, …)
 5. **Out of scope returns `404 NOT_FOUND`**, not 403, so resource existence never leaks.
 6. Platform staff targeting a tenant is audited (`resourceType`/`resourceId` and the acting org).
 7. Every tenant-facing endpoint has an integration test for cross-tenant access. For example, merchant A requests merchant B's user, gets 404, and the query is never executed unscoped.
-8. **Planned hardening (Phase 10):** PostgreSQL Row-Level Security on the highest-risk tables as a second net, using `SET LOCAL app.org_scope` per transaction.
+8. **Row-level security (Phase 10):** a second, database-level net for report exports (§11).
 
 ## 4. Encryption & secrets
 
@@ -131,7 +131,8 @@ The pino redaction list is centralised in `packages/logger` and **cannot be disa
 
 - Request bodies are **not** logged by default.
 - Provider request and response payloads go through `redactProviderPayload()` before persistence in `*_attempts` tables.
-- Sentry events use the same scrubber.
+- Error reports (Sentry protocol, docs/OBSERVABILITY.md §4) drop request bodies, headers, cookies, query strings, users and breadcrumbs, and redact secret-looking keys before sending.
+- Traces carry parameterised SQL only (no bound values) and Redis command names only (no keys or arguments).
 
 ## 6. Public API security (Phase 9)
 
@@ -205,7 +206,7 @@ Pay2All-Signature: t=<unix seconds>,v1=hex(HMAC_SHA256(endpointSecret, `${t}.${r
 
 ## 10. Suspicious activity signals
 
-The following emit `security.*` events. In Phase 1 these are audit rows, in Phase 7 they go to the outbox, and in Phase 10 they feed the risk engine:
+The following emit `security.*` events. They are audit rows today. Feeding them into the risk engine as rules is planned (SECURITY_REVIEW.md §3):
 
 - refresh-token reuse
 - login from a new IP or country for privileged roles
@@ -215,3 +216,30 @@ The following emit `security.*` events. In Phase 1 these are audit rows, in Phas
 - replayed signatures
 - a mass export by one user
 - a permission-denied burst
+
+## 11. Row-level security (Phase 10)
+
+The migration `…_risk_reports_observability` enables RLS on `payments`, `payouts`, `refunds` and `settlements`.
+
+**Roles and policies:**
+- **`pay2all_tenant_reader`** is a `NOLOGIN` role with `SELECT` on those four tables and on `organizations(id, parent_id)` only.
+- **`tenant_scope` policies** read `pay2all.scope_kind` / `pay2all.scope_id`:
+  - PLATFORM sees all rows.
+  - MERCHANT sees its own rows.
+  - RESELLER sees rows of merchants whose `organizations.parent_id` is the reseller or partner.
+  - A refund is visible exactly when its payment is.
+  - **Unset or unknown scope sees nothing** (fail closed).
+- **`app_unrestricted`** keeps every other role, including the application role and migrations, unaffected. Enabling RLS therefore did not change any existing API path.
+
+**How exports use it:** each batch runs in its own transaction:
+
+```sql
+SET LOCAL ROLE pay2all_tenant_reader;
+SELECT set_config('pay2all.scope_kind', $kind, true), set_config('pay2all.scope_id', $id, true);
+```
+
+`LOCAL` settings end with the transaction, so the pooled connection returns unchanged.
+
+**Tests:** `reports.e2e-spec.ts` shows that a query with no WHERE clause sees only the scoped tenant, that no scope sees nothing, that the reader cannot write or read the ledger, and that reseller scope equals its merchants.
+
+**Production note:** the role that runs migrations must be allowed to `GRANT pay2all_tenant_reader TO` the runtime role. The migration grants it to `CURRENT_USER`; when migrations and runtime use different roles, add `GRANT pay2all_tenant_reader TO <runtime role>`.

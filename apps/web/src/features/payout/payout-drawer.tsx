@@ -212,7 +212,16 @@ export function PayoutDrawer({ payoutId, onClose }: { payoutId: string | null; o
       >
         {p && (
           <div className="space-y-4">
-            {p.status === 'MANUAL_REVIEW' && (
+            {p.status === 'MANUAL_REVIEW' && p.review_kind === 'RISK' && (
+              <Alert>
+                <TriangleAlert />
+                <AlertTitle>Held for review — not sent</AlertTitle>
+                <AlertDescription>
+                  This payout is waiting for a Pay2All risk review before it is sent. The amount stays reserved; if it is declined, it returns to your available balance.
+                </AlertDescription>
+              </Alert>
+            )}
+            {p.status === 'MANUAL_REVIEW' && p.review_kind !== 'RISK' && (
               <Alert>
                 <TriangleAlert />
                 <AlertTitle>Outcome unknown — funds are held</AlertTitle>

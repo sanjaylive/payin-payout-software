@@ -1,7 +1,8 @@
+// Must be first: tracing patches http/pg/ioredis/kafkajs/pino as they are loaded.
+import './instrument.jobs';
 import 'reflect-metadata';
-import path from 'node:path';
 import { NestFactory } from '@nestjs/core';
-import { config as loadDotenv } from 'dotenv';
+import { initMetrics, registry, startMetricsServer } from '@pay2all/telemetry';
 import { Logger } from 'nestjs-pino';
 import { ApiConfig } from './config/api-config';
 import { JobsModule } from './jobs/jobs.module';
@@ -9,14 +10,16 @@ import { JobsRunner } from './jobs/jobs.runner';
 
 /** Entry point for the API's domain jobs process (no HTTP server). */
 async function bootstrap(): Promise<void> {
-  if (process.env.NODE_ENV !== 'production') {
-    loadDotenv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
-  }
   const config = ApiConfig.fromProcessEnv();
+  initMetrics('jobs');
   const app = await NestFactory.createApplicationContext(JobsModule.register(config), { bufferLogs: true });
   app.useLogger(app.get(Logger));
   app.enableShutdownHooks();
   await app.get(JobsRunner).start();
+  if (config.env.JOBS_METRICS_PORT) {
+    const server = await startMetricsServer({ port: config.env.JOBS_METRICS_PORT, host: config.env.METRICS_HOST, registry, token: config.env.METRICS_TOKEN || undefined });
+    process.once('SIGTERM', () => server.close());
+  }
 }
 
 bootstrap().catch((err: unknown) => {

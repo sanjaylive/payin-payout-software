@@ -25,6 +25,9 @@ import { ReconciliationModule } from './modules/reconciliation/reconciliation.mo
 import { SettlementsModule } from './modules/settlements/settlements.module';
 import { CommissionsModule } from './modules/commissions/commissions.module';
 import { ProvidersModule } from './modules/providers/providers.module';
+import { RiskModule } from './modules/risk/risk.module';
+import { ReportsModule } from './modules/reports/reports.module';
+import { SystemModule } from './modules/system/system.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
 
@@ -76,6 +79,9 @@ export class AppModule implements NestModule {
         SettlementsModule,
         ReconciliationModule,
         CommissionsModule,
+        RiskModule,
+        ReportsModule,
+        SystemModule,
       ],
       controllers: [HealthController],
       providers: [

@@ -60,6 +60,8 @@ export function presentPayout(p: Payout, opts: PayoutPresentOptions = {}) {
     failure_code: p.failureCode,
     failure_reason: p.failureReason,
     review_reason: p.reviewReason,
+    // RISK = held before sending (nothing left the account); UNKNOWN_OUTCOME = sent, awaiting evidence.
+    review_kind: p.reviewKind,
     bulk_batch_id: p.bulkBatchId,
     created_by_id: p.createdById,
     processed_at: p.processedAt,

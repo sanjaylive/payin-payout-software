@@ -15,7 +15,7 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB"]
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pay2all -d pay2all"]
       interval: 5s
@@ -72,6 +72,29 @@ services:
     ports:
       - "127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-51025}:1025"
       - "127.0.0.1:${MAILPIT_UI_HOST_PORT:-58025}:8025"
+
+  # ---- Optional observability stack: `docker compose --profile observability up -d` ----------
+  # Prometheus scrapes the API (9464), jobs (9465) and worker (9466) metrics ports on the host and
+  # evaluates infra/prometheus/alerts.yml. Jaeger receives OTLP traces when the apps run with
+  # OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:54318.
+  prometheus:
+    profiles: ["observability"]
+    image: prom/prometheus:v3.7.3
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    ports:
+      - "127.0.0.1:${PROMETHEUS_HOST_PORT:-59090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  jaeger:
+    profiles: ["observability"]
+    image: jaegertracing/jaeger:2.11.0
+    ports:
+      - "127.0.0.1:${JAEGER_UI_HOST_PORT:-56686}:16686"
+      - "127.0.0.1:${OTLP_HTTP_HOST_PORT:-54318}:4318"
 
 volumes:
   postgres-data:

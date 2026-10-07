@@ -1,7 +1,8 @@
 import { type ArgumentsHost, Catch, type ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { Prisma } from '@pay2all/database';
 import { type ApiFailure, ErrorCode } from '@pay2all/types';
-import type { Response } from 'express';
+import { reportError } from '@pay2all/telemetry';
+import type { Request, Response } from 'express';
 import { RequestContextStore } from '../context/request-context';
 import { ReplayedResponse } from '../idempotency/idempotency.service';
 import { AppError } from './app-error';
@@ -37,6 +38,14 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     if (appError.status >= 500) {
       this.logger.error({ err: exception, requestId }, 'Unhandled error');
+      // Deliberate 5xx answers (lock contention, provider unavailable) are not bugs; report the rest.
+      if (!(exception instanceof AppError) || appError.code === ErrorCode.INTERNAL_ERROR) {
+        // Error handlers must never throw: the request may be missing (non-HTTP contexts, mocks).
+        const http = host.switchToHttp() as Partial<ReturnType<ArgumentsHost['switchToHttp']>>;
+        const req = typeof http.getRequest === 'function' ? http.getRequest<Request | undefined>() : undefined;
+        const route = req?.route ? `${req.baseUrl}${(req.route as { path: string }).path}` : undefined;
+        reportError(exception, { requestId, route });
+      }
     }
 
     const body: ApiFailure = {

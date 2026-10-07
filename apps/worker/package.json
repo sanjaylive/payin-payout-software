@@ -9,7 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint .",
     "test": "vitest run --project unit --passWithNoTests",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration --no-file-parallelism"
   },
   "dependencies": {
     "@pay2all/auth": "workspace:*",
@@ -18,15 +18,16 @@
     "@pay2all/events": "workspace:*",
     "@pay2all/logger": "workspace:*",
     "@pay2all/providers": "workspace:*",
+    "@pay2all/telemetry": "workspace:*",
     "dotenv": "^17.2.3",
     "ioredis": "^5.11.1",
     "kafkajs": "2.2.4",
-    "nodemailer": "^7.0.13",
+    "nodemailer": "^10.0.15",
     "pino": "^10.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "@types/nodemailer": "^7.0.12",
+    "@types/nodemailer": "^8.0.2",
     "eslint": "^9.39.5",
     "typescript": "~5.9.3",
     "vitest": "^3.2.7"

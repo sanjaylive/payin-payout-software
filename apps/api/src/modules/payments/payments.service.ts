@@ -3,6 +3,7 @@ import { newId } from '@pay2all/auth';
 import { isUniqueViolation, type Payment, type Prisma, type PrismaClient } from '@pay2all/database';
 import { minorToMajorString } from '@pay2all/ledger';
 import { type Candidate, classify, executeWithFailover, FailoverStoppedError, type HealthOutcome, NoProviderAvailableError, type ProviderError } from '@pay2all/providers';
+import { metrics } from '@pay2all/telemetry';
 import { ErrorCode } from '@pay2all/types';
 import type { createPaymentSchema, listPaymentsQuerySchema, paymentStatsQuerySchema } from '@pay2all/validation';
 import type { z } from 'zod';
@@ -15,14 +16,15 @@ import { TenantScopeService } from '../access/tenant-scope.service';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/actor';
 import { LimitsService } from '../limits/limits.service';
+import { PeriodUsageService, periodLimitsOf } from '../limits/period-usage.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ProviderRegistryService } from '../providers/provider-registry.service';
 import { RoutingService } from '../providers/routing.service';
+import { RiskEngineService } from '../risk/risk-engine.service';
 import { MerchantEventsService } from '../../infra/merchant-events.service';
 import { PaymentTransitionsService } from './payment-transitions.service';
 import { presentPayment } from './payment.presenter';
 
-const IST_OFFSET_MS = 330 * 60_000;
 const MAX_PROVIDER_ATTEMPTS = 2; // primary + one fallback (docs/PAYIN_FLOW.md §5)
 const FIRST_POLL_DELAY_MS = 60_000;
 
@@ -30,12 +32,6 @@ export function healthOutcomeOf(err: ProviderError): HealthOutcome {
   if (err.kind === 'AMBIGUOUS') return err.code === 'TIMEOUT' ? 'TIMEOUT' : 'FAILURE';
   // A definitive rejection proves the provider is up and answering.
   return err.kind === 'REJECTED' ? 'SUCCESS' : 'FAILURE';
-}
-
-function istStart(unit: 'day' | 'month', now = new Date()): Date {
-  const ist = new Date(now.getTime() + IST_OFFSET_MS);
-  const start = unit === 'day' ? Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), ist.getUTCDate()) : Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1);
-  return new Date(start - IST_OFFSET_MS);
 }
 
 @Injectable()
@@ -53,6 +49,8 @@ export class PaymentsService {
     private readonly transitions: PaymentTransitionsService,
     private readonly events: MerchantEventsService,
     private readonly audit: AuditService,
+    private readonly risk: RiskEngineService,
+    private readonly usage: PeriodUsageService,
   ) {}
 
   /** Steps 4–6: merchant approved, KYC approved, payin enabled. */
@@ -65,26 +63,17 @@ export class PaymentsService {
     return m;
   }
 
-  /** Step 7: limits (most specific level wins). Daily/monthly totals from indexed aggregates. */
-  private async assertWithinLimits(merchantId: string, amountMinor: bigint) {
+  /**
+   * Step 7a: per-transaction limits (most specific level wins). Daily/monthly limits are enforced
+   * atomically inside the create transaction from running totals (PeriodUsageService).
+   */
+  private async perTxnLimits(merchantId: string, amountMinor: bigint) {
     const l = await this.limits.resolveForMerchant(merchantId, 'PAYIN');
-    const fail = (what: string) => {
-      throw new AppError(ErrorCode.LIMIT_EXCEEDED, `Payin ${what} limit exceeded`);
-    };
     const min = l.perTxnMinMinor.value;
     const max = l.perTxnMaxMinor.value;
-    if (min !== null && amountMinor < BigInt(min)) fail('minimum per-transaction');
-    if (max !== null && amountMinor > BigInt(max)) fail('maximum per-transaction');
-    const counted = { merchantId, status: { notIn: ['FAILED', 'EXPIRED', 'CANCELLED'] as Payment['status'][] } };
-    for (const [unit, amountLimit, countLimit] of [
-      ['day', l.dailyAmountMinor.value, l.dailyCount.value],
-      ['month', l.monthlyAmountMinor.value, l.monthlyCount.value],
-    ] as const) {
-      if (amountLimit === null && countLimit === null) continue;
-      const agg = await this.prisma.payment.aggregate({ where: { ...counted, createdAt: { gte: istStart(unit) } }, _sum: { amountMinor: true }, _count: true });
-      if (amountLimit !== null && (agg._sum.amountMinor ?? 0n) + amountMinor > BigInt(amountLimit)) fail(`${unit === 'day' ? 'daily' : 'monthly'} amount`);
-      if (countLimit !== null && agg._count + 1 > Number(countLimit)) fail(`${unit === 'day' ? 'daily' : 'monthly'} count`);
-    }
+    if (min !== null && amountMinor < BigInt(min)) throw new AppError(ErrorCode.LIMIT_EXCEEDED, 'Payin minimum per-transaction limit exceeded');
+    if (max !== null && amountMinor > BigInt(max)) throw new AppError(ErrorCode.LIMIT_EXCEEDED, 'Payin maximum per-transaction limit exceeded');
+    return periodLimitsOf(l);
   }
 
   async create(actor: Actor, input: z.output<typeof createPaymentSchema>, rawBody: unknown, idempotencyKey: string | undefined) {
@@ -92,8 +81,18 @@ export class PaymentsService {
     const merchantId = actor.organizationId;
     return this.idempotency.run({ merchantId, key: idempotencyKey, method: 'POST', path: '/v1/payments', body: rawBody }, async (recordId) => {
       const merchant = await this.assertMerchantCanCollect(merchantId);
-      await this.assertWithinLimits(merchantId, input.amount);
-      // Step 8: risk pre-check hooks in here (Phase 10).
+      const periodLimits = await this.perTxnLimits(merchantId, input.amount);
+
+      // Step 8: risk pre-check (docs/RISK.md §4). BLOCK rejects; MANUAL_REVIEW opens a review case
+      // while the customer still pays (a payin cannot wait for a human) — pair it with
+      // HOLD_SETTLEMENT when the money must not leave until review.
+      const id = newId('payment');
+      const risk = await this.risk.assess({ service: 'PAYIN', merchantId, amountMinor: input.amount, subjectType: 'PAYMENT', subjectId: id });
+      if (risk.decision === 'BLOCK') {
+        await this.risk.record(this.prisma, risk);
+        metrics.paymentsCreated.inc({ method: input.method, outcome: 'blocked' });
+        throw new AppError(ErrorCode.RISK_BLOCKED, 'This payment was declined by risk controls. Contact support if you believe this is a mistake.');
+      }
 
       const decision = await this.routing.decide({ service: 'PAYIN', merchantId, amountMinor: input.amount, method: input.method });
       const candidates = decision.candidates.slice(0, MAX_PROVIDER_ATTEMPTS);
@@ -102,7 +101,6 @@ export class PaymentsService {
       const quote = await this.pricing.quote({ merchantId, service: 'PAYIN', method: input.method, providerId: candidates[0]!.providerId, amountMinor: input.amount });
       if (quote.merchantFeeMinor + quote.taxMinor >= input.amount) throw new AppError(ErrorCode.INVALID_REQUEST, 'Amount is too small to cover fees');
 
-      const id = newId('payment');
       const now = new Date();
       const expiresAt = new Date(now.getTime() + input.expires_in_seconds * 1000);
       try {
@@ -126,6 +124,8 @@ export class PaymentsService {
               description: input.description ?? null,
               metadata: input.metadata,
               expiresAt,
+              // Same instant the period usage is keyed by, so a later release hits the same rows.
+              createdAt: now,
               nextPollAt: new Date(now.getTime() + FIRST_POLL_DELAY_MS),
               createdById: actor.userId,
               requestId: RequestContextStore.get()?.requestId ?? null,
@@ -133,6 +133,9 @@ export class PaymentsService {
           });
           await this.pricing.snapshot(tx, 'PAYIN', id, merchantId, quote);
           await this.idempotency.attachResource(tx, recordId, id);
+          await this.risk.record(tx, risk);
+          // Step 7b, last in the transaction so the merchant's usage row is locked only until commit.
+          await this.usage.consume(tx, merchantId, 'PAYIN', input.amount, periodLimits, now);
           await this.events.emit(tx, merchantId, 'payment.created', id, presentPayment(created));
         });
       } catch (err) {
@@ -142,6 +145,7 @@ export class PaymentsService {
 
       // Step 12: provider call after commit, so any callback can always find the payment.
       const payment = await this.initiateWithProvider(id, candidates, input, expiresAt);
+      metrics.paymentsCreated.inc({ method: input.method, outcome: payment.status === 'FAILED' ? 'provider_failed' : 'created' });
       return { status: 201, data: presentPayment(payment), resourceId: id };
     });
   }

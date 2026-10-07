@@ -1,6 +1,7 @@
 import { Inject, Injectable, Logger, type OnApplicationShutdown } from '@nestjs/common';
 import { createConsumerStore, type PrismaClient } from '@pay2all/database';
 import { createKafka, EventPublisher, everySeconds, runConsumer, type ScheduledJob, Scheduler, topicFor } from '@pay2all/events';
+import { reportError, timeJob } from '@pay2all/telemetry';
 import type { Consumer } from 'kafkajs';
 import { ApiConfig } from '../config/api-config';
 import type Redis from 'ioredis';
@@ -12,12 +13,21 @@ import { InboundEventsService } from '../modules/provider-events/inbound-events.
 import { ReconciliationService } from '../modules/reconciliation/reconciliation.service';
 import { SettlementsService } from '../modules/settlements/settlements.service';
 import { CommissionsService } from '../modules/commissions/commissions.service';
+import { RiskSweepService } from '../modules/risk/risk-sweep.service';
+import { ReportGeneratorService } from '../modules/reports/report-generator.service';
 
 const job = (name: string, seconds: number, run: () => Promise<unknown>): ScheduledJob => ({
   name,
   dueKey: everySeconds(seconds),
   claimTtlSeconds: seconds * 4,
-  run: async () => void (await run()),
+  run: async () => {
+    try {
+      await timeJob(name, run);
+    } catch (err) {
+      reportError(err, { job: name });
+      throw err;
+    }
+  },
 });
 
 @Injectable()
@@ -38,6 +48,8 @@ export class JobsRunner implements OnApplicationShutdown {
     private readonly settlements: SettlementsService,
     private readonly recon: ReconciliationService,
     private readonly commissions: CommissionsService,
+    private readonly riskSweep: RiskSweepService,
+    private readonly reports: ReportGeneratorService,
   ) {}
 
   async start(): Promise<void> {
@@ -62,6 +74,9 @@ export class JobsRunner implements OnApplicationShutdown {
         job('settlement-generator', 300, () => this.settlements.generateDue()),
         job('reconciliation-matcher', 15, () => this.recon.processQueued()),
         job('commission-accrual', 60, () => this.commissions.accrueDue()),
+        job('risk-sweep', 300, () => this.riskSweep.run()),
+        job('report-exports', 10, () => this.reports.processQueued()),
+        job('report-expiry', 3600, () => this.reports.expireOld()),
         job('api-log-retention', 3600, () => this.purgeApiLogs()),
         job('idempotency-sweeper', 60, () => this.payin.sweepIdempotency()),
       ],

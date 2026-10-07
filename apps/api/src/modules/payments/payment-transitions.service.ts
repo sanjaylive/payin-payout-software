@@ -6,6 +6,7 @@ import { ErrorCode, paymentCanTransition } from '@pay2all/types';
 import { AppError } from '../../common/errors/app-error';
 import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
+import { PAYIN_UNCOUNTED, PeriodUsageService } from '../limits/period-usage.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { MerchantEventsService } from '../../infra/merchant-events.service';
 import { presentPayment } from './payment.presenter';
@@ -39,6 +40,7 @@ export class PaymentTransitionsService {
     private readonly ledger: LedgerService,
     private readonly events: MerchantEventsService,
     private readonly audit: AuditService,
+    private readonly usage: PeriodUsageService,
   ) {}
 
   async lock(tx: TransactionClient, paymentId: string): Promise<Payment> {
@@ -56,6 +58,11 @@ export class PaymentTransitionsService {
     }
     const updated = await tx.payment.updateMany({ where: { id: p.id, status: p.status, version: p.version }, data: { ...data, status: to, version: { increment: 1 } } });
     if (updated.count !== 1) throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'Payment changed concurrently');
+    // Keep daily/monthly usage in step with what counts towards limits (same transaction).
+    const wasCounted = !PAYIN_UNCOUNTED.has(p.status);
+    const isCounted = !PAYIN_UNCOUNTED.has(to);
+    if (wasCounted && !isCounted) await this.usage.release(tx, p.merchantId, 'PAYIN', p.amountMinor, p.createdAt);
+    else if (!wasCounted && isCounted) await this.usage.add(tx, p.merchantId, 'PAYIN', p.amountMinor, p.createdAt);
     return tx.payment.findUniqueOrThrow({ where: { id: p.id } });
   }
 

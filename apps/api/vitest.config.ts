@@ -21,8 +21,10 @@ export default defineConfig({
           setupFiles: ['test/setup-env.ts'],
           testTimeout: 30_000,
           hookTimeout: 60_000,
-          // Integration tests share one database; run files sequentially.
-          fileParallelism: false,
+          // Integration tests share one database (and platform-wide config such as risk rules), so
+          // files must run one at a time. Vitest 3 ignores pool options inside a project, so the
+          // `test:integration` script passes --no-file-parallelism (verified: the summed test time
+          // must not exceed the wall-clock duration).
         },
       },
     ],

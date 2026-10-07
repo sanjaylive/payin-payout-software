@@ -42,3 +42,25 @@ describe('logger redaction', () => {
     expect(out).not.toContain('Bearer abc');
   });
 });
+
+describe('onError hook', () => {
+  it('reports error-level lines that carry an Error, and never breaks logging', async () => {
+    const sink = new Writable({ write: (_c, _e, cb) => cb() });
+    const seen: string[] = [];
+    const log = pino(buildLoggerOptions({ service: 't', level: 'info', onError: (err) => seen.push(err.message) }), sink);
+    log.error({ err: new Error('boom') }, 'failed');
+    log.warn({ err: new Error('just a warning') }, 'warned');
+    log.error({ other: 1 }, 'no error object');
+    expect(seen).toEqual(['boom']);
+    const throwing = pino(
+      buildLoggerOptions({
+        service: 't',
+        onError: () => {
+          throw new Error('reporter down');
+        },
+      }),
+      sink,
+    );
+    expect(() => throwing.error({ err: new Error('x') }, 'still logs')).not.toThrow();
+  });
+});

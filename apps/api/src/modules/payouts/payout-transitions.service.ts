@@ -5,6 +5,7 @@ import { ErrorCode, payoutCanTransition } from '@pay2all/types';
 import { AppError } from '../../common/errors/app-error';
 import { MerchantEventsService, type MerchantEventType } from '../../infra/merchant-events.service';
 import { AuditService } from '../audit/audit.service';
+import { PAYOUT_UNCOUNTED, PeriodUsageService } from '../limits/period-usage.service';
 import { LedgerService } from '../ledger/ledger.service';
 import { presentPayout } from './payout.presenter';
 
@@ -35,6 +36,7 @@ export class PayoutTransitionsService {
     private readonly ledger: LedgerService,
     private readonly events: MerchantEventsService,
     private readonly audit: AuditService,
+    private readonly usage: PeriodUsageService,
   ) {}
 
   async lock(tx: TransactionClient, id: string): Promise<Payout> {
@@ -51,6 +53,8 @@ export class PayoutTransitionsService {
     }
     const res = await tx.payout.updateMany({ where: { id: p.id, status: p.status, version: p.version }, data: { ...data, status: to, version: { increment: 1 } } });
     if (res.count !== 1) throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'Payout changed concurrently');
+    // Failed/rejected payouts stop counting towards daily/monthly limits (same transaction).
+    if (!PAYOUT_UNCOUNTED.has(p.status) && PAYOUT_UNCOUNTED.has(to)) await this.usage.release(tx, p.merchantId, 'PAYOUT', p.amountMinor, p.createdAt);
     return tx.payout.findUniqueOrThrow({ where: { id: p.id } });
   }
 
@@ -151,7 +155,8 @@ export class PayoutTransitionsService {
   /** Apply a provider's answer (processor, poll, callback, sandbox, manual review). Idempotent. */
   async applyOutcome(tx: TransactionClient, payoutId: string, o: PayoutOutcome, source: PayoutOutcomeSource): Promise<PayoutTransitionResult> {
     const p = await this.lock(tx, payoutId);
-    const live = IN_FLIGHT.includes(p.status) || (source === 'REVIEW' && p.status === 'MANUAL_REVIEW');
+    // A risk-held payout was never sent, so no provider outcome can apply to it.
+    const live = IN_FLIGHT.includes(p.status) || (source === 'REVIEW' && p.status === 'MANUAL_REVIEW' && p.reviewKind !== 'RISK');
     switch (o.status) {
       case 'PENDING': {
         if (p.status !== 'PROCESSING') return 'NOOP';

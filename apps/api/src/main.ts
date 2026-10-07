@@ -1,17 +1,20 @@
+// Must be first: tracing patches http/pg/ioredis/kafkajs/pino as they are loaded.
+import './instrument.api';
 import 'reflect-metadata';
-import path from 'node:path';
-import { config as loadDotenv } from 'dotenv';
+import { initMetrics, registry, startMetricsServer } from '@pay2all/telemetry';
 import { ApiConfig } from './config/api-config';
 import { createApp } from './app.factory';
 
 async function bootstrap(): Promise<void> {
-  if (process.env.NODE_ENV !== 'production') {
-    // Local development convenience: load the monorepo root .env. Production injects real env vars.
-    loadDotenv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
-  }
+  // instrument.api already loaded the monorepo root .env outside production.
   const config = ApiConfig.fromProcessEnv();
+  initMetrics('api');
   const app = await createApp(config);
   await app.listen(config.env.PORT);
+  if (config.env.METRICS_PORT) {
+    const server = await startMetricsServer({ port: config.env.METRICS_PORT, host: config.env.METRICS_HOST, registry, token: config.env.METRICS_TOKEN || undefined });
+    process.once('SIGTERM', () => server.close());
+  }
 }
 
 bootstrap().catch((err: unknown) => {
