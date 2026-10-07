@@ -22,13 +22,17 @@ import type { WebhookEndpointRow } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 
 /** Shown once after create / rotate; the secret can never be retrieved again. */
-function SecretDialog({ secret, onClose }: { secret: string | null; onClose: () => void }) {
+function SecretDialog({ secret, onBehalf = false, onClose }: { secret: string | null; onBehalf?: boolean; onClose: () => void }) {
   return (
     <Dialog open={Boolean(secret)} onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Your signing secret</DialogTitle>
-          <DialogDescription>Copy it now and store it in your server’s secret manager. For your security it will not be shown again.</DialogDescription>
+          <DialogDescription>
+            {onBehalf
+              ? 'Share it with the merchant over a secure channel (never plain email or chat), or ask them to rotate it from their own dashboard. It will not be shown again.'
+              : 'Copy it now and store it in your server’s secret manager. For your security it will not be shown again.'}
+          </DialogDescription>
         </DialogHeader>
         <div className="flex items-center gap-2">
           <code className="bg-muted flex-1 rounded-md px-3 py-2 font-mono text-xs break-all">{secret}</code>
@@ -41,7 +45,7 @@ function SecretDialog({ secret, onClose }: { secret: string | null; onClose: () 
   );
 }
 
-function EndpointDialog({ endpoint, open, onOpenChange, onSecret }: { endpoint?: WebhookEndpointRow; open: boolean; onOpenChange: (o: boolean) => void; onSecret: (s: string) => void }) {
+function EndpointDialog({ base, endpoint, open, onOpenChange, onSecret }: { base: string; endpoint?: WebhookEndpointRow; open: boolean; onOpenChange: (o: boolean) => void; onSecret: (s: string) => void }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState(endpoint?.url ?? '');
   const [description, setDescription] = useState(endpoint?.description ?? '');
@@ -54,10 +58,10 @@ function EndpointDialog({ endpoint, open, onOpenChange, onSecret }: { endpoint?:
     try {
       const body = { url: url.trim(), description: description.trim() || (endpoint ? null : undefined), events: all ? [] : events };
       if (endpoint) {
-        await api.patch(`/v1/webhooks/endpoints/${endpoint.endpoint_id}`, body);
+        await api.patch(`${base}/${endpoint.endpoint_id}`, body);
         toast.success('Endpoint updated');
       } else {
-        const created = await api.post<WebhookEndpointRow>('/v1/webhooks/endpoints', body);
+        const created = await api.post<WebhookEndpointRow>(base, body);
         if (created.secret) onSecret(created.secret);
       }
       await qc.invalidateQueries({ queryKey: ['webhook-endpoints'] });
@@ -102,11 +106,16 @@ function EndpointDialog({ endpoint, open, onOpenChange, onSecret }: { endpoint?:
   );
 }
 
-export function WebhookEndpoints() {
+/**
+ * A merchant's webhook endpoints. Without `merchantId`: the signed-in merchant's own. With it:
+ * platform staff managing that merchant on its behalf (Admin → Merchants → Webhooks).
+ */
+export function WebhookEndpoints({ merchantId }: { merchantId?: string } = {}) {
   const can = useCan();
   const qc = useQueryClient();
-  const manage = can('webhook.manage');
-  const endpoints = useQuery({ queryKey: ['webhook-endpoints'], queryFn: () => api.get<WebhookEndpointRow[]>('/v1/webhooks/endpoints') });
+  const base = merchantId ? `/v1/admin/merchants/${merchantId}/webhook-endpoints` : '/v1/webhooks/endpoints';
+  const manage = can(merchantId ? 'merchant.integration.manage' : 'webhook.manage');
+  const endpoints = useQuery({ queryKey: ['webhook-endpoints', merchantId ?? 'own'], queryFn: () => api.get<WebhookEndpointRow[]>(base) });
   const [editing, setEditing] = useState<WebhookEndpointRow | 'new' | null>(null);
   const [secret, setSecret] = useState<string | null>(null);
   const [rotating, setRotating] = useState<WebhookEndpointRow | null>(null);
@@ -116,13 +125,13 @@ export function WebhookEndpoints() {
     setBusy(e.endpoint_id + what);
     try {
       if (what === 'test') {
-        await api.post(`/v1/webhooks/endpoints/${e.endpoint_id}/test`);
+        await api.post(`${base}/${e.endpoint_id}/test`);
         toast.success('Test event queued — check the webhook log in a few seconds');
       } else if (what === 'toggle') {
-        await api.patch(`/v1/webhooks/endpoints/${e.endpoint_id}`, { status: e.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' });
+        await api.patch(`${base}/${e.endpoint_id}`, { status: e.status === 'ACTIVE' ? 'DISABLED' : 'ACTIVE' });
         toast.success(e.status === 'ACTIVE' ? 'Endpoint disabled' : 'Endpoint enabled');
       } else {
-        const r = await api.post<WebhookEndpointRow>(`/v1/webhooks/endpoints/${e.endpoint_id}/rotate-secret`);
+        const r = await api.post<WebhookEndpointRow>(`${base}/${e.endpoint_id}/rotate-secret`);
         setRotating(null);
         if (r.secret) setSecret(r.secret);
       }
@@ -173,8 +182,8 @@ export function WebhookEndpoints() {
           </Card>
         ))
       )}
-      {editing && <EndpointDialog key={editing === 'new' ? 'new' : editing.endpoint_id} endpoint={editing === 'new' ? undefined : editing} open onOpenChange={(o) => !o && setEditing(null)} onSecret={setSecret} />}
-      <SecretDialog secret={secret} onClose={() => setSecret(null)} />
+      {editing && <EndpointDialog base={base} key={editing === 'new' ? 'new' : editing.endpoint_id} endpoint={editing === 'new' ? undefined : editing} open onOpenChange={(o) => !o && setEditing(null)} onSecret={setSecret} />}
+      <SecretDialog secret={secret} onBehalf={Boolean(merchantId)} onClose={() => setSecret(null)} />
       <ConfirmDialog
         open={Boolean(rotating)}
         onOpenChange={(o) => !o && setRotating(null)}

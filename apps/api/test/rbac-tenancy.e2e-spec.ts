@@ -69,8 +69,14 @@ describe('cross-tenant isolation', () => {
   });
 
   it('platform staff see every organization', async () => {
-    const res = await ctx.http().get('/v1/organizations?limit=100').set(bearer(adminToken));
-    const ids = (res.body.data as { id: string }[]).map((o) => o.id);
+    // Page through everything: other suites add organizations, newest first.
+    const ids: string[] = [];
+    let cursor: string | undefined;
+    do {
+      const res = await ctx.http().get(`/v1/organizations?limit=100${cursor ? `&cursor=${cursor}` : ''}`).set(bearer(adminToken));
+      ids.push(...(res.body.data as { id: string }[]).map((o) => o.id));
+      cursor = (res.body.meta as { next_cursor: string | null }).next_cursor ?? undefined;
+    } while (cursor);
     expect(ids).toEqual(expect.arrayContaining([platform.id, reseller.id, sharma.id, kirana.id, nimbus.id]));
   });
 

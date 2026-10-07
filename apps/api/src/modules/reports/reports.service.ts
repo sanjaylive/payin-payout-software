@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import { PaymentStatus, PayoutStatus, type Prisma, type PrismaClient, RefundStatus, type ReportExport, SettlementStatus } from '@pay2all/database';
+import { LoginOutcome, PaymentStatus, PayoutStatus, type Prisma, type PrismaClient, RefundStatus, type ReportExport, SettlementStatus } from '@pay2all/database';
 import { ErrorCode } from '@pay2all/types';
 import type { createReportExportSchema, listReportExportsQuerySchema, ReportTypeValue } from '@pay2all/validation';
 import type { Response } from 'express';
@@ -22,6 +22,7 @@ const STATUSES: Record<ReportTypeValue, readonly string[]> = {
   REFUNDS: Object.values(RefundStatus),
   PAYOUTS: Object.values(PayoutStatus),
   SETTLEMENTS: Object.values(SettlementStatus),
+  LOGIN_EVENTS: Object.values(LoginOutcome),
 };
 
 export function presentExport(e: ReportExport) {
@@ -39,6 +40,7 @@ export function presentExport(e: ReportExport) {
     created_at: e.createdAt,
     completed_at: e.completedAt,
     expires_at: e.expiresAt,
+    notify_by_email: e.notifyByEmail,
     downloadable: e.status === 'COMPLETED' && !!e.storageKey && !!e.expiresAt && e.expiresAt > new Date(),
   };
 }
@@ -69,7 +71,7 @@ export class ReportsService {
     if (input.merchant_id) {
       if (scope.kind === 'MERCHANT' && input.merchant_id !== scope.id) throw new AppError(ErrorCode.NOT_FOUND, 'Organization not found');
       const org = await this.scope.requireOrganization(actor, input.merchant_id);
-      if (org.type !== 'MERCHANT') throw new AppError(ErrorCode.INVALID_REQUEST, 'merchant_id must be a merchant');
+      if (org.type !== 'MERCHANT' && input.type !== 'LOGIN_EVENTS') throw new AppError(ErrorCode.INVALID_REQUEST, 'merchant_id must be a merchant');
     }
     if (input.status && !STATUSES[input.type].includes(input.status)) {
       throw new AppError(ErrorCode.INVALID_REQUEST, `status must be one of ${STATUSES[input.type].join(', ')}`, [{ path: 'status', message: 'Unknown status for this report type' }]);
@@ -79,7 +81,7 @@ export class ReportsService {
 
     const filters: Prisma.InputJsonObject = { from: input.from, to: input.to, ...(input.status ? { status: input.status } : {}), ...(input.merchant_id ? { merchant_id: input.merchant_id } : {}) };
     const e = await this.prisma.reportExport.create({
-      data: { id: newId('reportExport'), organizationId: actor.organizationId, scopeKind: scope.kind, scopeId: scope.id, type: input.type, format: input.format, filters, requestedById: actor.userId },
+      data: { id: newId('reportExport'), organizationId: actor.organizationId, scopeKind: scope.kind, scopeId: scope.id, type: input.type, format: input.format, filters, requestedById: actor.userId, notifyByEmail: input.notify_by_email },
     });
     await this.audit.record({ action: 'report.requested', resourceType: 'report_export', resourceId: e.id, metadata: { type: input.type, ...filters } });
     return presentExport(e);
@@ -112,7 +114,7 @@ export class ReportsService {
     await this.audit.record({ action: 'report.downloaded', resourceType: 'report_export', resourceId: e.id, metadata: { type: e.type, rows: e.rowCount } });
     const f = e.filters as { from: string; to: string };
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="pay2all-${e.type.toLowerCase()}-${f.from}-to-${f.to}.csv"`);
+    res.setHeader('Content-Disposition', `attachment; filename="pay2all-${e.type.toLowerCase().replace('_', '-')}-${f.from}-to-${f.to}.csv"`);
     res.setHeader('Cache-Control', 'no-store');
     if (e.fileSize !== null) res.setHeader('Content-Length', e.fileSize.toString());
     if (e.sha256) res.setHeader('X-Content-SHA256', e.sha256);

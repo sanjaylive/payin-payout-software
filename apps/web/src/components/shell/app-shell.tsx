@@ -48,7 +48,11 @@ export function AppShell({ me, nav, securityHref, children }: { me: Me; nav: Nav
             <UserMenu me={me} securityHref={securityHref} />
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto">
+        {/* `relative` makes this scroll area the containing block for absolutely positioned
+            descendants — notably the hidden native <select>/<input> Radix renders for Select and
+            Switch. Without it they are placed against the document and stretch the page far below
+            the shell (a long blank area under every long page). */}
+        <main className="relative flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8 lg:py-8">{children}</div>
         </main>
       </div>

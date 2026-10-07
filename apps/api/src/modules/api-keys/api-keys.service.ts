@@ -141,30 +141,42 @@ export class ApiKeysService {
 
   // ---- IP allowlist ------------------------------------------------------------------------------
 
-  async listAllowlist(actor: Actor) {
-    const rows = await this.prisma.ipAllowlistEntry.findMany({ where: { organizationId: actor.organizationId, environment: this.config.env.API_ENVIRONMENT }, orderBy: { createdAt: 'asc' } });
+  /** The allowlist's owner: the caller, or a merchant platform staff manage on its behalf. */
+  private async allowlistOwner(actor: Actor, onBehalfOf?: string): Promise<string> {
+    if (!onBehalfOf) return actor.organizationId;
+    if (actor.organizationType !== 'PLATFORM') throw new AppError(ErrorCode.FORBIDDEN);
+    const org = await this.prisma.organization.findUnique({ where: { id: onBehalfOf }, select: { type: true } });
+    if (org?.type !== 'MERCHANT' && org?.type !== 'API_PARTNER') throw new AppError(ErrorCode.NOT_FOUND, 'Merchant not found');
+    return onBehalfOf;
+  }
+
+  async listAllowlist(actor: Actor, onBehalfOf?: string) {
+    const organizationId = await this.allowlistOwner(actor, onBehalfOf);
+    const rows = await this.prisma.ipAllowlistEntry.findMany({ where: { organizationId, environment: this.config.env.API_ENVIRONMENT }, orderBy: { createdAt: 'asc' } });
     return { environment: this.config.env.API_ENVIRONMENT, enforced: rows.length > 0, entries: rows.map((r) => ({ entry_id: r.id, cidr: r.cidr, label: r.label, created_at: r.createdAt })) };
   }
 
-  async addAllowlist(actor: Actor, input: z.output<typeof ipAllowlistEntrySchema>) {
-    this.assertKeyOwner(actor);
+  async addAllowlist(actor: Actor, input: z.output<typeof ipAllowlistEntrySchema>, onBehalfOf?: string) {
+    if (!onBehalfOf) this.assertKeyOwner(actor);
+    const organizationId = await this.allowlistOwner(actor, onBehalfOf);
     const env = this.config.env.API_ENVIRONMENT;
-    if ((await this.prisma.ipAllowlistEntry.count({ where: { organizationId: actor.organizationId, environment: env } })) >= 50) throw new AppError(ErrorCode.INVALID_REQUEST, 'At most 50 allowlist entries');
+    if ((await this.prisma.ipAllowlistEntry.count({ where: { organizationId, environment: env } })) >= 50) throw new AppError(ErrorCode.INVALID_REQUEST, 'At most 50 allowlist entries');
     try {
-      await this.prisma.ipAllowlistEntry.create({ data: { id: newId('ipAllowlist'), organizationId: actor.organizationId, environment: env, cidr: input.cidr, label: input.label ?? null, createdById: actor.userId } });
+      await this.prisma.ipAllowlistEntry.create({ data: { id: newId('ipAllowlist'), organizationId, environment: env, cidr: input.cidr, label: input.label ?? null, createdById: actor.userId } });
     } catch {
       throw new AppError(ErrorCode.CONFLICT, 'That address is already on the allowlist');
     }
-    await this.audit.record({ action: 'api.ip_allowlist.added', resourceType: 'organization', resourceId: actor.organizationId, metadata: { cidr: input.cidr, environment: env, severity: 'MEDIUM' } });
-    return this.listAllowlist(actor);
+    await this.audit.record({ action: 'api.ip_allowlist.added', resourceType: 'organization', resourceId: organizationId, organizationId, metadata: { cidr: input.cidr, environment: env, severity: 'MEDIUM', on_behalf: Boolean(onBehalfOf) } });
+    return this.listAllowlist(actor, onBehalfOf);
   }
 
-  async removeAllowlist(actor: Actor, entryId: string) {
-    this.assertKeyOwner(actor);
-    const res = await this.prisma.ipAllowlistEntry.deleteMany({ where: { id: entryId, organizationId: actor.organizationId } });
+  async removeAllowlist(actor: Actor, entryId: string, onBehalfOf?: string) {
+    if (!onBehalfOf) this.assertKeyOwner(actor);
+    const organizationId = await this.allowlistOwner(actor, onBehalfOf);
+    const res = await this.prisma.ipAllowlistEntry.deleteMany({ where: { id: entryId, organizationId } });
     if (res.count !== 1) throw new AppError(ErrorCode.NOT_FOUND, 'Entry not found');
-    await this.audit.record({ action: 'api.ip_allowlist.removed', resourceType: 'organization', resourceId: actor.organizationId, metadata: { entry_id: entryId, severity: 'MEDIUM' } });
-    return this.listAllowlist(actor);
+    await this.audit.record({ action: 'api.ip_allowlist.removed', resourceType: 'organization', resourceId: organizationId, organizationId, metadata: { entry_id: entryId, severity: 'MEDIUM', on_behalf: Boolean(onBehalfOf) } });
+    return this.listAllowlist(actor, onBehalfOf);
   }
 
   // ---- Usage & logs --------------------------------------------------------------------------------

@@ -10,7 +10,10 @@ import { formatDateTime } from '@pay2all/ui/lib/format';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { errorMessage } from '@/lib/api/errors';
-import { useCan } from '@/lib/auth/use-me';
+import { useCan, useMe } from '@/lib/auth/use-me';
+import { IpAllowlist } from '../developers/ip-allowlist';
+import { LoginActivity } from '../security/login-activity';
+import { WebhookEndpoints } from '../webhooks/endpoints';
 import { JournalsTable } from '../ledger/admin-ledger';
 import { BalanceCards } from '../ledger/balance-cards';
 import { BankAccountsSection } from './bank-accounts-section';
@@ -27,6 +30,8 @@ import { useMerchant } from './use-merchant';
 /** Merchant 360 for platform staff and resellers: application, review actions, screening, limits, history. */
 export function MerchantDetail({ merchantId, backHref }: { merchantId: string; backHref: string }) {
   const can = useCan();
+  const { data: me } = useMe();
+  const platform = me?.organization.type === 'PLATFORM';
   const { data: app, isPending, isError, error, refetch } = useMerchant(merchantId);
   if (isPending) return <LoadingSkeleton rows={8} />;
   if (isError || !app) return <ErrorState message={errorMessage(error)} onRetry={() => void refetch()} />;
@@ -61,6 +66,9 @@ export function MerchantDetail({ merchantId, backHref }: { merchantId: string; b
           {app.screening?.risk_notes !== undefined && <TabsTrigger value="screening">Screening</TabsTrigger>}
           {can('ledger.read') && (app.status === 'APPROVED' || app.status === 'SUSPENDED') && <TabsTrigger value="ledger">Balances</TabsTrigger>}
           {can('limit.read') && <TabsTrigger value="limits">Limits</TabsTrigger>}
+          {platform && can('webhook.read') && <TabsTrigger value="webhooks">Webhooks</TabsTrigger>}
+          {platform && can('merchant.read') && <TabsTrigger value="ip">IP allowlist</TabsTrigger>}
+          {can('user.read') && <TabsTrigger value="logins">Login activity</TabsTrigger>}
           <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
         <TabsContent value="application" className="mt-4 space-y-6">
@@ -82,6 +90,15 @@ export function MerchantDetail({ merchantId, backHref }: { merchantId: string; b
           {can('ledger.platform.read') && <JournalsTable merchantId={app.id} />}
         </TabsContent>
         <TabsContent value="limits" className="mt-4"><MerchantLimitsPanel merchantId={app.id} /></TabsContent>
+        <TabsContent value="webhooks" className="mt-4 space-y-3">
+          <p className="text-muted-foreground text-sm">Endpoints you add here belong to {app.name}: they see and manage them in their own dashboard. Every change is recorded in the audit log as made by Pay2All on their behalf.</p>
+          <WebhookEndpoints merchantId={app.id} />
+        </TabsContent>
+        <TabsContent value="ip" className="mt-4 space-y-3">
+          <p className="text-muted-foreground text-sm">Server addresses allowed to call the Pay2All API with {app.name}’s keys. Changes are audited as made on their behalf.</p>
+          <IpAllowlist merchantId={app.id} />
+        </TabsContent>
+        <TabsContent value="logins" className="mt-4"><LoginActivity organizationId={app.id} /></TabsContent>
         <TabsContent value="history" className="mt-4">
           <Card className="shadow-none">
             <CardHeader><CardTitle className="text-base">Compliance history</CardTitle></CardHeader>

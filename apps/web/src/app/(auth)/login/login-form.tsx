@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Button } from '@pay2all/ui/components/ui/button';
 import { loginFormSchema, totpCodeSchema } from '@pay2all/validation';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, ShieldCheck } from 'lucide-react';
+import { Loader2, MapPin, ShieldCheck } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useState } from 'react';
@@ -16,6 +16,7 @@ import { FormField } from '@/components/common/form-field';
 import { api } from '@/lib/api/client';
 import type { Me, SessionTokens } from '@/lib/api/types';
 import { useAuthStore } from '@/lib/auth/store';
+import { useLoginLocation } from '@/lib/auth/use-login-location';
 import { homePathFor, ME_QUERY_KEY } from '@/lib/auth/use-me';
 
 const mfaFormSchema = z.object({ code: totpCodeSchema });
@@ -32,6 +33,7 @@ export function LoginForm() {
   const setAccessToken = useAuthStore((s) => s.setAccessToken);
   const [mfaToken, setMfaToken] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
+  const location = useLoginLocation();
 
   const credentials = useForm<z.input<typeof loginFormSchema>>({ resolver: zodResolver(loginFormSchema), defaultValues: { identifier: '', password: '' } });
   const mfa = useForm<z.input<typeof mfaFormSchema>>({ resolver: zodResolver(mfaFormSchema), defaultValues: { code: '' } });
@@ -49,7 +51,8 @@ export function LoginForm() {
   const onCredentials = credentials.handleSubmit(async (values) => {
     setError(null);
     try {
-      const tokens = await api.post<SessionTokens>('/v1/auth/login', values, { auth: false });
+      const loc = location.current();
+      const tokens = await api.post<SessionTokens>('/v1/auth/login', { ...values, ...(loc ? { location: loc } : {}) }, { auth: false });
       if (tokens.status === 'MFA_REQUIRED') setMfaToken(tokens.mfa_token!);
       else await finish(tokens);
     } catch (err) {
@@ -60,7 +63,8 @@ export function LoginForm() {
   const onMfa = mfa.handleSubmit(async ({ code }) => {
     setError(null);
     try {
-      await finish(await api.post<SessionTokens>('/v1/auth/mfa/verify', { mfa_token: mfaToken, code }, { auth: false }));
+      const loc = location.current();
+      await finish(await api.post<SessionTokens>('/v1/auth/mfa/verify', { mfa_token: mfaToken, code, ...(loc ? { location: loc } : {}) }, { auth: false }));
     } catch (err) {
       setError(err);
       mfa.reset({ code: '' });
@@ -108,6 +112,12 @@ export function LoginForm() {
         <Button type="submit" className="w-full" disabled={credentials.formState.isSubmitting}>
           {credentials.formState.isSubmitting && <Loader2 className="animate-spin" />} Sign in
         </Button>
+        <p className="text-muted-foreground flex items-start gap-1.5 text-[11px] leading-4">
+          <MapPin className="mt-px size-3 shrink-0" />
+          {location.state === 'granted'
+            ? 'Your sign-in location will be recorded in your account’s login history.'
+            : 'If you allow location access, we record where you signed in from, to help protect your account. It’s optional.'}
+        </p>
       </form>
     </AuthCard>
   );

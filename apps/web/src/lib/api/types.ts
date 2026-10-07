@@ -858,7 +858,7 @@ export interface RiskEvent {
 
 export interface ReportExport {
   export_id: string;
-  type: 'PAYMENTS' | 'REFUNDS' | 'PAYOUTS' | 'SETTLEMENTS';
+  type: 'PAYMENTS' | 'REFUNDS' | 'PAYOUTS' | 'SETTLEMENTS' | 'LOGIN_EVENTS';
   format: 'CSV' | 'XLSX';
   filters: { from: string; to: string; status?: string; merchant_id?: string };
   status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
@@ -919,4 +919,32 @@ export interface MessagingNotification {
   error: string | null;
   created_at: string;
   sent_at: string | null;
+}
+
+// ---- Login activity -----------------------------------------------------------------------------
+
+export type LoginOutcome = 'SUCCESS' | 'MFA_REQUIRED' | 'MFA_FAILED' | 'BAD_PASSWORD' | 'LOCKED' | 'DISABLED' | 'NOT_ACTIVATED' | 'NO_ACTIVE_ORGANIZATION' | 'UNKNOWN_USER';
+
+export interface LoginEventRow {
+  event_id: string;
+  created_at: string;
+  organization_id: string | null;
+  user_id: string | null;
+  user_name: string | null;
+  identifier: string;
+  outcome: LoginOutcome;
+  success: boolean;
+  mfa_used: boolean;
+  ip_address: string | null;
+  browser: string | null;
+  os: string | null;
+  device_type: 'desktop' | 'mobile' | 'tablet' | 'bot' | 'unknown' | null;
+  location: { latitude: number; longitude: number; accuracy_m: number | null } | null;
+}
+
+export interface LoginSummary {
+  attempts: number;
+  failures: number;
+  distinct_ips: number;
+  last_success_at: string | null;
 }

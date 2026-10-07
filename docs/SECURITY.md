@@ -58,6 +58,33 @@ POST /v1/auth/login ─▶ (MFA?) ─▶ Session row created
 - **Recovery codes:** 10 single-use 50-bit codes (`ABCDE-FGH23`), returned once at enrollment and on regeneration (which needs a current TOTP code). They are stored as a keyed HMAC (blind index) rather than a slow hash, so a leaked table alone cannot be brute-forced offline. Consuming one is race-safe, audited and emailed to the user.
 - **Admin MFA reset:** platform staff with `user.manage` can reset another user's MFA, but not their own. A reason is required. The reset disables all factors and codes, revokes every session, writes an audit entry and emails the user.
 
+### 1.6 Login history (login_events)
+
+Every sign-in attempt is recorded, append-only (enforced by a trigger, like `audit_logs`).
+
+**What a record holds:**
+- outcome: SUCCESS, MFA_REQUIRED, MFA_FAILED, BAD_PASSWORD, LOCKED, DISABLED, NOT_ACTIVATED, NO_ACTIVE_ORGANIZATION or UNKNOWN_USER;
+- the masked identifier;
+- user, organization and session;
+- IP address, and the user agent summarised into browser, OS and device type.
+
+**Location:** taken only from the **browser's own geolocation**, and only when the user allows it on the sign-in page. The site's Permissions-Policy is `geolocation=(self)`. Latitude/longitude (6 dp) and the accuracy radius are stored. IPs are never sent to third-party geo-lookup services.
+
+**Who sees it:** merchants see their own organization (Team → Login activity); resellers and partners see their merchants; platform staff see any merchant (Admin → Merchant → Login activity).
+
+**Export:**
+- **Download:** an immediate CSV (up to 10,000 rows), audited.
+- **Email me:** an async export (`LOGIN_EVENTS` report, exported under the RLS reader role). The requester is emailed a **link** to the reports page, never the data, so download still needs a signed-in, authorised session.
+
+### 1.7 Platform staff managing a merchant's integrations
+
+`merchant.integration.manage` (Super Admin, Admin) allows managing a merchant's webhook endpoints and API IP allowlist on its behalf.
+
+- **Routes:** these are explicit `/v1/admin/merchants/:merchantId/...` routes. The merchant is never inferred.
+- **Audit:** every change is audited with `on_behalf: true`.
+- **Signing secrets:** created or rotated secrets are shown once to the staff member, who must pass them on securely, or the merchant rotates the secret itself.
+- **Generic routes are unchanged:** there, platform staff can still only disable an endpoint.
+
 ## 2. Authorization: RBAC + permissions
 
 ### 2.1 Model

@@ -23,6 +23,7 @@ const TYPES: { id: ReportExport['type']; label: string; statuses: string[] }[] =
   { id: 'REFUNDS', label: 'Refunds', statuses: ['SUCCESS', 'FAILED', 'PENDING', 'MANUAL_REVIEW'] },
   { id: 'PAYOUTS', label: 'Payouts', statuses: ['SUCCESS', 'FAILED', 'REJECTED', 'REVERSED', 'PENDING', 'QUEUED', 'MANUAL_REVIEW'] },
   { id: 'SETTLEMENTS', label: 'Settlements', statuses: ['PROCESSED', 'PROCESSING', 'FAILED'] },
+  { id: 'LOGIN_EVENTS', label: 'Login activity', statuses: ['SUCCESS', 'BAD_PASSWORD', 'MFA_FAILED', 'LOCKED', 'UNKNOWN_USER'] },
 ];
 const label = (t: ReportExport['type']) => TYPES.find((x) => x.id === t)?.label ?? t;
 

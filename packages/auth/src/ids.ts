@@ -64,6 +64,7 @@ export const ID_PREFIXES = {
   reportExport: 'rpt',
   apiVendor: 'avd',
   messagingService: 'msv',
+  loginEvent: 'lge',
   commissionPayout: 'cmp',
   webhookEvent: 'evt',
   webhookDelivery: 'whd',

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { idSchema, paginationQuerySchema } from './common';
 
-export const REPORT_TYPES = ['PAYMENTS', 'REFUNDS', 'PAYOUTS', 'SETTLEMENTS'] as const;
+export const REPORT_TYPES = ['PAYMENTS', 'REFUNDS', 'PAYOUTS', 'SETTLEMENTS', 'LOGIN_EVENTS'] as const;
 export type ReportTypeValue = (typeof REPORT_TYPES)[number];
 
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
@@ -19,6 +19,8 @@ export const createReportExportSchema = z
     status: z.string().trim().regex(/^[A-Z_]{2,30}$/).optional(),
     /** Platform / reseller scope only: narrow to one merchant (checked against the caller's scope). */
     merchant_id: idSchema('org').optional(),
+    /** Email the requester a sign-in-protected download link when the file is ready. */
+    notify_by_email: z.boolean().default(false),
   })
   .refine((r) => r.from <= r.to, { message: '`from` must not be after `to`', path: ['to'] })
   .refine((r) => (Date.parse(`${r.to}T00:00:00Z`) - Date.parse(`${r.from}T00:00:00Z`)) / 86_400_000 < REPORT_MAX_RANGE_DAYS, {

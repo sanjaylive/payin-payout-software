@@ -2256,6 +2256,7 @@ enum ReportType {
   REFUNDS
   PAYOUTS
   SETTLEMENTS
+  LOGIN_EVENTS
 }
 
 enum ReportFormat {
@@ -2292,6 +2293,8 @@ model ReportExport {
   error          String?            @db.VarChar(300)
   attempts       Int                @default(0)
   requestedById  String?            @map("requested_by_id")
+  /// Email the requester a download link when the file is ready.
+  notifyByEmail  Boolean            @default(false) @map("notify_by_email")
   startedAt      DateTime?          @map("started_at") @db.Timestamptz(3)
   completedAt    DateTime?          @map("completed_at") @db.Timestamptz(3)
   expiresAt      DateTime?          @map("expires_at") @db.Timestamptz(3)
@@ -2382,4 +2385,49 @@ model MessagingService {
   @@index([channel, status, priority])
   @@index([vendorId])
   @@map("messaging_services")
+}
+
+// ---- Login activity -----------------------------------------------------------------------------------
+
+enum LoginOutcome {
+  SUCCESS
+  /// Password accepted; waiting for the second factor.
+  MFA_REQUIRED
+  MFA_FAILED
+  BAD_PASSWORD
+  LOCKED
+  DISABLED
+  NOT_ACTIVATED
+  NO_ACTIVE_ORGANIZATION
+  UNKNOWN_USER
+}
+
+/// One sign-in attempt (docs/SECURITY.md §1.6). Append-only. Location is the browser's own
+/// geolocation, sent only when the user allowed it; never derived from IP by a third party.
+model LoginEvent {
+  id                String       @id
+  userId            String?      @map("user_id")
+  /// The organization the attempt signs into (null for unknown users / no membership).
+  organizationId    String?      @map("organization_id")
+  /// Masked email / mobile as typed (a***@x.com, 98******10).
+  identifierMasked  String       @map("identifier_masked") @db.VarChar(254)
+  outcome           LoginOutcome
+  mfaUsed           Boolean      @default(false) @map("mfa_used")
+  sessionId         String?      @map("session_id")
+  ipAddress         String?      @map("ip_address") @db.VarChar(64)
+  userAgent         String?      @map("user_agent") @db.VarChar(512)
+  browser           String?      @db.VarChar(60)
+  os                String?      @db.VarChar(60)
+  deviceType        String?      @map("device_type") @db.VarChar(20)
+  latitude          Decimal?     @db.Decimal(9, 6)
+  longitude         Decimal?     @db.Decimal(9, 6)
+  /// Browser-reported accuracy radius in metres.
+  locationAccuracyM Int?         @map("location_accuracy_m")
+  requestId         String?      @map("request_id") @db.VarChar(64)
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([organizationId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc), id(sort: Desc)])
+  @@map("login_events")
 }

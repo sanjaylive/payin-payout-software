@@ -3,6 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { AccessModule } from '../access/access.module';
 import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { AuditModule } from '../audit/audit.module';
+import { LoginEventsModule } from '../login-events/login-events.module';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
 import { AuthService } from './auth.service';
@@ -13,7 +14,7 @@ import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 
 @Module({
-  imports: [JwtModule.register({}), AccessModule, AuditModule, ApiKeysModule],
+  imports: [JwtModule.register({}), AccessModule, AuditModule, ApiKeysModule, LoginEventsModule],
   controllers: [AuthController],
   providers: [
     TokenService,

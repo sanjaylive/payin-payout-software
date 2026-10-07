@@ -79,6 +79,7 @@ export const PERMISSIONS = {
   'reconciliation.read': { description: 'View reconciliation runs', scopes: P },
   'reconciliation.manage': { description: 'Import files and resolve mismatches', scopes: P },
 
+  'merchant.integration.manage': { description: "Manage a merchant's webhook endpoints and IP allowlist on its behalf", scopes: P },
   'webhook.read': { description: 'View webhook endpoints and delivery logs', scopes: ALL },
   'webhook.manage': { description: 'Configure webhook endpoints and replay deliveries', scopes: ['PLATFORM', 'API_PARTNER', 'MERCHANT'] },
 

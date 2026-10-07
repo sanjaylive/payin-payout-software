@@ -80,6 +80,21 @@ export class WebhooksService {
     if (actor.organizationType !== 'MERCHANT') throw new AppError(ErrorCode.FORBIDDEN, 'Webhook endpoints belong to a merchant account');
   }
 
+  /**
+   * Whose endpoints: the merchant itself, or — for platform staff acting on a merchant's behalf
+   * (`merchant.integration.manage`, enforced on the admin routes) — the named merchant.
+   */
+  private async owner(actor: Actor, onBehalfOf?: string): Promise<string> {
+    if (!onBehalfOf) {
+      this.assertMerchant(actor);
+      return actor.organizationId;
+    }
+    if (actor.organizationType !== 'PLATFORM') throw new AppError(ErrorCode.FORBIDDEN);
+    const org = await this.prisma.organization.findUnique({ where: { id: onBehalfOf }, select: { type: true } });
+    if (org?.type !== 'MERCHANT') throw new AppError(ErrorCode.NOT_FOUND, 'Merchant not found');
+    return onBehalfOf;
+  }
+
   private assertUrl(raw: string) {
     const u = new URL(raw);
     if (this.config.env.WEBHOOK_REQUIRE_HTTPS && u.protocol !== 'https:') throw new AppError(ErrorCode.INVALID_REQUEST, 'Webhook URLs must use https');
@@ -95,37 +110,41 @@ export class WebhooksService {
     return { secret, hint: `whsec_…${secret.slice(-4)}` };
   }
 
-  private async requireEndpoint(actor: Actor, id: string) {
+  private async requireEndpoint(actor: Actor, id: string, onBehalfOf?: string) {
     const ids = await this.scope.accessibleOrganizationIds(actor);
-    const e = await this.prisma.webhookEndpoint.findFirst({ where: { id, ...(ids ? { merchantId: { in: ids } } : {}) } });
+    const e = await this.prisma.webhookEndpoint.findFirst({ where: { id, ...(ids ? { merchantId: { in: ids } } : {}), ...(onBehalfOf ? { merchantId: onBehalfOf } : {}) } });
     if (!e) throw new AppError(ErrorCode.NOT_FOUND, 'Webhook endpoint not found');
     return e;
   }
 
-  async create(actor: Actor, input: z.output<typeof createWebhookEndpointSchema>) {
-    this.assertMerchant(actor);
+  async create(actor: Actor, input: z.output<typeof createWebhookEndpointSchema>, onBehalfOf?: string) {
+    const merchantId = await this.owner(actor, onBehalfOf);
     this.assertUrl(input.url);
-    if ((await this.prisma.webhookEndpoint.count({ where: { merchantId: actor.organizationId } })) >= MAX_ENDPOINTS) {
+    if ((await this.prisma.webhookEndpoint.count({ where: { merchantId } })) >= MAX_ENDPOINTS) {
       throw new AppError(ErrorCode.INVALID_REQUEST, `At most ${MAX_ENDPOINTS} webhook endpoints per account`);
     }
     const id = newId('webhookEndpoint');
     const { secret, hint } = this.newSecret();
     const e = await this.prisma.webhookEndpoint.create({
-      data: { id, merchantId: actor.organizationId, url: input.url, description: input.description ?? null, events: input.events, secretEncrypted: this.encryptor.encrypt(secret, endpointSecretAad(id)), secretHint: hint, createdById: actor.userId },
+      data: { id, merchantId, url: input.url, description: input.description ?? null, events: input.events, secretEncrypted: this.encryptor.encrypt(secret, endpointSecretAad(id)), secretHint: hint, createdById: actor.userId },
     });
-    await this.audit.record({ action: 'webhook.endpoint.created', resourceType: 'webhook_endpoint', resourceId: id, organizationId: e.merchantId, newValue: presentEndpoint(e) });
+    await this.audit.record({ action: 'webhook.endpoint.created', resourceType: 'webhook_endpoint', resourceId: id, organizationId: e.merchantId, newValue: presentEndpoint(e), metadata: { on_behalf: Boolean(onBehalfOf) } });
     return { ...presentEndpoint(e), secret };
   }
 
-  async list(actor: Actor) {
+  async list(actor: Actor, onBehalfOf?: string) {
     const ids = await this.scope.accessibleOrganizationIds(actor);
-    const rows = await this.prisma.webhookEndpoint.findMany({ where: ids ? { merchantId: { in: ids } } : {}, orderBy: { createdAt: 'desc' }, take: 100 });
+    const merchant = onBehalfOf ? await this.owner(actor, onBehalfOf) : null;
+    const rows = await this.prisma.webhookEndpoint.findMany({ where: merchant ? { merchantId: merchant } : ids ? { merchantId: { in: ids } } : {}, orderBy: { createdAt: 'desc' }, take: 100 });
     return rows.map(presentEndpoint);
   }
 
-  async update(actor: Actor, id: string, input: z.output<typeof updateWebhookEndpointSchema>) {
-    const e = await this.requireEndpoint(actor, id);
-    if (actor.organizationType !== 'MERCHANT' && input.status !== 'DISABLED') throw new AppError(ErrorCode.FORBIDDEN, 'Platform staff can only disable endpoints');
+  async update(actor: Actor, id: string, input: z.output<typeof updateWebhookEndpointSchema>, onBehalfOf?: string) {
+    if (onBehalfOf) await this.owner(actor, onBehalfOf);
+    const e = await this.requireEndpoint(actor, id, onBehalfOf);
+    // On the generic route platform staff may only switch an endpoint off; full edits go through the
+    // explicit on-behalf admin route (merchant.integration.manage).
+    if (actor.organizationType !== 'MERCHANT' && !onBehalfOf && input.status !== 'DISABLED') throw new AppError(ErrorCode.FORBIDDEN, 'Platform staff can only disable endpoints');
     if (input.url) this.assertUrl(input.url);
     const updated = await this.prisma.webhookEndpoint.update({
       where: { id: e.id },
@@ -137,27 +156,27 @@ export class WebhooksService {
         version: { increment: 1 },
       },
     });
-    await this.audit.record({ action: 'webhook.endpoint.updated', resourceType: 'webhook_endpoint', resourceId: e.id, organizationId: e.merchantId, oldValue: presentEndpoint(e), newValue: presentEndpoint(updated) });
+    await this.audit.record({ action: 'webhook.endpoint.updated', resourceType: 'webhook_endpoint', resourceId: e.id, organizationId: e.merchantId, oldValue: presentEndpoint(e), newValue: presentEndpoint(updated), metadata: { on_behalf: Boolean(onBehalfOf) } });
     return presentEndpoint(updated);
   }
 
-  async rotateSecret(actor: Actor, id: string) {
-    this.assertMerchant(actor);
-    const e = await this.requireEndpoint(actor, id);
+  async rotateSecret(actor: Actor, id: string, onBehalfOf?: string) {
+    await this.owner(actor, onBehalfOf);
+    const e = await this.requireEndpoint(actor, id, onBehalfOf);
     const { secret, hint } = this.newSecret();
     // The old secret keeps signing (alongside the new one) for 24 h so the merchant can switch over.
     const updated = await this.prisma.webhookEndpoint.update({
       where: { id: e.id },
       data: { secretEncrypted: this.encryptor.encrypt(secret, endpointSecretAad(e.id)), secretHint: hint, previousSecretEncrypted: e.secretEncrypted, previousSecretExpiresAt: new Date(Date.now() + ROTATION_OVERLAP_MS), version: { increment: 1 } },
     });
-    await this.audit.record({ action: 'webhook.endpoint.secret_rotated', resourceType: 'webhook_endpoint', resourceId: e.id, organizationId: e.merchantId, metadata: { secret_hint: hint, severity: 'MEDIUM' } });
+    await this.audit.record({ action: 'webhook.endpoint.secret_rotated', resourceType: 'webhook_endpoint', resourceId: e.id, organizationId: e.merchantId, metadata: { secret_hint: hint, severity: 'MEDIUM', on_behalf: Boolean(onBehalfOf) } });
     return { ...presentEndpoint(updated), secret };
   }
 
   /** Send a `webhook.test` event to one endpoint (bypasses subscriptions). */
-  async sendTest(actor: Actor, id: string) {
-    this.assertMerchant(actor);
-    const e = await this.requireEndpoint(actor, id);
+  async sendTest(actor: Actor, id: string, onBehalfOf?: string) {
+    await this.owner(actor, onBehalfOf);
+    const e = await this.requireEndpoint(actor, id, onBehalfOf);
     if (e.status !== 'ACTIVE') throw new AppError(ErrorCode.INVALID_REQUEST, 'Enable the endpoint first');
     const eventId = newId('webhookEvent');
     const deliveryId = newId('webhookDelivery');

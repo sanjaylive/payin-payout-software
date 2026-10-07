@@ -8,5 +8,6 @@ import { WebhooksService } from './webhooks.service';
   imports: [AccessModule, AuditModule],
   controllers: [WebhooksController, EventPipelineController],
   providers: [WebhooksService],
+  exports: [WebhooksService],
 })
 export class WebhooksModule {}

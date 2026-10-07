@@ -38,11 +38,12 @@ export function istRange(f: ReportFilters): { start: Date; end: Date } {
  * Explicit tenant predicate. RLS enforces the same rule underneath (docs/SECURITY.md §9); keeping
  * both means a bug in either one alone cannot leak another tenant's rows.
  */
-function tenantSql(scope: ReportScope, f: ReportFilters, alias: string): Prisma.Sql {
+function tenantSql(scope: ReportScope, f: ReportFilters, alias: string, column = 'merchant_id'): Prisma.Sql {
   const parts: Prisma.Sql[] = [];
-  const col = Prisma.raw(`${alias}.merchant_id`);
+  const col = Prisma.raw(`${alias}.${column}`);
   if (scope.kind === 'MERCHANT') parts.push(Prisma.sql`${col} = ${scope.id}`);
-  if (scope.kind === 'RESELLER') parts.push(Prisma.sql`${col} IN (SELECT o.id FROM organizations o WHERE o.parent_id = ${scope.id})`);
+  // Login events can belong to the reseller / partner organization itself, not only its merchants.
+  if (scope.kind === 'RESELLER') parts.push(column === 'merchant_id' ? Prisma.sql`${col} IN (SELECT o.id FROM organizations o WHERE o.parent_id = ${scope.id})` : Prisma.sql`(${col} = ${scope.id} OR ${col} IN (SELECT o.id FROM organizations o WHERE o.parent_id = ${scope.id}))`);
   if (f.merchant_id) parts.push(Prisma.sql`${col} = ${f.merchant_id}`);
   return parts.length ? Prisma.sql`AND ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
 }
@@ -116,6 +117,27 @@ export const REPORTS: Record<ReportTypeValue, ReportDefinition> = {
           r.id, r.merchant_id as string, r.merchant_order_id as string, r.created_at, r.status as string, r.mode as string, r.purpose as string,
           money(r.amount_minor as bigint), money(r.fee_minor as bigint), money(r.tax_minor as bigint), money(r.total_debit_minor as bigint),
           r.b_name as string | null, r.b_account as string | null, r.b_ifsc as string | null, r.b_upi as string | null, r.utr as string | null, r.processed_at as Date | null, r.failure_reason as string | null,
+        ],
+      }));
+    },
+  },
+  LOGIN_EVENTS: {
+    columns: () => ['time', 'user_id', 'email_or_mobile', 'outcome', 'mfa', 'ip_address', 'browser', 'os', 'device', 'latitude', 'longitude', 'accuracy_m', 'organization_id', 'event_id'],
+    async fetch(tx, scope, f, k, limit) {
+      const { start, end } = istRange(f);
+      const rows = await tx.$queryRaw<Array<Record<string, unknown> & { id: string; created_at: Date }>>`
+        SELECT l.id, l.created_at, l.user_id, l.identifier_masked, l.outcome::text AS outcome, l.mfa_used, l.ip_address, l.browser, l.os, l.device_type,
+               l.latitude::text AS latitude, l.longitude::text AS longitude, l.location_accuracy_m, l.organization_id
+        FROM login_events l
+        WHERE l.created_at >= ${start} AND l.created_at < ${end} ${tenantSql(scope, { ...f, merchant_id: undefined }, 'l', 'organization_id')}
+          ${f.merchant_id ? Prisma.sql`AND l.organization_id = ${f.merchant_id}` : Prisma.empty} ${f.status ? Prisma.sql`AND l.outcome::text = ${f.status}` : Prisma.empty} ${after('l', k)}
+        ORDER BY l.created_at, l.id LIMIT ${limit}`;
+      return rows.map((r) => ({
+        keyset: { createdAt: r.created_at, id: r.id },
+        cells: [
+          r.created_at, r.user_id as string | null, r.identifier_masked as string, r.outcome as string, r.mfa_used ? 'yes' : 'no', r.ip_address as string | null,
+          r.browser as string | null, r.os as string | null, r.device_type as string | null, r.latitude as string | null, r.longitude as string | null,
+          r.location_accuracy_m as number | null, r.organization_id as string | null, r.id,
         ],
       }));
     },

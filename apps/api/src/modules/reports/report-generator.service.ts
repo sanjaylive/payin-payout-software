@@ -4,6 +4,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { PrismaClient, ReportExport } from '@pay2all/database';
 import { metrics } from '@pay2all/telemetry';
 import type { ReportTypeValue } from '@pay2all/validation';
+import { ApiConfig } from '../../config/api-config';
+import { NotificationsService } from '../../infra/notifications.service';
 import { StorageService } from '../../infra/storage.service';
 import { PRISMA } from '../../infra/tokens';
 import { type Keyset, type ReportFilters, type ReportScope, REPORTS, withTenantReader } from './report-definitions';
@@ -30,7 +32,37 @@ export class ReportGeneratorService {
   constructor(
     @Inject(PRISMA) private readonly prisma: PrismaClient,
     private readonly storage: StorageService,
+    private readonly notifications: NotificationsService,
+    private readonly config: ApiConfig,
   ) {}
+
+  private static readonly LABELS: Record<string, string> = { PAYMENTS: 'Payins', REFUNDS: 'Refunds', PAYOUTS: 'Payouts', SETTLEMENTS: 'Settlements', LOGIN_EVENTS: 'Login activity' };
+
+  /**
+   * "Email me": tell the requester the file is ready (or failed). The email carries a link to the
+   * reports page — never the data — so downloading still needs a signed-in, authorised session.
+   */
+  private async notifyRequester(exp: ReportExport, outcome: 'COMPLETED' | 'FAILED', rows?: number) {
+    if (!exp.notifyByEmail || !exp.requestedById) return;
+    const user = await this.prisma.user.findUnique({ where: { id: exp.requestedById }, select: { email: true, name: true } });
+    if (!user?.email) return;
+    const org = await this.prisma.organization.findUnique({ where: { id: exp.organizationId }, select: { type: true } });
+    const path = org?.type === 'PLATFORM' ? '/admin/reports' : org?.type === 'RESELLER' ? '/reseller/reports' : org?.type === 'API_PARTNER' ? '/partner/reports' : '/reports';
+    const f = exp.filters as unknown as ReportFilters;
+    const label = ReportGeneratorService.LABELS[exp.type] ?? exp.type;
+    const link = `${this.config.env.WEB_PUBLIC_URL.replace(/\/$/, '')}${path}`;
+    const text =
+      outcome === 'COMPLETED'
+        ? `Hi ${user.name},\n\nYour ${label} export for ${f.from} to ${f.to} is ready (${rows ?? 0} rows).\n\nDownload it after signing in: ${link}\nThe file is available for 7 days.\n\n— Pay2All Payments`
+        : `Hi ${user.name},\n\nYour ${label} export for ${f.from} to ${f.to} could not be generated. Please request it again from ${link}.\n\n— Pay2All Payments`;
+    await this.notifications.queue(this.prisma, {
+      to: user.email,
+      subject: outcome === 'COMPLETED' ? `Your ${label} export is ready` : `Your ${label} export failed`,
+      text,
+      template: outcome === 'COMPLETED' ? 'report_ready' : 'report_failed',
+      userId: exp.requestedById,
+    });
+  }
 
   async processQueued(limit = 2): Promise<number> {
     const now = new Date();
@@ -95,6 +127,7 @@ export class ReportGeneratorService {
       });
       metrics.reportExports.inc({ type, outcome: 'completed' });
       metrics.reportRows.inc({ type }, rows);
+      await this.notifyRequester(exp, 'COMPLETED', rows);
     } catch (err) {
       counter.destroy();
       await upload.catch(() => undefined);
@@ -115,6 +148,7 @@ export class ReportGeneratorService {
       },
     });
     metrics.reportExports.inc({ type: exp.type, outcome: retry ? 'retry' : 'failed' });
+    if (!retry) await this.notifyRequester(exp, 'FAILED');
   }
 
   /** Completed exports are downloadable for 7 days, then the file is deleted. */

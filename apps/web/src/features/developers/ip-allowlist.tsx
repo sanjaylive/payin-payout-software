@@ -14,18 +14,20 @@ import { errorMessage, toTableError } from '@/lib/api/errors';
 import type { IpAllowlist as Allowlist } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 
-export function IpAllowlist() {
+/** API IP allowlist: the signed-in account's own, or (`merchantId`) a merchant's, managed by platform staff. */
+export function IpAllowlist({ merchantId }: { merchantId?: string } = {}) {
   const can = useCan();
   const qc = useQueryClient();
-  const list = useQuery({ queryKey: ['ip-allowlist'], queryFn: () => api.get<Allowlist>('/v1/developers/ip-allowlist') });
+  const base = merchantId ? `/v1/admin/merchants/${merchantId}/ip-allowlist` : '/v1/developers/ip-allowlist';
+  const list = useQuery({ queryKey: ['ip-allowlist', merchantId ?? 'own'], queryFn: () => api.get<Allowlist>(base) });
   const [cidr, setCidr] = useState('');
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
-  const manage = can('api_key.manage');
+  const manage = can(merchantId ? 'merchant.integration.manage' : 'api_key.manage');
   async function add() {
     setBusy(true);
     try {
-      await api.post('/v1/developers/ip-allowlist', { cidr: cidr.trim(), ...(label.trim() ? { label: label.trim() } : {}) });
+      await api.post(base, { cidr: cidr.trim(), ...(label.trim() ? { label: label.trim() } : {}) });
       setCidr('');
       setLabel('');
       await qc.invalidateQueries({ queryKey: ['ip-allowlist'] });
@@ -38,7 +40,7 @@ export function IpAllowlist() {
   }
   async function remove(id: string) {
     try {
-      await api.delete(`/v1/developers/ip-allowlist/${id}`);
+      await api.delete(`${base}/${id}`);
       await qc.invalidateQueries({ queryKey: ['ip-allowlist'] });
     } catch (e) {
       toast.error(errorMessage(e));

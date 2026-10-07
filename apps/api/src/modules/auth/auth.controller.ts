@@ -63,7 +63,7 @@ export class AuthController {
     @Body(new ZodValidationPipe(loginSchema)) body: z.output<typeof loginSchema>,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.auth.login(body.identifier, body.password);
+    const result = await this.auth.login(body.identifier, body.password, body.location);
     if (result.kind === 'mfa_required') {
       return { status: 'MFA_REQUIRED', mfa_token: result.mfaToken, expires_in: result.expiresIn };
     }
@@ -82,6 +82,7 @@ export class AuthController {
   ) {
     const session = await this.auth.completeMfaLogin(body.mfa_token, (userId) =>
       body.recovery_code ? this.mfa.verifyRecoveryCode(userId, body.recovery_code) : this.mfa.verifyForLogin(userId, body.code!),
+      body.location,
     );
     setRefreshCookie(res, this.config, session.refreshToken);
     return presentSession(session);

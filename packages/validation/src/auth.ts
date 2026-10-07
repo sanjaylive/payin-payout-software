@@ -9,10 +9,21 @@ export const passwordSchema = z
 
 export const totpCodeSchema = z.string().trim().regex(/^\d{6}$/, 'Enter the 6-digit code');
 
+/**
+ * Browser geolocation shared at sign-in (only when the user allowed it). Recorded on the login
+ * event; never required. Accuracy in metres as reported by the browser.
+ */
+export const loginLocationSchema = z.strictObject({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  accuracy: z.number().min(0).max(1_000_000).optional(),
+});
+
 export const loginSchema = z.strictObject({
   identifier: identifierSchema,
   // Never apply policy at login — only check presence; legacy passwords must still work.
   password: z.string().min(1, 'Enter your password').max(256),
+  location: loginLocationSchema.optional(),
 });
 export type LoginInput = z.input<typeof loginSchema>;
 
@@ -26,6 +37,7 @@ export const recoveryCodeSchema = z
 export const mfaVerifySchema = z
   .strictObject({
     mfa_token: z.string().min(10).max(2048),
+    location: loginLocationSchema.optional(),
     code: totpCodeSchema.optional(),
     recovery_code: recoveryCodeSchema.optional(),
   })
