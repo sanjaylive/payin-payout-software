@@ -16,7 +16,7 @@ export default function RoutingPage() {
   const messaging = useQuery({ queryKey: ['messaging-routing'], queryFn: () => api.get<ChannelRouting[]>('/v1/messaging-routing') });
   return (
     <>
-      <PageHeader title="Routing" description="Which vendor handles each transaction or message, and what happens when it can’t." />
+      <PageHeader level={2} title="Routing" description="Which vendor handles each transaction or message, and what happens when it can’t." />
       <div className="space-y-6">
         <section className="space-y-3">
           <h2 className="text-base font-semibold">Payments</h2>

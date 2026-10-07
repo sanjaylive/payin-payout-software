@@ -151,6 +151,7 @@ export function VendorDetail({ id }: { id: string }) {
     <>
       <Link href="/admin/settings/vendors" className="text-muted-foreground mb-2 inline-flex items-center gap-1 text-sm hover:underline"><ArrowLeft className="size-4" /> API vendors</Link>
       <PageHeader
+        level={2}
         title={v?.name ?? 'Vendor'}
         description={v ? `${v.code}${v.website ? ` · ${v.website}` : ''}` : undefined}
         actions={v && manage ? <Button variant="outline" onClick={() => void toggleVendor()}>{v.status === 'ACTIVE' ? 'Deactivate vendor' : 'Activate vendor'}</Button> : undefined}

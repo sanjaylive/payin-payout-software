@@ -9,8 +9,9 @@ import { useCan } from '@/lib/auth/use-me';
 import { Brand } from './brand';
 import { CURRENT_PHASE, type NavItem, type NavLeaf } from './nav-config';
 
-function isActive(pathname: string, search: string, href: string): boolean {
+function isActive(pathname: string, search: string, href: string, matchPrefix = false): boolean {
   const [path, query] = href.split('?');
+  if (matchPrefix && pathname.startsWith(`${path}/`)) return true;
   if (query) return pathname === path && search.includes(query);
   return pathname === path && !search.includes('status=');
 }
@@ -85,7 +86,7 @@ export function Sidebar({ nav, footer }: { nav: NavItem[]; footer?: React.ReactN
             );
           }
           if (!visible(item) || !item.href) return null;
-          const active = isActive(pathname, search, item.href);
+          const active = isActive(pathname, search, item.href, item.matchPrefix);
           return (
             <Link
               key={item.href}

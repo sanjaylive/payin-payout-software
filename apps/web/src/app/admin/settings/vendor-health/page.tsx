@@ -6,7 +6,7 @@ import { HealthBoard } from '@/features/providers/health-board';
 export default function VendorHealthPage() {
   return (
     <>
-      <PageHeader title="Vendor health" description="Live success rate and latency of each payment service, from real traffic and probes." />
+      <PageHeader level={2} title="Vendor health" description="Live success rate and latency of each payment service, from real traffic and probes." />
       <HealthBoard />
     </>
   );

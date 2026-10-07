@@ -5,5 +5,5 @@ import { useMe } from '@/lib/auth/use-me';
 
 export default function AdminSecurityPage() {
   const { data: me } = useMe();
-  return me ? <SecuritySettings me={me} /> : null;
+  return me ? <SecuritySettings me={me} embedded /> : null;
 }

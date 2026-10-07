@@ -261,10 +261,10 @@ function SessionsCard() {
   );
 }
 
-export function SecuritySettings({ me }: { me: Me }) {
+export function SecuritySettings({ me, embedded = false }: { me: Me; embedded?: boolean }) {
   return (
     <>
-      <PageHeader title="Security" description="Password, two-factor authentication and signed-in devices." />
+      <PageHeader level={embedded ? 2 : 1} title={embedded ? 'My security' : 'Security'} description="Password, two-factor authentication and signed-in devices." />
       <div className="space-y-6">
         <MfaCard me={me} />
         <ChangePasswordCard />

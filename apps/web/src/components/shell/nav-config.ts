@@ -31,6 +31,8 @@ export interface NavLeaf {
   /** Phase that delivers the module; pages from later phases render a roadmap placeholder. */
   phase: number;
   permission?: string;
+  /** Also active on sub-paths (a page with its own tabs, e.g. Settings). */
+  matchPrefix?: boolean;
 }
 
 export interface NavItem extends Partial<NavLeaf> {
@@ -185,16 +187,7 @@ export const ADMIN_NAV: NavItem[] = [
   { label: 'Reports', href: '/admin/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },
   { label: 'Users & Roles', href: '/admin/users', icon: ShieldCheck, phase: 1, permission: 'user.read' },
   { label: 'Audit Logs', href: '/admin/audit-logs', icon: FileClock, phase: 1, permission: 'audit.read' },
-  {
-    label: 'Settings',
-    icon: Settings,
-    children: [
-      { label: 'System', href: '/admin/settings', phase: 10, permission: 'system.settings.manage' },
-      { label: 'API Vendors', href: '/admin/settings/vendors', phase: 10, permission: 'provider.read' },
-      { label: 'Routing', href: '/admin/settings/routing', phase: 10, permission: 'provider.read' },
-      { label: 'Vendor Health', href: '/admin/settings/vendor-health', phase: 10, permission: 'provider.read' },
-    ],
-  },
+  { label: 'Settings', href: '/admin/settings', icon: Settings, phase: 10, matchPrefix: true },
 ];
 
 /** Find the nav leaf for a path (used by roadmap placeholder pages). */
