@@ -4,15 +4,16 @@ import { ErrorCode } from '@pay2all/types';
 import { RequestContextStore } from '../../common/context/request-context';
 import { AppError } from '../../common/errors/app-error';
 import { AccessProfileService } from '../access/access-profile.service';
+import { ApiKeyAuthService } from '../api-keys/api-key-auth.service';
 import { ALLOW_RESTRICTED_SESSION, IS_PUBLIC, type RequestWithActor } from '../access/decorators';
 import type { Actor } from './actor';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 
 /**
- * Global authentication guard for dashboard routes: verifies the bearer access token, rejects revoked
- * sessions, loads the (cached) access profile and builds the Actor. Tenant context comes exclusively
- * from the session — never from request input.
+ * Global authentication guard: dashboard bearer tokens (session checks, cached access profile) or
+ * signed API keys (ApiKeyAuthService). Tenant context comes exclusively from the session or the key —
+ * never from request input (a partner's merchant header is verified against the hierarchy).
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -21,6 +22,7 @@ export class AuthGuard implements CanActivate {
     private readonly tokens: TokenService,
     private readonly sessions: SessionService,
     private readonly profiles: AccessProfileService,
+    private readonly apiKeys: ApiKeyAuthService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -28,6 +30,13 @@ export class AuthGuard implements CanActivate {
     if (this.reflector.getAllAndOverride<boolean>(IS_PUBLIC, targets)) return true;
 
     const req = context.switchToHttp().getRequest<RequestWithActor>();
+    // Server-to-server: signed API key (routes still have to opt in via @ApiKeyAccess).
+    if (ApiKeyAuthService.isApiKeyRequest(req) && !req.headers.authorization) {
+      const actor = await this.apiKeys.authenticate(req, context.switchToHttp().getResponse());
+      req.actor = actor;
+      RequestContextStore.setActor(actor);
+      return true;
+    }
     const header = req.headers.authorization;
     if (!header?.startsWith('Bearer ')) throw new AppError(ErrorCode.UNAUTHORIZED);
 

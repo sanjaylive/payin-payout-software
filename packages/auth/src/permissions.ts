@@ -29,7 +29,7 @@ export const PERMISSIONS = {
   'audit.read': { description: 'View audit logs in scope', scopes: ALL },
 
   'merchant.read': { description: 'View merchants and business profiles', scopes: ALL },
-  'merchant.create': { description: 'Create merchants', scopes: ['PLATFORM', 'RESELLER'] },
+  'merchant.create': { description: 'Create merchants', scopes: ['PLATFORM', 'RESELLER', 'API_PARTNER'] },
   'merchant.update': { description: 'Update merchant profile', scopes: ['PLATFORM', 'RESELLER', 'MERCHANT'] },
   'merchant.approve': { description: 'Approve or reject merchant onboarding', scopes: P },
   'merchant.suspend': { description: 'Suspend or reactivate merchants', scopes: P },

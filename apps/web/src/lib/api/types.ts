@@ -730,3 +730,64 @@ export interface ReconEntry {
   resolution_note: string | null;
   resolved_at: string | null;
 }
+
+export interface ApiKeyRow {
+  key_id: string;
+  organization_id: string;
+  name: string;
+  environment: 'TEST' | 'LIVE';
+  public_key: string;
+  secret_hint: string;
+  permissions: string[];
+  status: 'ACTIVE' | 'REVOKED' | 'EXPIRED';
+  rate_limit_per_minute: number;
+  expires_at: string | null;
+  last_used_at: string | null;
+  last_used_ip: string | null;
+  rotated_from_id: string | null;
+  created_at: string;
+  revoked_at: string | null;
+  secret?: string;
+}
+
+export interface IpAllowlist {
+  environment: 'TEST' | 'LIVE';
+  enforced: boolean;
+  entries: { entry_id: string; cidr: string; label: string | null; created_at: string }[];
+}
+
+export interface ApiLogRow {
+  id: string;
+  organization_id: string;
+  api_key_id: string | null;
+  partner_id: string | null;
+  method: string;
+  path: string;
+  status_code: number;
+  duration_ms: number;
+  error_code: string | null;
+  ip_address: string | null;
+  request_id: string | null;
+  created_at: string;
+}
+
+export interface ApiUsage {
+  days: number;
+  totals: { requests: number; errors: number; error_rate: number | null };
+  daily: { day: string; requests: number; errors: number; p95_ms: number | null }[];
+  top_endpoints: { method: string; path: string; requests: number; errors: number }[];
+  top_errors: { code: string; count: number }[];
+}
+
+export interface ResellerEarnings {
+  reseller_id: string;
+  reseller_name: string;
+  month: string;
+  payable_balance: string;
+  accrued_this_month: string;
+  accrued_lifetime: string;
+  paid_lifetime: string;
+  ledger_account_id: string | null;
+  by_merchant: { merchant_id: string; name: string; payin_count: number; payin_margin: string; payout_count: number; payout_margin: string; total: string }[];
+  payouts: { payout_id: string; amount: string; utr: string; period_note: string | null; created_at: string }[];
+}

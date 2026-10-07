@@ -44,11 +44,17 @@ function CreateMerchantDialog({ open, onOpenChange, detailBase }: { open: boolea
     queryFn: () => api.list<Organization>('/v1/organizations', { type: 'RESELLER', status: 'ACTIVE', limit: 100 }),
     enabled: open && isPlatform,
   });
+  const partners = useQuery({
+    queryKey: ['organizations', 'API_PARTNER', 'options'],
+    queryFn: () => api.list<Organization>('/v1/organizations', { type: 'API_PARTNER', status: 'ACTIVE', limit: 100 }),
+    enabled: open && isPlatform,
+  });
 
   async function create() {
     setBusy(true);
     try {
-      const m = await api.post<MerchantApplication>('/v1/merchants', { display_name: name.trim(), ...(isPlatform && reseller !== 'none' ? { reseller_id: reseller } : {}) });
+      const parent = isPlatform && reseller !== 'none' ? (reseller.startsWith('p:') ? { partner_id: reseller.slice(2) } : { reseller_id: reseller.slice(2) }) : {};
+      const m = await api.post<MerchantApplication>('/v1/merchants', { display_name: name.trim(), ...parent });
       toast.success(`${m.name} created`);
       onOpenChange(false);
       setName('');
@@ -72,12 +78,13 @@ function CreateMerchantDialog({ open, onOpenChange, detailBase }: { open: boolea
           <FormField label="Business display name" name="display_name" value={name} onChange={(e) => setName(e.target.value)} />
           {isPlatform && (
             <div className="space-y-1.5">
-              <Label htmlFor="reseller">Reseller</Label>
+              <Label htmlFor="reseller">Belongs to</Label>
               <Select value={reseller} onValueChange={setReseller}>
                 <SelectTrigger id="reseller" className="w-full"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Direct (Pay2All)</SelectItem>
-                  {resellers.data?.data.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                  {resellers.data?.data.map((r) => <SelectItem key={r.id} value={`r:${r.id}`}>Reseller · {r.name}</SelectItem>)}
+                  {partners.data?.data.map((r) => <SelectItem key={r.id} value={`p:${r.id}`}>API partner · {r.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

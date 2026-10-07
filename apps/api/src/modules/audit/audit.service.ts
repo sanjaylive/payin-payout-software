@@ -35,7 +35,7 @@ export class AuditService {
     await db.auditLog.create({
       data: {
         id: newId('auditLog'),
-        actorType: entry.actor?.type ?? (actor ? 'USER' : 'SYSTEM'),
+        actorType: entry.actor?.type ?? (actor ? (actor.kind === 'api_key' ? 'API_KEY' : 'USER') : 'SYSTEM'),
         actorId: entry.actor ? entry.actor.id : (actor?.userId ?? null),
         actorRole: entry.actor ? (entry.actor.role ?? null) : (actor?.roleKeys.join(',') ?? null),
         organizationId: entry.organizationId !== undefined ? entry.organizationId : (actor?.organizationId ?? null),

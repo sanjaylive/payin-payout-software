@@ -775,6 +775,7 @@ enum JournalType {
   SETTLEMENT_TRANSFER
   SETTLEMENT_PAID
   SETTLEMENT_RETURN
+  COMMISSION_PAYOUT
   HOLD_RELEASE
   REFUND
   REFUND_REVERSAL
@@ -1997,4 +1998,100 @@ model ReconciliationEntry {
   @@index([resolution, createdAt])
   @@index([internalId])
   @@map("reconciliation_entries")
+}
+
+// ------------------------------------------------------------------------------------------------
+// Public API credentials, partners, commissions (Phase 9) — docs/API.md, docs/RESELLERS.md
+// ------------------------------------------------------------------------------------------------
+
+enum ApiEnvironment {
+  TEST
+  LIVE
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
+/// Server-to-server credential. The secret signs requests (HMAC), so it is stored encrypted (AAD =
+/// key id), never hashed; it is shown once. Permissions are a subset of the creator's.
+model ApiKey {
+  id                 String         @id
+  organizationId     String         @map("organization_id")
+  environment        ApiEnvironment
+  /// Public identifier sent as X-Pay2All-Key (pk_test_… / pk_live_…).
+  publicKey          String         @unique @map("public_key") @db.VarChar(60)
+  secretEncrypted    String         @map("secret_encrypted")
+  secretLast4        String         @map("secret_last4") @db.Char(4)
+  name               String         @db.VarChar(80)
+  permissions        String[]
+  status             ApiKeyStatus   @default(ACTIVE)
+  /// Requests per minute for this key.
+  rateLimitPerMinute Int            @default(600) @map("rate_limit_per_minute")
+  /// Set on rotation: the old key keeps working until this time.
+  expiresAt          DateTime?      @map("expires_at") @db.Timestamptz(3)
+  lastUsedAt         DateTime?      @map("last_used_at") @db.Timestamptz(3)
+  lastUsedIp         String?        @map("last_used_ip") @db.VarChar(64)
+  createdById        String?        @map("created_by_id")
+  revokedAt          DateTime?      @map("revoked_at") @db.Timestamptz(3)
+  revokedById        String?        @map("revoked_by_id")
+  rotatedFromId      String?        @map("rotated_from_id")
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([organizationId, status])
+  @@map("api_keys")
+}
+
+/// When an organization has entries for an environment, API calls are accepted only from these CIDRs.
+model IpAllowlistEntry {
+  id             String         @id
+  organizationId String         @map("organization_id")
+  environment    ApiEnvironment
+  cidr           String         @db.VarChar(64)
+  label          String?        @db.VarChar(80)
+  createdById    String?        @map("created_by_id")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([organizationId, environment, cidr])
+  @@map("ip_allowlist_entries")
+}
+
+/// One row per API-key request (no bodies, no query strings). Purged after 90 days.
+model ApiRequestLog {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  apiKeyId       String?  @map("api_key_id")
+  /// Partner key acting for a merchant: the partner organization.
+  partnerId      String?  @map("partner_id")
+  method         String   @db.VarChar(8)
+  path           String   @db.VarChar(200)
+  statusCode     Int      @map("status_code")
+  durationMs     Int      @map("duration_ms")
+  errorCode      String?  @map("error_code") @db.VarChar(60)
+  ipAddress      String?  @map("ip_address") @db.VarChar(64)
+  requestId      String?  @map("request_id") @db.VarChar(64)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([organizationId, createdAt(sort: Desc)])
+  @@index([apiKeyId, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("api_request_logs")
+}
+
+/// Commission paid out to a reseller (Dr reseller COMMISSION_PAYABLE / Cr bank).
+model CommissionPayout {
+  id          String   @id
+  resellerId  String   @map("reseller_id")
+  amountMinor BigInt   @map("amount_minor")
+  utr         String   @db.VarChar(40)
+  periodNote  String?  @map("period_note") @db.VarChar(120)
+  journalId   String   @map("journal_id")
+  createdById String?  @map("created_by_id")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([resellerId, utr])
+  @@index([resellerId, createdAt(sort: Desc)])
+  @@map("commission_payouts")
 }

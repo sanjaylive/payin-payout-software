@@ -135,24 +135,29 @@ The pino redaction list is centralised in `packages/logger` and **cannot be disa
 
 ## 6. Public API security (Phase 9)
 
-**Credentials:** `pk_live_…` / `pk_test_…` is the public key ID, and `sk_live_…` is the secret, shown once.
+Full specification: [API.md](./API.md).
 
-- The secret is stored **encrypted**, not hashed, because HMAC verification needs it. A SHA-256 hash is also stored for constant-time existence checks, along with `secretLast4` for display.
-- **Rotation:** creating a new key leaves the old key valid until an optional `expiresAt` overlap window ends.
-
-**Request signing:**
+- **Credentials.** `pk_test_…` / `pk_live_…` is the public key id, and `sk_…` is the secret, shown once. HMAC verification needs the secret, so it is stored **encrypted** (AAD = key id), not hashed. Only `secretLast4` is ever displayed. Key permissions are a subset of the creator's. **Rotation** leaves the old key valid for an overlap window (default 24 h).
+- **Request signing:**
 
 ```
 X-Pay2All-Key:       pk_live_…
-X-Pay2All-Timestamp: 1767225600            (unix seconds)
-X-Pay2All-Signature: v1=hex(HMAC_SHA256(secret, `${timestamp}.${METHOD}.${pathWithQuery}.${sha256hex(rawBody)}`))
+X-Pay2All-Timestamp: 1767225600            (unix seconds, ±300 s)
+X-Pay2All-Nonce:     6f1c0e2a-…            (fresh per request)
+X-Pay2All-Signature: v1=hex(HMAC_SHA256(secret, `${timestamp}.${nonce}.${METHOD}.${pathWithQuery}.${sha256hex(rawBody)}`))
 ```
 
-- The timestamp must be within ±300 s. The `(key, signature)` pair is stored in Redis with a 600 s TTL using `SET NX`, so a repeated signature is rejected as a replay.
-- Comparison is constant-time (`crypto.timingSafeEqual`).
-- **IP allowlist:** checked per organization and environment (CIDR) after signature verification. A failure returns `403 IP_NOT_ALLOWED` and creates an audit or security event.
-- **Rate limits:** Redis token bucket per API key, with per-merchant overrides (`RateLimitPolicy`). Responses carry `RateLimit-*` headers.
-- **Idempotency:** `Idempotency-Key` is required on `POST /v1/payments`, `/v1/payouts` and `/v1/payments/:id/refunds`. See PAYIN_FLOW.md and PAYOUT_FLOW.md.
+- **Replay protection.** Each nonce is accepted once per key (Redis `SET NX`, 10-minute TTL). This replaces the original "store the signature" design, which would have rejected two legitimately identical requests made in the same second. Comparison is constant-time.
+- **IP allowlist:**
+  - checked per organization and environment (CIDR, via `net.BlockList`) after signature verification;
+  - enforced once entries exist;
+  - a failure returns `403 IP_NOT_ALLOWED` and is logged.
+- **Rate limits:**
+  - a sliding window per API key (`RateLimit-*` headers; `429` + `Retry-After`);
+  - IPs with repeated authentication failures are throttled before key lookup.
+- **Surface.** Only routes marked `@ApiKeyAccess` accept keys. Dashboard-only actions (approvals, keys, team, webhooks configuration) always reject them, and API-key sessions can never satisfy MFA-gated actions.
+- **Partners.** `X-Pay2All-Merchant` is honoured only for API-partner keys, and only for merchants whose parent is that partner.
+- **Idempotency.** `Idempotency-Key` is required on `POST /v1/payments`, `/v1/payouts` and `/v1/payments/:id/refunds`. See PAYIN_FLOW.md and PAYOUT_FLOW.md.
 
 ## 7. Webhook signing (Phase 7)
 

@@ -4,7 +4,7 @@ import { createPaymentSchema, createRefundSchema, idSchema, listPaymentsQuerySch
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { PaymentsService } from './payments.service';
 import { RefundsService } from './refunds.service';
@@ -22,6 +22,7 @@ export class PaymentsController {
   ) {}
 
   @Post('payments')
+  @ApiKeyAccess()
   @RequirePermissions('payin.create')
   @ApiOperation({ summary: 'Create a payment (UPI QR / intent / link). Idempotent per Idempotency-Key.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -32,6 +33,7 @@ export class PaymentsController {
   }
 
   @Get('payments')
+  @ApiKeyAccess()
   @RequirePermissions('payin.read')
   @ApiZodQuery(listPaymentsQuerySchema)
   list(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(listPaymentsQuerySchema)) q: z.output<typeof listPaymentsQuerySchema>) {
@@ -39,6 +41,7 @@ export class PaymentsController {
   }
 
   @Get('payments/stats')
+  @ApiKeyAccess()
   @RequirePermissions('payin.read')
   @ApiZodQuery(paymentStatsQuerySchema)
   stats(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(paymentStatsQuerySchema)) q: z.output<typeof paymentStatsQuerySchema>) {
@@ -46,12 +49,14 @@ export class PaymentsController {
   }
 
   @Get('payments/:id')
+  @ApiKeyAccess()
   @RequirePermissions('payin.read')
   get(@CurrentActor() actor: Actor, @Param('id', paymentIdPipe) id: string) {
     return this.payments.get(actor, id);
   }
 
   @Post('payments/:id/refunds')
+  @ApiKeyAccess()
   @RequirePermissions('payin.refund')
   @ApiOperation({ summary: 'Refund a captured payment (partial or full). Idempotent per Idempotency-Key.' })
   @ApiHeader({ name: 'Idempotency-Key', required: true })
@@ -62,6 +67,7 @@ export class PaymentsController {
   }
 
   @Get('refunds')
+  @ApiKeyAccess()
   @RequirePermissions('payin.read')
   @ApiZodQuery(listRefundsQuerySchema)
   listRefunds(@CurrentActor() actor: Actor, @Query(new ZodValidationPipe(listRefundsQuerySchema)) q: z.output<typeof listRefundsQuerySchema>) {

@@ -15,7 +15,7 @@ import {
 import type { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequireAnyPermission, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequireAnyPermission, RequirePermissions } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { AdjustmentsService } from './adjustments.service';
 import { LedgerService } from './ledger.service';
@@ -34,6 +34,7 @@ export class LedgerController {
   ) {}
 
   @Get('balances')
+  @ApiKeyAccess()
   @RequirePermissions('ledger.read')
   @ApiOperation({ summary: 'Merchant balance buckets (available, pending, unsettled, reserved, lien, settled)' })
   @ApiZodQuery(balancesQuerySchema)

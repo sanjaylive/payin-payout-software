@@ -121,7 +121,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Manages API partner integration, credentials and mapped merchants',
     permissions: [
-      'organization.read', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read',
+      'organization.read', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read', 'merchant.create',
       'payin.read', 'payin.create', 'payin.refund', 'payout.read', 'payout.create',
       'payout.approve', 'beneficiary.read', 'beneficiary.manage', 'ledger.read', 'settlement.read',
       'pricing.read', 'limit.read', 'approval_policy.manage', 'webhook.read', 'webhook.manage',

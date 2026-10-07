@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { AccessModule } from '../access/access.module';
+import { ApiKeysModule } from '../api-keys/api-keys.module';
 import { AuditModule } from '../audit/audit.module';
 import { AuthController } from './auth.controller';
 import { AuthGuard } from './auth.guard';
@@ -12,7 +13,7 @@ import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 
 @Module({
-  imports: [JwtModule.register({}), AccessModule, AuditModule],
+  imports: [JwtModule.register({}), AccessModule, AuditModule, ApiKeysModule],
   controllers: [AuthController],
   providers: [
     TokenService,

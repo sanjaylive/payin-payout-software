@@ -23,10 +23,10 @@ export class TenantScopeService {
     switch (actor.organizationType) {
       case 'PLATFORM':
         return { kind: 'ALL' };
+      // Resellers and API partners both see themselves plus the merchants directly under them.
       case 'RESELLER':
-        return { kind: 'RESELLER', resellerOrgId: actor.organizationId };
-      // API partner merchant mappings arrive in Phase 9; until then partners see only their own org.
       case 'API_PARTNER':
+        return { kind: 'RESELLER', resellerOrgId: actor.organizationId };
       case 'MERCHANT':
         return { kind: 'ORG', orgId: actor.organizationId };
     }

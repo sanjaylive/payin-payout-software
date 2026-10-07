@@ -11,6 +11,7 @@ import { PayoutProcessorService } from '../modules/payouts/payout-processor.serv
 import { InboundEventsService } from '../modules/provider-events/inbound-events.service';
 import { ReconciliationService } from '../modules/reconciliation/reconciliation.service';
 import { SettlementsService } from '../modules/settlements/settlements.service';
+import { CommissionsService } from '../modules/commissions/commissions.service';
 
 const job = (name: string, seconds: number, run: () => Promise<unknown>): ScheduledJob => ({
   name,
@@ -36,6 +37,7 @@ export class JobsRunner implements OnApplicationShutdown {
     private readonly inbound: InboundEventsService,
     private readonly settlements: SettlementsService,
     private readonly recon: ReconciliationService,
+    private readonly commissions: CommissionsService,
   ) {}
 
   async start(): Promise<void> {
@@ -59,6 +61,8 @@ export class JobsRunner implements OnApplicationShutdown {
         job('bulk-payouts', 10, () => this.bulk.processConfirmed()),
         job('settlement-generator', 300, () => this.settlements.generateDue()),
         job('reconciliation-matcher', 15, () => this.recon.processQueued()),
+        job('commission-accrual', 60, () => this.commissions.accrueDue()),
+        job('api-log-retention', 3600, () => this.purgeApiLogs()),
         job('idempotency-sweeper', 60, () => this.payin.sweepIdempotency()),
       ],
       5_000,
@@ -87,6 +91,11 @@ export class JobsRunner implements OnApplicationShutdown {
     } catch (err) {
       this.logger.error({ err, msg: 'Kafka fast path unavailable; relying on polling' });
     }
+  }
+
+  /** API request logs are kept 90 days. */
+  private async purgeApiLogs() {
+    await this.prisma.apiRequestLog.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - 90 * 86_400_000) } } });
   }
 
   async onApplicationShutdown(): Promise<void> {

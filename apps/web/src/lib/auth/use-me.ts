@@ -19,6 +19,8 @@ export function homePathFor(me: Pick<Me, 'organization' | 'session'>): string {
       return '/admin';
     case 'RESELLER':
       return '/reseller';
+    case 'API_PARTNER':
+      return '/partner';
     default:
       return '/dashboard';
   }

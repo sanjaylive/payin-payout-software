@@ -99,7 +99,9 @@ export class LedgerService {
     };
   }
 
-  async balancesFor(actor: Actor, merchantId: string) {
+  async balancesFor(actor: Actor, requested: string | undefined) {
+    const merchantId = requested ?? (actor.organizationType === 'MERCHANT' ? actor.organizationId : undefined);
+    if (!merchantId) throw new AppError(ErrorCode.INVALID_REQUEST, 'merchant_id is required');
     await this.merchants.require(actor, merchantId);
     return this.merchantBalances(merchantId);
   }

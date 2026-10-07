@@ -23,6 +23,7 @@ import { ProviderEventsModule } from './modules/provider-events/provider-events.
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { ReconciliationModule } from './modules/reconciliation/reconciliation.module';
 import { SettlementsModule } from './modules/settlements/settlements.module';
+import { CommissionsModule } from './modules/commissions/commissions.module';
 import { ProvidersModule } from './modules/providers/providers.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
@@ -74,6 +75,7 @@ export class AppModule implements NestModule {
         WebhooksModule,
         SettlementsModule,
         ReconciliationModule,
+        CommissionsModule,
       ],
       controllers: [HealthController],
       providers: [

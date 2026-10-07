@@ -31,6 +31,8 @@ function slugify(name: string): string {
 export interface CreateMerchantInput {
   displayName: string;
   resellerId: string | null;
+  /** Organization parent when it isn't the reseller (an API partner). Defaults to reseller, then platform. */
+  parentId?: string | null;
   source?: string | null;
   assignedSalesUserId?: string | null;
 }
@@ -44,6 +46,26 @@ export class MerchantsService {
     private readonly audit: AuditService,
     private readonly outbox: OutboxService,
   ) {}
+
+  /**
+   * Where a new merchant sits: resellers and API partners always create under themselves; platform
+   * staff may choose a reseller (commission relationship) or an API partner (integration relationship).
+   */
+  async resolveParent(actor: Actor, body: { reseller_id?: string; partner_id?: string }): Promise<{ resellerId: string | null; parentId: string | null }> {
+    if (actor.organizationType === 'API_PARTNER') {
+      if (body.reseller_id || (body.partner_id && body.partner_id !== actor.organizationId)) throw new AppError(ErrorCode.NOT_FOUND, 'Organization not found');
+      return { resellerId: null, parentId: actor.organizationId };
+    }
+    if (body.partner_id) {
+      if (actor.organizationType !== 'PLATFORM') throw new AppError(ErrorCode.FORBIDDEN);
+      const partner = await this.scope.requireOrganization(actor, body.partner_id);
+      if (partner.type !== 'API_PARTNER') throw new AppError(ErrorCode.INVALID_REQUEST, 'partner_id must be an API partner organization');
+      if (partner.status !== 'ACTIVE') throw new AppError(ErrorCode.INVALID_REQUEST, 'API partner is not active');
+      return { resellerId: null, parentId: partner.id };
+    }
+    const resellerId = await this.resolveReseller(actor, body.reseller_id);
+    return { resellerId, parentId: resellerId };
+  }
 
   /** Resolve the parent reseller for a new merchant: resellers always create under themselves. */
   async resolveReseller(actor: Actor, requested?: string): Promise<string | null> {
@@ -69,7 +91,7 @@ export class MerchantsService {
         type: 'MERCHANT',
         name: input.displayName,
         slug: slugify(input.displayName),
-        parentId: input.resellerId ?? platform.id,
+        parentId: input.parentId ?? input.resellerId ?? platform.id,
         source: input.source ?? null,
         assignedSalesUserId: input.assignedSalesUserId ?? null,
       },
@@ -89,9 +111,9 @@ export class MerchantsService {
   }
 
   async create(actor: Actor, body: z.output<typeof createMerchantSchema>) {
-    const resellerId = await this.resolveReseller(actor, body.reseller_id);
+    const { resellerId, parentId } = await this.resolveParent(actor, body);
     const id = await this.prisma.$transaction((tx) =>
-      this.createInTx(tx, actor, { displayName: body.display_name, resellerId, source: body.source ?? null }),
+      this.createInTx(tx, actor, { displayName: body.display_name, resellerId, parentId, source: body.source ?? null }),
     );
     return this.get(actor, id);
   }
