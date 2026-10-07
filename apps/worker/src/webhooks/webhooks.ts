@@ -1,7 +1,7 @@
 import { metrics } from '@pay2all/telemetry';
 import type { FieldEncryptor } from '@pay2all/auth';
 import { newId } from '@pay2all/auth';
-import type { PrismaClient, TransactionClient, WebhookDelivery } from '@pay2all/database';
+import { notifyInbox, type PrismaClient, type TransactionClient, type WebhookDelivery } from '@pay2all/database';
 import { type EventEnvelope, signWebhook, WEBHOOK_MAX_ATTEMPTS, WEBHOOK_RETRY_DELAYS_MS, WEBHOOK_SIGNATURE_HEADER } from '@pay2all/events';
 import type { Logger } from '@pay2all/logger';
 import { queueNotification } from '../notifications/notifications';
@@ -125,6 +125,17 @@ export class WebhookSender {
   }
 
   private async notifyDisabled(tx: TransactionClient, merchantId: string, url: string) {
+    await notifyInbox(tx, {
+      organizationId: merchantId,
+      audience: { permission: 'webhook.manage' },
+      category: 'WEBHOOK',
+      severity: 'CRITICAL',
+      title: 'Webhook endpoint disabled',
+      body: `${new URL(url).host} failed ${AUTO_DISABLE_AFTER} deliveries in a row. Fix it, enable it again, then replay failed deliveries.`,
+      link: '/developers/webhooks',
+      resourceType: 'webhook_endpoint',
+      dedupeKey: `webhook-disabled:${url}:${new Date().toISOString().slice(0, 13)}`,
+    });
     const admins = await tx.userRole.findMany({ where: { organizationId: merchantId, role: { key: { in: ['MERCHANT_OWNER', 'MERCHANT_ADMIN', 'MERCHANT_DEVELOPER'] } }, user: { status: 'ACTIVE' } }, select: { user: { select: { id: true, email: true } } } });
     for (const { user } of admins) {
       await queueNotification(tx, this.encryptor, {

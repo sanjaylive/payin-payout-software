@@ -2431,3 +2431,50 @@ model LoginEvent {
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("login_events")
 }
+
+// ---- In-app notifications (docs/NOTIFICATIONS.md) ------------------------------------------------------
+
+enum InboxCategory {
+  PAYMENT
+  PAYOUT
+  SETTLEMENT
+  RISK
+  SECURITY
+  COMPLIANCE
+  WEBHOOK
+  REPORT
+  SYSTEM
+}
+
+enum InboxSeverity {
+  INFO
+  SUCCESS
+  WARNING
+  CRITICAL
+}
+
+/// The bell: one row per recipient user (own read state). Inserting a row fires pg_notify via a
+/// trigger, which Postgres delivers only on COMMIT; API nodes push it to open tabs over SSE.
+model InboxNotification {
+  id             String        @id
+  userId         String        @map("user_id")
+  organizationId String        @map("organization_id")
+  category       InboxCategory
+  severity       InboxSeverity @default(INFO)
+  title          String        @db.VarChar(140)
+  body           String        @db.VarChar(500)
+  /// In-app path to open (e.g. /payout/transactions?payout=pout_…). Never an external URL.
+  link           String?       @db.VarChar(300)
+  resourceType   String?       @map("resource_type") @db.VarChar(40)
+  resourceId     String?       @map("resource_id") @db.VarChar(80)
+  /// Per-recipient idempotency (a retried producer never duplicates a notification).
+  dedupeKey      String?       @map("dedupe_key") @db.VarChar(160)
+  readAt         DateTime?     @map("read_at") @db.Timestamptz(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt(sort: Desc), id(sort: Desc)])
+  @@index([userId, readAt])
+  @@index([createdAt])
+  @@map("inbox_notifications")
+}

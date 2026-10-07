@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { pipeline, Transform } from 'node:stream';
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { PrismaClient, ReportExport } from '@pay2all/database';
+import { notifyInbox, type PrismaClient, type ReportExport } from '@pay2all/database';
 import { metrics } from '@pay2all/telemetry';
 import type { ReportTypeValue } from '@pay2all/validation';
 import { ApiConfig } from '../../config/api-config';
@@ -37,6 +37,26 @@ export class ReportGeneratorService {
   ) {}
 
   private static readonly LABELS: Record<string, string> = { PAYMENTS: 'Payins', REFUNDS: 'Refunds', PAYOUTS: 'Payouts', SETTLEMENTS: 'Settlements', LOGIN_EVENTS: 'Login activity' };
+
+  /** In-app notice to whoever asked for the export (always, unlike the opt-in email). */
+  private async ringBell(exp: ReportExport, outcome: 'COMPLETED' | 'FAILED', rows?: number) {
+    if (!exp.requestedById) return;
+    const org = await this.prisma.organization.findUnique({ where: { id: exp.organizationId }, select: { type: true } });
+    const path = org?.type === 'PLATFORM' ? '/admin/reports' : org?.type === 'RESELLER' ? '/reseller/reports' : org?.type === 'API_PARTNER' ? '/partner/reports' : '/reports';
+    const label = ReportGeneratorService.LABELS[exp.type] ?? exp.type;
+    await notifyInbox(this.prisma, {
+      organizationId: exp.organizationId,
+      audience: { userIds: [exp.requestedById] },
+      category: 'REPORT',
+      severity: outcome === 'COMPLETED' ? 'SUCCESS' : 'WARNING',
+      title: outcome === 'COMPLETED' ? `${label} export is ready` : `${label} export failed`,
+      body: outcome === 'COMPLETED' ? `${(rows ?? 0).toLocaleString('en-IN')} rows · available for 7 days.` : 'Please request it again.',
+      link: path,
+      resourceType: 'report_export',
+      resourceId: exp.id,
+      dedupeKey: `report:${exp.id}:${outcome}`,
+    });
+  }
 
   /**
    * "Email me": tell the requester the file is ready (or failed). The email carries a link to the
@@ -128,6 +148,7 @@ export class ReportGeneratorService {
       metrics.reportExports.inc({ type, outcome: 'completed' });
       metrics.reportRows.inc({ type }, rows);
       await this.notifyRequester(exp, 'COMPLETED', rows);
+      await this.ringBell(exp, 'COMPLETED', rows);
     } catch (err) {
       counter.destroy();
       await upload.catch(() => undefined);
@@ -148,7 +169,10 @@ export class ReportGeneratorService {
       },
     });
     metrics.reportExports.inc({ type: exp.type, outcome: retry ? 'retry' : 'failed' });
-    if (!retry) await this.notifyRequester(exp, 'FAILED');
+    if (!retry) {
+      await this.notifyRequester(exp, 'FAILED');
+      await this.ringBell(exp, 'FAILED');
+    }
   }
 
   /** Completed exports are downloadable for 7 days, then the file is deleted. */

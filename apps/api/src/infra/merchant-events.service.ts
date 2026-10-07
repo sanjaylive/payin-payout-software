@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import type { DbClient, Prisma } from '@pay2all/database';
+import { type DbClient, notifyInbox, platformOrganizationId, type Prisma } from '@pay2all/database';
 import { OutboxService } from './outbox.service';
+import { inboxRulesFor } from './inbox-rules';
 
 export type MerchantEventType =
   | 'payment.created'
@@ -35,6 +36,12 @@ export class MerchantEventsService {
     const payload = JSON.parse(JSON.stringify({ id, type, created_at: new Date().toISOString(), data }, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v))) as Prisma.InputJsonValue;
     await tx.webhookEvent.create({ data: { id, merchantId, type, payload, resourceId } });
     await this.outbox.add(tx, { eventType: type, aggregateType: type.split('.')[0]!, aggregateId: resourceId, payload: { event_id: id, merchant_id: merchantId } });
+    // The bell (docs/NOTIFICATIONS.md): same transaction, so it exists only if the event does.
+    for (const rule of inboxRulesFor(type, resourceId, data)) {
+      const { platform, ...input } = rule;
+      const organizationId = platform ? await platformOrganizationId(tx) : merchantId;
+      if (organizationId) await notifyInbox(tx, { ...input, organizationId });
+    }
     return id;
   }
 }

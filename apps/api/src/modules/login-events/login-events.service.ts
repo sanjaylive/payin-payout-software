@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import type { LoginEvent, LoginOutcome, Prisma, PrismaClient } from '@pay2all/database';
+import { type LoginEvent, type LoginOutcome, notifyInbox, type Prisma, type PrismaClient } from '@pay2all/database';
 import { ErrorCode } from '@pay2all/types';
 import type { listLoginEventsQuerySchema, loginEventsExportSchema, loginLocationSchema } from '@pay2all/validation';
 import type { Response } from 'express';
@@ -74,7 +74,7 @@ export class LoginEventsService {
       if (!organizationId && a.userId) {
         organizationId = (await this.prisma.userRole.findFirst({ where: { userId: a.userId }, orderBy: { createdAt: 'asc' }, select: { organizationId: true } }))?.organizationId ?? null;
       }
-      await this.prisma.loginEvent.create({
+      const event = await this.prisma.loginEvent.create({
         data: {
           id: newId('loginEvent'),
           userId: a.userId,
@@ -94,9 +94,39 @@ export class LoginEventsService {
           requestId: ctx?.requestId ?? null,
         },
       });
+      if (a.outcome === 'SUCCESS' && a.userId && organizationId) await this.alertIfNewDevice(event, a.userId, organizationId);
     } catch (err) {
       this.logger.error({ err, outcome: a.outcome }, 'Could not record login event');
     }
+  }
+
+  /**
+   * Security notice to the user when a sign-in comes from a browser/OS + IP never seen in their
+   * previous successful sign-ins (not on their very first one).
+   */
+  private async alertIfNewDevice(e: LoginEvent, userId: string, organizationId: string) {
+    const previous = await this.prisma.loginEvent.findMany({
+      where: { userId, outcome: 'SUCCESS', id: { not: e.id } },
+      select: { ipAddress: true, browser: true, os: true },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    });
+    if (!previous.length) return;
+    const seen = previous.some((p) => p.ipAddress === e.ipAddress && p.browser === e.browser && p.os === e.os);
+    if (seen) return;
+    const where = [e.browser, e.os].filter(Boolean).join(' on ') || 'an unknown device';
+    await notifyInbox(this.prisma, {
+      organizationId,
+      audience: { userIds: [userId] },
+      category: 'SECURITY',
+      severity: 'WARNING',
+      title: 'New sign-in to your account',
+      body: `${where} from ${e.ipAddress ?? 'an unknown address'}${e.latitude !== null ? ' (location shared)' : ''}. If this wasn’t you, change your password and sign out other sessions.`,
+      link: '/settings/security',
+      resourceType: 'login_event',
+      resourceId: e.id,
+      dedupeKey: `login:${e.id}`,
+    });
   }
 
   /** Which organizations' sign-ins the actor may see, narrowed to one when asked. */

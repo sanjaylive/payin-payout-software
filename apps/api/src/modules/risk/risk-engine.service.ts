@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import type { DbClient, PrismaClient, RiskRule } from '@pay2all/database';
+import { type DbClient, notifyInbox, platformOrganizationId, type PrismaClient, type RiskRule } from '@pay2all/database';
 import { metrics } from '@pay2all/telemetry';
 import { type RiskActionValue, riskParamsSchemas, type RiskRuleTypeValue, SYNC_RULE_TYPES } from '@pay2all/validation';
 import type Redis from 'ioredis';
@@ -241,6 +241,25 @@ export class RiskEngineService {
       },
     });
     if (e.enforced && e.merchantId) await this.applyMerchantAction(db, eventId, e.merchantId, action, e.rule.code);
+    // Ring the risk team's bell for anything waiting on a reviewer (held payouts are announced by
+    // the payout event itself, with the merchant's context).
+    if (open && e.subjectType !== 'PAYOUT') {
+      const platform = await platformOrganizationId(db);
+      if (platform) {
+        await notifyInbox(db, {
+          organizationId: platform,
+          audience: { permission: 'risk.review' },
+          category: 'RISK',
+          severity: action === 'DISABLE_PAYIN' || action === 'DISABLE_PAYOUT' ? 'CRITICAL' : 'WARNING',
+          title: `Risk review needed: ${e.rule.name}`,
+          body: e.hit.reason,
+          link: '/admin/risk/reviews',
+          resourceType: 'risk_event',
+          resourceId: eventId,
+          dedupeKey: `risk:${eventId}`,
+        });
+      }
+    }
     return { eventId, open };
   }
 

@@ -9,6 +9,7 @@ import type { Me } from '@/lib/api/types';
 import type { NavItem } from './nav-config';
 import { Sidebar } from './sidebar';
 import { UserMenu } from './user-menu';
+import { NotificationBell } from '@/features/notifications/notification-bell';
 
 const ORG_LABEL: Record<string, string> = { PLATFORM: 'Platform', RESELLER: 'Reseller', API_PARTNER: 'API Partner', MERCHANT: 'Merchant' };
 
@@ -44,7 +45,8 @@ export function AppShell({ me, nav, securityHref, children }: { me: Me; nav: Nav
             <p className="truncate text-sm font-semibold">{me.organization.name}</p>
             <p className="text-muted-foreground text-xs">{ORG_LABEL[me.organization.type]} account</p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <NotificationBell />
             <UserMenu me={me} securityHref={securityHref} />
           </div>
         </header>

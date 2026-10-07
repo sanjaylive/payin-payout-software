@@ -1,6 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import type { DbClient, MerchantStatus, Prisma, PrismaClient } from '@pay2all/database';
+import { type DbClient, type MerchantStatus, notifyInbox, platformOrganizationId, type Prisma, type PrismaClient } from '@pay2all/database';
 import { ErrorCode } from '@pay2all/types';
 import type {
   approveMerchantSchema,
@@ -85,7 +85,36 @@ export class ComplianceService {
       tx,
     );
     await this.outbox.add(tx, { eventType: EVENT_BY_ACTION[action], aggregateType: 'merchant', aggregateId: merchantId, version: current.version + 1, payload: { merchant_id: merchantId, from_status: current.status, to_status: rule.to } });
+    await this.ringBell(tx, merchantId, action, opts.reason ?? null, current.version + 1);
     return rule.to;
+  }
+
+  /** Bell notifications for application decisions (docs/NOTIFICATIONS.md §2). */
+  private async ringBell(tx: DbClient, merchantId: string, action: MerchantTransition, reason: string | null, version: number) {
+    const org = await tx.organization.findUnique({ where: { id: merchantId }, select: { name: true } });
+    const name = org?.name ?? 'Your business';
+    const base = { resourceType: 'merchant', resourceId: merchantId, dedupeKey: `merchant:${merchantId}:${action}:v${version}` };
+    const toMerchant = (severity: 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL', title: string, body: string) =>
+      notifyInbox(tx, { ...base, organizationId: merchantId, audience: { permission: 'merchant.read' }, category: 'COMPLIANCE', severity, title, body, link: '/compliance' });
+    switch (action) {
+      case 'SUBMITTED': {
+        const platform = await platformOrganizationId(tx);
+        if (platform) await notifyInbox(tx, { ...base, organizationId: platform, audience: { permission: 'compliance.approve' }, category: 'COMPLIANCE', severity: 'INFO', title: `New application to review: ${name}`, body: 'Submitted for compliance review.', link: `/admin/merchants/${merchantId}` });
+        return;
+      }
+      case 'APPROVED':
+        return void (await toMerchant('SUCCESS', 'Your account is approved', 'You can now accept payments and send payouts (as enabled for your account).'));
+      case 'INFORMATION_REQUESTED':
+        return void (await toMerchant('WARNING', 'More information needed for your application', reason ?? 'Please update your application and resubmit.'));
+      case 'REJECTED':
+        return void (await toMerchant('CRITICAL', 'Your application was not approved', reason ?? 'Contact support for details.'));
+      case 'SUSPENDED':
+        return void (await toMerchant('CRITICAL', 'Your account has been suspended', reason ?? 'Contact support for details.'));
+      case 'REACTIVATED':
+        return void (await toMerchant('SUCCESS', 'Your account is active again', reason ?? ''));
+      default:
+        return;
+    }
   }
 
   private async assertTransitionAllowed(tx: DbClient, merchantId: string, action: MerchantTransition) {

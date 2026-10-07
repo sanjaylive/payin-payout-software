@@ -48,3 +48,4 @@ export function isUniqueViolation(err: unknown, target?: string): boolean {
   return JSON.stringify(err.meta ?? {}).includes(target);
 }
 export * from './consumer-store';
+export * from './inbox';

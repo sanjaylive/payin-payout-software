@@ -948,3 +948,22 @@ export interface LoginSummary {
   distinct_ips: number;
   last_success_at: string | null;
 }
+
+// ---- Bell notifications -------------------------------------------------------------------------------
+
+export type InboxCategory = 'PAYMENT' | 'PAYOUT' | 'SETTLEMENT' | 'RISK' | 'SECURITY' | 'COMPLIANCE' | 'WEBHOOK' | 'REPORT' | 'SYSTEM';
+export type InboxSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL';
+
+export interface InboxItem {
+  id: string;
+  category: InboxCategory;
+  severity: InboxSeverity;
+  title: string;
+  body: string;
+  link: string | null;
+  resource_type: string | null;
+  resource_id: string | null;
+  read: boolean;
+  read_at: string | null;
+  created_at: string;
+}

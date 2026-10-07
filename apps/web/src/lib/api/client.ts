@@ -29,7 +29,7 @@ interface RequestOptions {
   headers?: Record<string, string>;
 }
 
-function buildUrl(path: string, query?: Query): string {
+export function buildUrl(path: string, query?: Query): string {
   const url = new URL(path, API_URL);
   for (const [k, v] of Object.entries(query ?? {})) {
     if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, String(v));

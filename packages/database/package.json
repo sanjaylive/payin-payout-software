@@ -31,10 +31,13 @@
     "@pay2all/auth": "workspace:*",
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "ulid": "3.0.2"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
     "@pay2all/config": "workspace:*",
+    "@pay2all/validation": "workspace:*",
     "@types/node": "^24.0.0",
     "@types/pg": "^8.15.5",
     "dotenv": "^17.2.3",
@@ -42,8 +45,6 @@
     "prisma": "^7.10.0",
     "tsx": "^4.20.6",
     "typescript": "~5.9.3",
-    "vitest": "^3.2.7",
-    "@aws-sdk/client-s3": "^3.1146.0",
-    "@pay2all/validation": "workspace:*"
+    "vitest": "^3.2.7"
   }
 }

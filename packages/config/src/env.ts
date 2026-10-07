@@ -38,6 +38,9 @@ const base = {
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   DATABASE_URL: z.url(),
   DATABASE_POOL_MAX: int(20, 1),
+  /** Direct (non-pooled) connection for LISTEN/NOTIFY — needed if DATABASE_URL goes through
+   *  PgBouncer in transaction mode. Empty = use DATABASE_URL. */
+  DATABASE_LISTEN_URL: z.string().default(''),
   REDIS_URL: z.url(),
   ENCRYPTION_KEY: z
     .string()
