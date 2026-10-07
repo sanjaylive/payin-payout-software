@@ -62,6 +62,8 @@ export const ID_PREFIXES = {
   riskEvent: 'rev',
   riskAction: 'rac',
   reportExport: 'rpt',
+  apiVendor: 'avd',
+  messagingService: 'msv',
   commissionPayout: 'cmp',
   webhookEvent: 'evt',
   webhookDelivery: 'whd',

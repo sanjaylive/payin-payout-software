@@ -28,6 +28,7 @@ export function presentProvider(p: ProviderRow, health?: { payin?: HealthMetrics
     code: p.code,
     name: p.name,
     kind: p.kind,
+    vendor_id: p.vendorId,
     adapter: p.adapter,
     adapter_label: adapter?.label ?? p.adapter,
     required_credentials: adapter?.credentialKeys ?? [],

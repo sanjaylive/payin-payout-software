@@ -1,7 +1,6 @@
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
-  BookOpenText,
   Building2,
   ChartColumn,
   Code2,
@@ -15,7 +14,6 @@ import {
   Network,
   Receipt,
   Scale,
-  ServerCog,
   Settings,
   ShieldAlert,
   ShieldCheck,
@@ -171,16 +169,6 @@ export const ADMIN_NAV: NavItem[] = [
       { label: 'Adjustments', href: '/admin/ledger/adjustments', phase: 3, permission: 'ledger.adjust.approve' },
     ],
   },
-  {
-    label: 'Providers',
-    icon: ServerCog,
-    children: [
-      { label: 'Payin Providers', href: '/admin/providers/payin', phase: 4, permission: 'provider.read' },
-      { label: 'Payout Providers', href: '/admin/providers/payout', phase: 4, permission: 'provider.read' },
-      { label: 'Routes', href: '/admin/providers/routes', phase: 4, permission: 'provider.read' },
-      { label: 'Health', href: '/admin/providers/health', phase: 4, permission: 'provider.read' },
-    ],
-  },
   { label: 'Pricing', href: '/admin/pricing', icon: Tags, phase: 5, permission: 'pricing.read' },
   {
     label: 'Risk',
@@ -197,7 +185,16 @@ export const ADMIN_NAV: NavItem[] = [
   { label: 'Reports', href: '/admin/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },
   { label: 'Users & Roles', href: '/admin/users', icon: ShieldCheck, phase: 1, permission: 'user.read' },
   { label: 'Audit Logs', href: '/admin/audit-logs', icon: FileClock, phase: 1, permission: 'audit.read' },
-  { label: 'System Settings', href: '/admin/settings', icon: BookOpenText, phase: 10, permission: 'system.settings.manage' },
+  {
+    label: 'Settings',
+    icon: Settings,
+    children: [
+      { label: 'System', href: '/admin/settings', phase: 10, permission: 'system.settings.manage' },
+      { label: 'API Vendors', href: '/admin/settings/vendors', phase: 10, permission: 'provider.read' },
+      { label: 'Routing', href: '/admin/settings/routing', phase: 10, permission: 'provider.read' },
+      { label: 'Vendor Health', href: '/admin/settings/vendor-health', phase: 10, permission: 'provider.read' },
+    ],
+  },
 ];
 
 /** Find the nav leaf for a path (used by roadmap placeholder pages). */

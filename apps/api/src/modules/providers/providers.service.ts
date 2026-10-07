@@ -63,11 +63,14 @@ export class ProvidersService {
     if ((input.kind !== 'PAYOUT' && !adapter.payin) || (input.kind !== 'PAYIN' && !adapter.payout)) {
       throw new AppError(ErrorCode.INVALID_REQUEST, `Adapter "${input.adapter}" does not support ${input.kind}`);
     }
+    if (input.vendor_id && !(await this.prisma.apiVendor.findUnique({ where: { id: input.vendor_id }, select: { id: true } }))) {
+      throw new AppError(ErrorCode.NOT_FOUND, 'Vendor not found');
+    }
     try {
       const p = await this.prisma.$transaction(async (tx) => {
         // New providers start DISABLED until credentials are set and a connection test passes.
         const created = await tx.provider.create({
-          data: { id: newId('provider'), code: input.code, name: input.name, kind: input.kind, adapter: input.adapter, environment: input.environment, status: 'DISABLED', statusSource: 'MANUAL', statusReason: 'New provider — configure credentials and enable', capabilities: json(input.capabilities), config: json(input.config), costs: json(input.costs) },
+          data: { id: newId('provider'), code: input.code, name: input.name, kind: input.kind, adapter: input.adapter, environment: input.environment, vendorId: input.vendor_id ?? null, status: 'DISABLED', statusSource: 'MANUAL', statusReason: 'New provider — configure credentials and enable', capabilities: json(input.capabilities), config: json(input.config), costs: json(input.costs) },
           include: PROVIDER_INCLUDE,
         });
         await this.audit.record({ action: 'provider.created', resourceType: 'provider', resourceId: created.id, organizationId: null, newValue: { code: input.code, adapter: input.adapter, kind: input.kind } }, tx);

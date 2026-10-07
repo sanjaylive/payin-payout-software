@@ -18,6 +18,7 @@ import { seedPayoutPolicies } from './seed-payouts';
 import { seedPricing } from './seed-pricing';
 import { seedProviders } from './seed-providers';
 import { seedRiskRules } from './seed-risk';
+import { seedVendors } from './seed-vendors';
 
 loadDotenv({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
@@ -155,6 +156,7 @@ async function main() {
   await seedPricing(prisma, platform.id);
   await seedPayoutPolicies(prisma);
   await seedRiskRules(prisma);
+  await seedVendors(prisma);
   const salesId = created.get('sales@pay2all.local')!;
   await prisma.organization.updateMany({ where: { id: { in: [reseller.id, m1.id, m2.id] } }, data: { assignedSalesUserId: salesId } });
   if ((await prisma.salesLead.count()) === 0) {

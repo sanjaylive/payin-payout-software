@@ -12,6 +12,7 @@
     "test:integration": "vitest run --project integration --no-file-parallelism"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "3.1146.0",
     "@pay2all/auth": "workspace:*",
     "@pay2all/config": "workspace:*",
     "@pay2all/database": "workspace:*",
@@ -19,11 +20,13 @@
     "@pay2all/logger": "workspace:*",
     "@pay2all/providers": "workspace:*",
     "@pay2all/telemetry": "workspace:*",
+    "@pay2all/validation": "workspace:*",
     "dotenv": "^17.2.3",
     "ioredis": "^5.11.1",
     "kafkajs": "2.2.4",
     "nodemailer": "^10.0.15",
-    "pino": "^10.4.0"
+    "pino": "^10.4.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

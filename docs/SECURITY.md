@@ -116,7 +116,7 @@ approve(@Actor() actor: ActorContext, …)
 | --- | --- |
 | Passwords, recovery codes | argon2id hash (one-way) |
 | Refresh tokens, reset tokens | SHA-256 hash (high-entropy random input, so a slow hash is unnecessary) |
-| MFA secrets, provider credentials, webhook secrets, API secrets, bank account numbers, PAN of directors | AES-256-GCM, a random 96-bit IV per value, versioned envelope `v1.<keyId>.<iv>.<tag>.<ciphertext>` (base64url) |
+| MFA secrets, provider credentials, messaging-service credentials (SES keys, sms21 API key), webhook secrets, API secrets, bank account numbers, PAN of directors | AES-256-GCM, a random 96-bit IV per value, versioned envelope `v1.<keyId>.<iv>.<tag>.<ciphertext>` (base64url) |
 | Bank account dedupe | `HMAC-SHA256(ENCRYPTION_KEY-derived subkey, normalised account)`, which allows equality lookups without decryption |
 | Displayed account numbers | stored masked copy `XXXXXX1234`. The full number is decrypted only for provider calls and an audited "reveal" permission. |
 

@@ -49,6 +49,11 @@ export async function seedProviders(db: PrismaClient, sharmaId: string): Promise
         },
       }));
     ids.set(d.code, p.id);
+    // Every payment service belongs to an API vendor (docs/VENDORS.md); one per provider by default.
+    if (!p.vendorId) {
+      const vendor = await db.apiVendor.upsert({ where: { code: d.code }, create: { id: newId('apiVendor'), code: d.code, name: d.name }, update: {} });
+      await db.provider.update({ where: { id: p.id }, data: { vendorId: vendor.id } });
+    }
     if (d.adapter === 'mock' && !(await db.providerCredential.count({ where: { providerId: p.id } }))) {
       const values = { webhook_secret: `whsec_${randomBytes(24).toString('base64url')}` };
       await db.providerCredential.create({

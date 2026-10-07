@@ -115,7 +115,7 @@ export function ProviderDetail({ id }: { id: string }) {
 
   return (
     <div className="space-y-6">
-      <Link href={p.kind === 'PAYIN' ? '/admin/providers/payin' : '/admin/providers/payout'} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"><ArrowLeft className="size-4" /> Providers</Link>
+      <Link href={p.vendor_id ? `/admin/settings/vendors/${p.vendor_id}` : '/admin/settings/vendors'} className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-sm"><ArrowLeft className="size-4" /> API vendor</Link>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{p.name}</h1>

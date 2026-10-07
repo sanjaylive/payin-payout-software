@@ -479,3 +479,27 @@ As in Phase 5, the new pages were compiled and fetched but not visually checked 
 - 1000 TPS has **not** been demonstrated on a single laptop; the measured bottlenecks and the path to it are documented.
 - Risk rules fail open on evaluation errors (alerted).
 - RLS covers export reads, not every API path.
+
+### After Phase 10 — API vendors (2026-10-07)
+
+**Delivered:**
+- **API vendor master** (Admin → Settings → API Vendors):
+  - vendors group their payment services (existing providers, migrated one vendor per provider) and new messaging services;
+  - Settings also holds Routing (payments + messaging) and Vendor Health; the old Providers URLs redirect there.
+- **Notifications through vendors:**
+  - SMS, WhatsApp and email routed per channel by priority, with fallback;
+  - permanent rejections stop at once, transient failures fall through or retry;
+  - test sends through one service; the env SMTP fallback for email is kept.
+- **Integrations:**
+  - **Amazon SES** (v2 API);
+  - SMTP;
+  - **sms21.in** (SMS DLT templates or free text; WhatsApp templates or session text), built from sms21's OpenAPI spec, with idempotency keys per notification.
+- **Docs:** VENDORS.md.
+
+**Verification:**
+- **API:** 183 integration tests, 6 of them new (vendor master, write-only encrypted secrets, enable-requires-credentials, test sends, masking, platform-only).
+- **Worker:** 20 integration tests, 7 of them new (sms21 template / free text / WhatsApp endpoints, idempotency key, fallback, permanent vs transient, targeted test, no active service), plus 2 new SES unit tests.
+
+**Open:**
+- Delivery receipts (sms21 webhooks, SES bounce events).
+- Bank integrations (IDFC payout, Yes Bank payin) once their API documents are shared.

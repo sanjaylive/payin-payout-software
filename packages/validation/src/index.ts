@@ -15,3 +15,4 @@ export * from './settlements';
 export * from './api-keys';
 export * from './risk';
 export * from './reports';
+export * from './vendors';

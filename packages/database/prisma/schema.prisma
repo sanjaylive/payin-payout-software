@@ -65,6 +65,7 @@ enum ActorType {
 enum NotificationChannel {
   EMAIL
   SMS
+  WHATSAPP
 }
 
 enum NotificationStatus {
@@ -333,22 +334,26 @@ model OutboxEvent {
 }
 
 model Notification {
-  id                String              @id
-  channel           NotificationChannel
-  template          String              @db.VarChar(80)
+  id                 String              @id
+  channel            NotificationChannel
+  template           String              @db.VarChar(80)
   /// Masked recipient only (a***@example.com) — full address lives with the subject user.
-  recipientMasked   String              @map("recipient_masked") @db.VarChar(254)
-  userId            String?             @map("user_id")
-  status            NotificationStatus  @default(QUEUED)
+  recipientMasked    String              @map("recipient_masked") @db.VarChar(254)
+  userId             String?             @map("user_id")
+  status             NotificationStatus  @default(QUEUED)
   /// Rendered message (to, subject, body) encrypted at rest; wiped once sent. May contain one-time links.
-  contentEncrypted  String?             @map("content_encrypted")
-  attempts          Int                 @default(0)
-  nextAttemptAt     DateTime?           @map("next_attempt_at") @db.Timestamptz(3)
-  providerMessageId String?             @map("provider_message_id") @db.VarChar(200)
-  error             String?             @db.VarChar(1000)
-  requestId         String?             @map("request_id") @db.VarChar(40)
-  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  sentAt            DateTime?           @map("sent_at") @db.Timestamptz(3)
+  contentEncrypted   String?             @map("content_encrypted")
+  attempts           Int                 @default(0)
+  nextAttemptAt      DateTime?           @map("next_attempt_at") @db.Timestamptz(3)
+  providerMessageId  String?             @map("provider_message_id") @db.VarChar(200)
+  /// Messaging service that accepted it (docs/VENDORS.md).
+  messagingServiceId String?             @map("messaging_service_id")
+  /// Send through this service only (test sends from the vendor screen); null = channel routing.
+  targetServiceId    String?             @map("target_service_id")
+  error              String?             @db.VarChar(1000)
+  requestId          String?             @map("request_id") @db.VarChar(40)
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  sentAt             DateTime?           @map("sent_at") @db.Timestamptz(3)
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, createdAt])
@@ -1001,6 +1006,8 @@ model Provider {
   code            String              @unique @db.VarChar(40)
   name            String              @db.VarChar(120)
   kind            ProviderKind
+  /// The API vendor (company) this payment service belongs to (docs/VENDORS.md).
+  vendorId        String?             @map("vendor_id")
   /// Adapter implementation key in @pay2all/providers (mock, provider-a, provider-b, …).
   adapter         String              @db.VarChar(40)
   environment     ProviderEnvironment @default(TEST)
@@ -1018,12 +1025,14 @@ model Provider {
   createdAt       DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
 
+  vendor      ApiVendor?               @relation(fields: [vendorId], references: [id], onDelete: Restrict)
   credentials ProviderCredential[]
   routes      ProviderRoute[]
   snapshots   ProviderHealthSnapshot[]
   webhooks    ProviderWebhookEvent[]
 
   @@index([kind, status])
+  @@index([vendorId])
   @@map("providers")
 }
 
@@ -2308,4 +2317,69 @@ model MerchantPeriodUsage {
   @@id([merchantId, service, period])
   @@index([updatedAt])
   @@map("merchant_period_usage")
+}
+
+// ---- API vendors (docs/VENDORS.md) -----------------------------------------------------------------
+
+enum ApiVendorStatus {
+  ACTIVE
+  INACTIVE
+}
+
+/// A company Pay2All integrates with (a bank, an SMS gateway, an email service). Its payment
+/// services are `providers` rows; its notification channels are `messaging_services` rows.
+model ApiVendor {
+  id           String          @id
+  code         String          @unique @db.VarChar(40)
+  name         String          @db.VarChar(120)
+  status       ApiVendorStatus @default(ACTIVE)
+  website      String?         @db.VarChar(300)
+  contactEmail String?         @map("contact_email") @db.VarChar(254)
+  notes        String?         @db.VarChar(1000)
+  version      Int             @default(1)
+  createdAt    DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  providers         Provider[]
+  messagingServices MessagingService[]
+
+  @@map("api_vendors")
+}
+
+enum MessagingServiceStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// One notification channel offered by a vendor (sms21 SMS, sms21 WhatsApp, Amazon SES email).
+/// Within a channel, ACTIVE services are tried in `priority` order (lower first) — the next one is
+/// the fallback.
+model MessagingService {
+  id              String                 @id
+  vendorId        String                 @map("vendor_id")
+  channel         NotificationChannel
+  /// Integration key: ses, smtp, sms21.
+  adapter         String                 @db.VarChar(40)
+  name            String                 @db.VarChar(120)
+  status          MessagingServiceStatus @default(DISABLED)
+  priority        Int                    @default(100)
+  /// Non-secret settings validated per adapter (region, from address, base URL, template map).
+  config          Json                   @default("{}")
+  /// AES-256-GCM envelope of the adapter's secret JSON, AAD = messaging:<id>. Never returned.
+  secretEncrypted String?                @map("secret_encrypted")
+  /// Key names and last-4 fingerprints for display.
+  fingerprints    Json                   @default("{}")
+  lastSuccessAt   DateTime?              @map("last_success_at") @db.Timestamptz(3)
+  lastFailureAt   DateTime?              @map("last_failure_at") @db.Timestamptz(3)
+  lastError       String?                @map("last_error") @db.VarChar(300)
+  version         Int                    @default(1)
+  updatedById     String?                @map("updated_by_id")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime               @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  vendor ApiVendor @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  @@index([channel, status, priority])
+  @@index([vendorId])
+  @@map("messaging_services")
 }

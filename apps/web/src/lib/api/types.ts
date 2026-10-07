@@ -341,6 +341,7 @@ export interface ProviderRow {
   id: string;
   code: string;
   name: string;
+  vendor_id: string | null;
   kind: 'PAYIN' | 'PAYOUT' | 'BOTH';
   adapter: string;
   adapter_label: string;
@@ -868,4 +869,54 @@ export interface ReportExport {
   completed_at: string | null;
   expires_at: string | null;
   downloadable: boolean;
+}
+
+// ---- API vendors ----------------------------------------------------------------------------------
+
+export type MessagingChannel = 'EMAIL' | 'SMS' | 'WHATSAPP';
+
+export interface MessagingServiceRow {
+  service_id: string;
+  vendor_id: string;
+  channel: MessagingChannel;
+  adapter: 'ses' | 'smtp' | 'sms21';
+  name: string;
+  status: 'ACTIVE' | 'DISABLED';
+  priority: number;
+  config: Record<string, unknown>;
+  has_secret: boolean;
+  secret_fingerprints: Record<string, string>;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_error: string | null;
+  version: number;
+  updated_at: string;
+}
+
+export interface ApiVendor {
+  vendor_id: string;
+  code: string;
+  name: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  website: string | null;
+  contact_email: string | null;
+  notes: string | null;
+  services: string[];
+  payment_services: { provider_id: string; code: string; name: string; kind: 'PAYIN' | 'PAYOUT' | 'BOTH'; adapter: string; environment: 'TEST' | 'LIVE'; status: string }[];
+  messaging_services: MessagingServiceRow[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MessagingNotification {
+  notification_id: string;
+  channel: MessagingChannel;
+  template: string;
+  recipient: string;
+  status: 'QUEUED' | 'SENT' | 'FAILED';
+  attempts: number;
+  provider_message_id: string | null;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
 }

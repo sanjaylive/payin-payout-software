@@ -30,6 +30,8 @@ export const createProviderSchema = z.strictObject({
   capabilities: capabilities.default({}),
   config: config.default({}),
   costs: costs.default({}),
+  /** API vendor (company) this payment service belongs to (docs/VENDORS.md). */
+  vendor_id: idSchema('avd').optional(),
 });
 
 export const updateProviderSchema = z.strictObject({
