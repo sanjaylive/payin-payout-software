@@ -557,6 +557,7 @@ export interface Payout {
   failure_code: string | null;
   failure_reason: string | null;
   review_reason: string | null;
+  review_kind: 'RISK' | 'UNKNOWN_OUTCOME' | null;
   bulk_batch_id: string | null;
   created_by_id: string | null;
   processed_at: string | null;
@@ -790,4 +791,81 @@ export interface ResellerEarnings {
   ledger_account_id: string | null;
   by_merchant: { merchant_id: string; name: string; payin_count: number; payin_margin: string; payout_count: number; payout_margin: string; total: string }[];
   payouts: { payout_id: string; amount: string; utr: string; period_note: string | null; created_at: string }[];
+}
+
+// ---- Risk (Phase 10) --------------------------------------------------------------------------------
+
+export type RiskAction = 'ALLOW' | 'BLOCK' | 'MANUAL_REVIEW' | 'HOLD_SETTLEMENT' | 'DISABLE_PAYIN' | 'DISABLE_PAYOUT';
+export type RiskRuleType = 'VELOCITY' | 'AMOUNT_ANOMALY' | 'NEW_MERCHANT_VOLUME' | 'BENEFICIARY_FAN_IN' | 'VOLUME_SPIKE' | 'FAILED_ATTEMPTS' | 'SHARED_BANK_ACCOUNT';
+
+export interface RiskRule {
+  rule_id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  type: RiskRuleType;
+  service: 'PAYIN' | 'PAYOUT';
+  params: Record<string, string | number>;
+  action: RiskAction;
+  mode: 'ENFORCE' | 'MONITOR';
+  enabled: boolean;
+  priority: number;
+  version: number;
+  updated_at: string;
+  hits_24h: number;
+}
+
+export interface RiskActionRecord {
+  action_id: string;
+  event_id: string;
+  merchant_id: string;
+  merchant_name?: string | null;
+  rule_code?: string;
+  event_reason?: string;
+  type: RiskAction;
+  hold_id: string | null;
+  previous_value: boolean | null;
+  active: boolean;
+  lifted_at: string | null;
+  lift_reason: string | null;
+  created_at: string;
+}
+
+export interface RiskEvent {
+  event_id: string;
+  rule_id: string;
+  rule_code: string;
+  rule_version: number;
+  merchant_id: string | null;
+  merchant_name: string | null;
+  subject_type: string;
+  subject_id: string;
+  action: RiskAction;
+  mode: 'ENFORCE' | 'MONITOR';
+  enforced: boolean;
+  reason: string;
+  evidence: Record<string, unknown>;
+  status: 'RECORDED' | 'OPEN' | 'CLEARED' | 'CONFIRMED';
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  actions?: RiskActionRecord[];
+  subject?: { type: string; id: string; status: string; amount: string; held_by_risk: boolean; channel: string | null } | null;
+}
+
+// ---- Reports (Phase 10) -----------------------------------------------------------------------------
+
+export interface ReportExport {
+  export_id: string;
+  type: 'PAYMENTS' | 'REFUNDS' | 'PAYOUTS' | 'SETTLEMENTS';
+  format: 'CSV' | 'XLSX';
+  filters: { from: string; to: string; status?: string; merchant_id?: string };
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
+  row_count: number | null;
+  file_size: number | null;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+  expires_at: string | null;
+  downloadable: boolean;
 }
