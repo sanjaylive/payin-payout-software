@@ -98,6 +98,11 @@ export const apiEnvSchema = z
     /** Server-side encryption header for uploads (e.g. AES256 or aws:kms). Empty = bucket default. */
     S3_SSE: z.string().default(''),
     MAX_DOCUMENT_BYTES: int(10 * 1024 * 1024, 1024),
+    /**
+     * Absolute directory the "Local disk" file storage may write under (docs/FILE_STORAGE.md). Empty:
+     * <cwd>/.storage outside production; in production, local storage is unavailable until set.
+     */
+    LOCAL_STORAGE_ROOT: z.string().default(''),
   })
   .superRefine((env, ctx) => {
     if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {

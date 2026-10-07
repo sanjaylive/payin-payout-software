@@ -217,6 +217,7 @@ Pay2All-Signature: t=<unix seconds>,v1=hex(HMAC_SHA256(endpointSecret, `${t}.${r
   - a storage key made of server IDs only, with the client filename used for display only and sanitised.
 - **KYC downloads** stream through the API after authorization. Each one is audited (`merchant.document.viewed`) and sent with `Content-Disposition: attachment`, `Cache-Control: no-store` and a `sandbox` CSP.
 - **Encryption at rest** of the bucket (`S3_SSE`) is mandatory in production.
+- **Chosen storage backends** (Settings → File Storage: S3, Google Drive, local disk) receive only ciphertext: each file is encrypted by the API with its own AES-256-GCM key, wrapped by the platform key (docs/FILE_STORAGE.md §2).
 - **Input validation:** strict Zod objects reject unknown keys. Prisma parameterises queries. Raw SQL uses tagged templates only, and `$queryRawUnsafe` is lint-banned.
 - **Web app:** React escapes output, `dangerouslySetInnerHTML` is lint-banned, and Next.js sends a CSP with nonces in production.
 - **Trusted proxies:** `TRUST_PROXY_HOPS` sets how many proxies to trust, so `X-Forwarded-For` cannot be spoofed when no proxy is present.

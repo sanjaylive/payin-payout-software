@@ -10,7 +10,7 @@ The bell in the dashboard header tells signed-in users about things that need th
 | --- | --- |
 | `id` | `inb_<ulid>` |
 | `user_id`, `organization_id` | The recipient, and the organization the event belongs to |
-| `category` | `PAYOUT`, `PAYIN`, `SETTLEMENT`, `COMPLIANCE`, `RISK`, `SECURITY`, `WEBHOOK`, `REPORT`, `SYSTEM`. Picks the icon. |
+| `category` | `PAYMENT`, `PAYOUT`, `SETTLEMENT`, `COMPLIANCE`, `RISK`, `SECURITY`, `WEBHOOK`, `REPORT`, `SYSTEM`. Picks the icon. |
 | `severity` | `INFO`, `SUCCESS`, `WARNING`, `CRITICAL`. Picks the colour. |
 | `title` (≤140), `body` (≤500) | Plain text. **Never** full account numbers, secrets, OTPs or tokens: account numbers are masked (`XXXXXX4521`). |
 | `link` | Optional in-app path. A CHECK constraint allows only relative paths (`/…`, not `//…`), so a notification can never link off-site. |

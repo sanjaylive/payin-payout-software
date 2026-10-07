@@ -66,6 +66,7 @@ export const ID_PREFIXES = {
   messagingService: 'msv',
   loginEvent: 'lge',
   inboxNotification: 'inb',
+  storageBackend: 'stb',
   commissionPayout: 'cmp',
   webhookEvent: 'evt',
   webhookDelivery: 'whd',

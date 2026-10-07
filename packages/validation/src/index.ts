@@ -17,3 +17,4 @@ export * from './risk';
 export * from './reports';
 export * from './vendors';
 export * from './login-events';
+export * from './storage';

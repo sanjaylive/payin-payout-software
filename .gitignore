@@ -10,6 +10,8 @@ generated/
 .env.*
 !.env.example
 *.log
+# Local-disk file storage in development (encrypted files).
+.storage/
 .DS_Store
 .idea/
 .vscode/*

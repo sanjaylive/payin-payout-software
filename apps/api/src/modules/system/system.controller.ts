@@ -28,7 +28,11 @@ export class SystemController {
   async settings(@CurrentActor() actor: Actor) {
     if (actor.organizationType !== 'PLATFORM') throw new AppError(ErrorCode.FORBIDDEN);
     const e = this.config.env;
-    const [rules, enforcing] = await Promise.all([this.prisma.riskRule.count({ where: { enabled: true } }), this.prisma.riskRule.count({ where: { enabled: true, mode: 'ENFORCE' } })]);
+    const [rules, enforcing, storageBackends] = await Promise.all([
+      this.prisma.riskRule.count({ where: { enabled: true } }),
+      this.prisma.riskRule.count({ where: { enabled: true, mode: 'ENFORCE' } }),
+      this.prisma.storageBackend.count({ where: { isActive: true } }),
+    ]);
     return {
       environment: e.NODE_ENV,
       api_environment: e.API_ENVIRONMENT,
@@ -38,7 +42,8 @@ export class SystemController {
         session_idle_minutes: Math.round(e.AUTH_SESSION_IDLE_SECONDS / 60),
         max_failed_logins: e.AUTH_MAX_FAILED_LOGINS,
         webhook_https_required: e.WEBHOOK_REQUIRE_HTTPS,
-        documents_encrypted_at_rest: Boolean(e.S3_SSE),
+        // A chosen storage backend encrypts every new file itself (docs/FILE_STORAGE.md §2).
+        documents_encrypted_at_rest: storageBackends > 0 || Boolean(e.S3_SSE),
         swagger_ui_enabled: e.SWAGGER_ENABLED,
       },
       observability: {

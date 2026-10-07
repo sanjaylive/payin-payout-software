@@ -32,6 +32,7 @@ import { VendorsModule } from './modules/vendors/vendors.module';
 import { LoginEventsModule } from './modules/login-events/login-events.module';
 import { MerchantIntegrationsModule } from './modules/merchant-integrations/merchant-integrations.module';
 import { InboxModule } from './modules/inbox/inbox.module';
+import { StorageSettingsModule } from './modules/storage/storage-settings.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
 
@@ -90,6 +91,7 @@ export class AppModule implements NestModule {
         LoginEventsModule,
         MerchantIntegrationsModule,
         InboxModule,
+        StorageSettingsModule,
       ],
       controllers: [HealthController],
       providers: [

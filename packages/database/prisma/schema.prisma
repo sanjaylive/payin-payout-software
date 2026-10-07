@@ -2478,3 +2478,60 @@ model InboxNotification {
   @@index([createdAt])
   @@map("inbox_notifications")
 }
+
+// ---- File storage ---------------------------------------------------------------------------------------
+
+enum StorageKind {
+  S3
+  GOOGLE_DRIVE
+  LOCAL
+}
+
+/// Where uploaded and generated files go (docs/FILE_STORAGE.md). One row per kind; at most one is
+/// active for new files (partial unique index). With none active, the server's environment S3 is used.
+model StorageBackend {
+  id              String      @id
+  kind            StorageKind @unique
+  name            String      @db.VarChar(120)
+  /// Non-secret settings validated per kind (bucket/region, Drive folder, local directory).
+  config          Json        @default("{}")
+  /// AES-256-GCM envelope of the kind's secret JSON, AAD = storage:<id>. Never returned.
+  secretEncrypted String?     @map("secret_encrypted")
+  /// Key names and last-4 fingerprints for display.
+  fingerprints    Json        @default("{}")
+  isActive        Boolean     @default(false) @map("is_active")
+  lastTestedAt    DateTime?   @map("last_tested_at") @db.Timestamptz(3)
+  lastTestOk      Boolean?    @map("last_test_ok")
+  lastTestError   String?     @map("last_test_error") @db.VarChar(300)
+  version         Int         @default(1)
+  updatedById     String?     @map("updated_by_id")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  objects StorageObject[]
+
+  @@map("storage_backends")
+}
+
+/// A file written through a configured backend: where it is and how to decrypt it. Keys without a
+/// row live in the server's environment S3 (files written before backends existed).
+model StorageObject {
+  /// The application's object key (e.g. merchants/<id>/documents/<doc>.pdf).
+  key         String   @id @db.VarChar(300)
+  backendId   String   @map("backend_id")
+  /// Backend-specific location: S3 object key, Google Drive file id, or path under the local root.
+  locator     String   @db.VarChar(500)
+  sizeBytes   BigInt   @map("size_bytes")
+  contentType String   @map("content_type") @db.VarChar(120)
+  sha256      String?  @db.VarChar(64)
+  /// Per-file AES-256-GCM data key, wrapped by the platform key (AAD storage-object:<key>).
+  wrappedKey  String   @map("wrapped_key") @db.VarChar(300)
+  iv          String   @db.VarChar(32)
+  authTag     String   @map("auth_tag") @db.VarChar(32)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  backend StorageBackend @relation(fields: [backendId], references: [id], onDelete: Restrict)
+
+  @@index([backendId])
+  @@map("storage_objects")
+}

@@ -967,3 +967,33 @@ export interface InboxItem {
   read_at: string | null;
   created_at: string;
 }
+
+// ---- File storage (docs/FILE_STORAGE.md) ----
+export type StorageKind = 'S3' | 'GOOGLE_DRIVE' | 'LOCAL';
+export interface StorageCheck {
+  name: string;
+  ok: boolean;
+  detail?: string;
+  ms?: number;
+}
+export interface StorageBackendRow {
+  kind: StorageKind;
+  configured: boolean;
+  backend_id: string | null;
+  name: string;
+  config: Record<string, unknown> | null;
+  has_secret: boolean;
+  needs_secret: boolean;
+  secret_fingerprints: Record<string, string>;
+  is_active: boolean;
+  last_test: { at: string; ok: boolean | null; error: string | null } | null;
+  usage: { files: number; bytes: string };
+  version: number;
+  updated_at: string | null;
+}
+export interface StorageOverview {
+  active: StorageKind | 'DEFAULT';
+  server_default: { bucket: string; region: string; endpoint: string | null; server_side_encryption: string | null };
+  local: { available: boolean; root: string | null };
+  backends: StorageBackendRow[];
+}
