@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
-import { type Invoice, isUniqueViolation, notifyInbox, type PrismaClient } from '@pay2all/database';
+import { type Invoice, isUniqueViolation, notifyInbox, type Prisma, type PrismaClient } from '@pay2all/database';
 import { minorToMajorString } from '@pay2all/ledger';
 import { ErrorCode } from '@pay2all/types';
 import { financialYear, gstStateCode, gstStateName, invoiceNumber, type listInvoicesQuerySchema, type taxProfileSchema } from '@pay2all/validation';
@@ -180,7 +180,7 @@ export class InvoicesService {
             buyer,
             placeOfSupply,
             interState,
-            lines: lines,
+            lines: lines as unknown as Prisma.InputJsonValue,
             taxableMinor: taxable,
             cgstMinor: cgst,
             sgstMinor: sgst,
