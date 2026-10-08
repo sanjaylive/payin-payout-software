@@ -1,6 +1,8 @@
 # Production stack for one server (docs/DEPLOYMENT.md). Started by scripts/deploy.sh:
 #   docker compose -f infra/deploy/compose.yml --env-file <deploy dir>/.env.production ...
-# Only Caddy publishes ports (80/443). Everything else is on the private network.
+# Only Caddy publishes ports (80/443; profile "caddy"). On a server whose nginx already owns 80/443,
+# compose.nginx.yml publishes the API and web on loopback instead. Everything else is private.
+# mem_limit caps every service so a shared server's other workloads keep their memory.
 name: pay2all
 
 x-app: &app
@@ -8,6 +10,7 @@ x-app: &app
   env_file: ${ENV_FILE:?ENV_FILE is required}
   restart: unless-stopped
   networks: [internal]
+  mem_limit: 768m
   logging: &logging
     driver: json-file
     options: { max-size: "20m", max-file: "5" }
@@ -15,6 +18,7 @@ x-app: &app
 x-kafka: &kafka
   image: apache/kafka:3.9.1
   restart: unless-stopped
+  mem_limit: 700m
   networks: [internal]
   logging: *logging
   environment: &kafka-env
@@ -32,7 +36,7 @@ x-kafka: &kafka
     KAFKA_DEFAULT_REPLICATION_FACTOR: 3
     KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     KAFKA_NUM_PARTITIONS: 12
-    KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+    KAFKA_HEAP_OPTS: "-Xms192m -Xmx384m"
   healthcheck:
     test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server 127.0.0.1:29092 >/dev/null 2>&1"]
     interval: 10s
@@ -43,7 +47,9 @@ x-kafka: &kafka
 services:
   caddy:
     image: caddy:2.10-alpine
+    profiles: [caddy]
     restart: unless-stopped
+    mem_limit: 256m
     ports: ["80:80", "443:443", "443:443/udp"]
     environment:
       DOMAIN: ${DOMAIN:?DOMAIN is required}
@@ -59,11 +65,12 @@ services:
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
+    mem_limit: 1g
     environment:
       POSTGRES_USER: pay2all
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: pay2all
-    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=512MB", "-c", "shared_preload_libraries=pg_stat_statements"]
+    command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=256MB", "-c", "shared_preload_libraries=pg_stat_statements"]
     volumes: [postgres-data:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pay2all -d pay2all"]
@@ -76,6 +83,7 @@ services:
   redis:
     image: redis:7.4-alpine
     restart: unless-stopped
+    mem_limit: 256m
     command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
@@ -129,6 +137,7 @@ services:
   jobs:
     <<: *app
     command: ["node", "apps/api/dist/jobs.main.js"]
+    mem_limit: 512m
     volumes: [storage:/data/storage]
     depends_on:
       postgres: { condition: service_healthy }
@@ -140,6 +149,7 @@ services:
   worker:
     <<: *app
     command: ["node", "apps/worker/dist/main.js"]
+    mem_limit: 512m
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -151,6 +161,7 @@ services:
     <<: *app
     working_dir: /app/apps/web
     command: ["node", "node_modules/next/dist/bin/next", "start", "--port", "3000"]
+    mem_limit: 512m
     depends_on: [api]
 
 volumes:

@@ -11,8 +11,9 @@ ARG PUBLIC_URL
 ARG APP_RELEASE=""
 ENV NEXT_PUBLIC_API_URL=${PUBLIC_URL}
 # prisma generate only needs a syntactically valid URL; nothing connects during the build.
-RUN DATABASE_URL=postgresql://build:build@localhost:5432/build \
-    pnpm turbo run build --filter=@pay2all/api --filter=@pay2all/worker --filter=@pay2all/web --output-logs=errors-only
+# One package at a time with a bounded heap, so building on a shared server stays near 2 GB.
+RUN DATABASE_URL=postgresql://build:build@localhost:5432/build NODE_OPTIONS=--max-old-space-size=1536 \
+    pnpm turbo run build --filter=@pay2all/api --filter=@pay2all/worker --filter=@pay2all/web --concurrency=1 --output-logs=errors-only
 
 FROM node:22-bookworm-slim
 ENV NODE_ENV=production PNPM_HOME=/pnpm PATH=/pnpm:$PATH NEXT_TELEMETRY_DISABLED=1

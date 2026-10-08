@@ -93,4 +93,17 @@ Volumes: `postgres-data`, `redis-data`, `kafka-1..3`, `storage` (local-disk file
 - **Single server.** The three Kafka brokers protect against one broker crashing, not against losing the server. For high availability, move Postgres, Redis and Kafka to managed services and run two or more app servers behind a load balancer.
 - **Monitoring.** Set `SENTRY_DSN`. Prometheus metrics stay on 127.0.0.1 inside each container; scrape them over a private network if you add Prometheus.
 - **Secrets.** `ENCRYPTION_KEY` protects stored gateway and vendor credentials. Losing it makes them unreadable, so keep an offline copy of the env file somewhere safe.
-- **Reseller custom domains** (docs/BRANDING.md §5) each need a Caddy site block. Caddy can obtain their certificates automatically too.
+- **Reseller custom domains** (docs/BRANDING.md §5) each need a Caddy site block, or an nginx vhost in nginx mode. Caddy can obtain their certificates automatically too.
+
+## 7. Sharing a server with an existing nginx (`DEPLOY_PROXY=nginx`)
+
+Use this mode when nginx on the server already serves other sites on ports 80/443. It is how `py.2all.co.in` runs on the shared GoDaddy VPS (148.72.246.21).
+
+- **Ports:** Caddy is not started. The API and web publish on loopback only (`127.0.0.1:4500` and `:3500`), through `infra/deploy/compose.nginx.yml`.
+- **Vhost:** the deploy installs `/etc/nginx/sites-available/pay2all-<domain>.conf` from `infra/deploy/nginx/site.conf`, using `install-site.sh`. That script runs `nginx -t` on the **whole** config before reloading. If the test fails, it restores the previous vhost, so a bad Pay2All vhost cannot take down the other sites. An unchanged vhost is left alone.
+- **Certificate:** on the first deploy, a temporary HTTP-only vhost answers the ACME challenge. `certbot certonly --webroot` then issues the certificate with `ACME_EMAIL`, which agrees to the Let's Encrypt terms. Certbot never edits the vhost, and renewals reload nginx through a deploy hook.
+- **Requirements:** the deploy user needs passwordless `sudo` for nginx, certbot and creating `DEPLOY_DIR`.
+- **Memory guard:** before building, the deploy checks that the server has at least `DEPLOY_MIN_AVAILABLE_MB` available (default 3000 MB). Memory held by the running Pay2All release counts as available, since the deploy replaces it. If there isn't enough, it stops rather than starve the other sites.
+  - Each service also has a `mem_limit` cap. Typical use is about 2–2.5 GB: three Kafka brokers at about 400 MB each, plus Postgres, Redis and four Node processes.
+  - The image build compiles one package at a time with a 1.5 GB Node heap.
+  - The shared VPS needs a RAM upgrade to 8 GB before the first deploy.
