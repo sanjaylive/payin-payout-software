@@ -97,6 +97,11 @@ export class InboundEventsService {
         });
         const status = PAYMENT_STATUS[e.status.toLowerCase()];
         if (!payment) return void (await mark('IGNORED', 'Unknown payment (reconciliation will flag it)'));
+        if (e.confirmByStatusApi) {
+          // The callback can't be trusted for the outcome: have the poller ask the provider now.
+          await this.prisma.payment.updateMany({ where: { id: payment.id, status: { in: ['CREATED', 'PENDING'] } }, data: { nextPollAt: new Date() } });
+          return void (await mark('PROCESSED'));
+        }
         if (!status) return void (await mark('IGNORED', `Unrecognised status ${e.status}`));
         await this.ledger.run(async (tx) => {
           await this.transitions.applyOutcome(

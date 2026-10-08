@@ -1229,6 +1229,10 @@ model Payment {
   merchantId            String        @map("merchant_id")
   resellerId            String?       @map("reseller_id")
   merchantOrderId       String        @map("merchant_order_id") @db.VarChar(64)
+  /// Hosted checkout this payment is an attempt of (merchant_order_id is then "<order>#<n>").
+  checkoutSessionId     String?       @map("checkout_session_id")
+  /// How to send the customer to a hosted gateway (redirect / form post / Atom script).
+  checkoutAction        Json?         @map("checkout_action")
   method                PayinMethod
   status                PaymentStatus @default(CREATED)
   amountMinor           BigInt        @map("amount_minor")
@@ -1279,6 +1283,7 @@ model Payment {
   refunds  Refund[]
 
   @@unique([merchantId, merchantOrderId])
+  @@index([checkoutSessionId])
   @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([resellerId, createdAt(sort: Desc)])
   @@index([status, createdAt])
@@ -2745,4 +2750,72 @@ model FundRequest {
   @@index([status, createdAt(sort: Desc)])
   @@index([merchantId, createdAt(sort: Desc)])
   @@map("fund_requests")
+}
+
+enum WebsiteStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+/// A merchant's website: checkout sends customers back only to approved ones (docs/CHECKOUT.md).
+model MerchantWebsite {
+  id           String        @id
+  merchantId   String        @map("merchant_id")
+  /// Origin only: scheme://host[:port].
+  url          String        @db.VarChar(300)
+  label        String?       @db.VarChar(80)
+  status       WebsiteStatus @default(PENDING)
+  reviewNote   String?       @map("review_note") @db.VarChar(300)
+  reviewedById String?       @map("reviewed_by_id")
+  reviewedAt   DateTime?     @map("reviewed_at") @db.Timestamptz(3)
+  createdById  String?       @map("created_by_id")
+  createdAt    DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions CheckoutSession[]
+
+  @@unique([merchantId, url])
+  @@index([status, createdAt])
+  @@map("merchant_websites")
+}
+
+enum CheckoutSessionStatus {
+  OPEN
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+/// A hosted checkout page for one order. Payments are attempts of it.
+model CheckoutSession {
+  id              String                @id
+  merchantId      String                @map("merchant_id")
+  /// Unguessable public handle used in the checkout URL (never the id).
+  token           String                @unique @db.VarChar(64)
+  merchantOrderId String                @map("merchant_order_id") @db.VarChar(60)
+  amountMinor     BigInt                @map("amount_minor")
+  description     String?               @db.VarChar(200)
+  customerName    String?               @map("customer_name") @db.VarChar(120)
+  customerEmail   String?               @map("customer_email") @db.VarChar(254)
+  customerMobile  String?               @map("customer_mobile") @db.VarChar(15)
+  returnUrl       String                @map("return_url") @db.VarChar(500)
+  websiteId       String                @map("website_id")
+  status          CheckoutSessionStatus @default(OPEN)
+  /// The successful payment.
+  paymentId       String?               @unique @map("payment_id")
+  attempts        Int                   @default(0)
+  metadata        Json                  @default("{}")
+  expiresAt       DateTime              @map("expires_at") @db.Timestamptz(3)
+  paidAt          DateTime?             @map("paid_at") @db.Timestamptz(3)
+  createdById     String?               @map("created_by_id")
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  website MerchantWebsite @relation(fields: [websiteId], references: [id], onDelete: Restrict)
+
+  @@unique([merchantId, merchantOrderId])
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@index([status, expiresAt])
+  @@map("checkout_sessions")
 }

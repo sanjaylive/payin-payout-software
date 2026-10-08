@@ -1108,3 +1108,91 @@ export interface FundSummary {
   approved_today_count: number;
   approved_today_amount: string;
 }
+
+// ---- Payment gateways & checkout (docs/PAYMENT_GATEWAYS.md, docs/CHECKOUT.md) ----------------------
+export interface GatewayField {
+  key: string;
+  label: string;
+  secret: boolean;
+  help?: string;
+  optional?: boolean;
+}
+export interface GatewayRow {
+  key: string;
+  name: string;
+  tagline: string;
+  website: string;
+  docs_url: string;
+  color: string;
+  methods: string[];
+  credential_fields: GatewayField[];
+  webhook_setup: string;
+  refunds_by_api: boolean;
+  notes: string[];
+  webhook_url: string;
+  return_url: string;
+  connection: null | {
+    provider_id: string;
+    environment: 'TEST' | 'LIVE';
+    enabled: boolean;
+    status: string;
+    priority: number | null;
+    credentials: Partial<Record<'TEST' | 'LIVE', { fingerprints: Record<string, string>; updated_at: string }>>;
+    last_test: null | { ok: boolean; at: string; environment: 'TEST' | 'LIVE'; latency_ms: number; message?: string };
+  };
+}
+export interface MerchantWebsite {
+  id: string;
+  merchant_id: string;
+  merchant_name?: string;
+  url: string;
+  label: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  review_note: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+}
+export interface CheckoutSessionRow {
+  id: string;
+  merchant_order_id: string;
+  amount: string;
+  description: string | null;
+  status: 'OPEN' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  url: string;
+  return_url: string;
+  customer: { name: string | null; email: string | null; mobile: string | null };
+  payment_id: string | null;
+  payment: { id: string; status: string; method: string; utr: string | null } | null;
+  attempts: number;
+  expires_at: string;
+  paid_at: string | null;
+  created_at: string;
+}
+export type CheckoutAction =
+  | { type: 'REDIRECT'; url: string }
+  | { type: 'FORM_POST'; url: string; fields: Record<string, string> }
+  | { type: 'ATOM_CHECKOUT'; scriptUrl: string };
+export interface PublicCheckoutPayment {
+  id: string;
+  status: string;
+  method: string;
+  qr_payload: string | null;
+  upi_intent: string | null;
+  payment_link: string | null;
+  action: CheckoutAction | null;
+  expires_at: string;
+  utr: string | null;
+  failure_reason: string | null;
+}
+export interface PublicCheckout {
+  merchant: { name: string };
+  platform: { name: string };
+  order: { id: string; amount: string; currency: 'INR'; description: string | null };
+  customer: { name: string | null; email: string | null; mobile: string | null };
+  status: 'OPEN' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  expires_at: string;
+  methods: { upi: boolean; gateways: { key: string; name: string; methods: string[] }[] };
+  payment: PublicCheckoutPayment | null;
+  return_url: string | null;
+  cancel_url: string;
+}

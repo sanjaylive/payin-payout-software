@@ -89,3 +89,14 @@ export const simulateRouteSchema = z.strictObject({
   method: z.string().regex(/^[A-Z_]{3,30}$/),
   at: z.iso.datetime().optional(),
 });
+
+/** Settings → Payment Gateways: connect / update a hosted gateway (docs/PAYMENT_GATEWAYS.md). */
+export const saveGatewaySchema = z.strictObject({
+  environment: z.enum(['TEST', 'LIVE']),
+  /** Only the fields being set; empty strings keep the stored value. */
+  credentials: z.record(z.string().regex(/^[a-z_]{2,40}$/), z.string().trim().max(4096)).default({}),
+  priority: z.number().int().min(1).max(1000).optional(),
+  reason: z.string().trim().min(5, 'Give a reason (at least 5 characters)').max(300),
+});
+export const gatewayToggleSchema = z.strictObject({ enabled: z.boolean(), reason: z.string().trim().min(5).max(300) });
+export const gatewayRemoveCredentialsSchema = z.strictObject({ environment: z.enum(['TEST', 'LIVE']), reason: z.string().trim().min(5).max(300) });

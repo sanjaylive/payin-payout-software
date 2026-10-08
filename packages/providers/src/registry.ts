@@ -2,6 +2,14 @@ import { ProviderError } from './interfaces/errors';
 import type { PayinProvider, PayoutProvider, ProviderContext } from './interfaces/types';
 import { MockPayinProvider } from './mock/payin';
 import { MockPayoutProvider } from './mock/payout';
+import { CashfreeAdapter } from './gateways/cashfree';
+import { gatewayByKey } from './gateways/catalog';
+import { CcavenueAdapter } from './gateways/ccavenue';
+import { EasebuzzAdapter } from './gateways/easebuzz';
+import { HdfcSmartGatewayAdapter } from './gateways/hdfc';
+import { NttDataAdapter } from './gateways/nttdata';
+import { PhonePeAdapter } from './gateways/phonepe';
+import { RazorpayAdapter } from './gateways/razorpay';
 import { ProviderAAdapter } from './provider-a';
 import { ProviderBAdapter } from './provider-b';
 
@@ -11,6 +19,8 @@ interface AdapterFactory {
   credentialKeys: string[];
   payin?: (ctx: ProviderContext) => PayinProvider;
   payout?: (ctx: ProviderContext) => PayoutProvider;
+  /** A hosted payment gateway (Settings → Payment Gateways). */
+  gateway?: boolean;
 }
 
 export const ADAPTERS: Record<string, AdapterFactory> = {
@@ -31,7 +41,26 @@ export const ADAPTERS: Record<string, AdapterFactory> = {
     credentialKeys: ['access_token', 'webhook_secret'],
     payout: (ctx) => new ProviderBAdapter(ctx),
   },
+  ...gatewayAdapters({
+    razorpay: (ctx) => new RazorpayAdapter(ctx),
+    cashfree: (ctx) => new CashfreeAdapter(ctx),
+    easebuzz: (ctx) => new EasebuzzAdapter(ctx),
+    ccavenue: (ctx) => new CcavenueAdapter(ctx),
+    hdfc: (ctx) => new HdfcSmartGatewayAdapter(ctx),
+    nttdata: (ctx) => new NttDataAdapter(ctx),
+    phonepe: (ctx) => new PhonePeAdapter(ctx),
+  }),
 };
+
+/** Hosted payment gateways: label and credential keys come from the catalog. */
+function gatewayAdapters(factories: Record<string, (ctx: ProviderContext) => PayinProvider>): Record<string, AdapterFactory> {
+  return Object.fromEntries(
+    Object.entries(factories).map(([key, payin]) => {
+      const g = gatewayByKey(key)!;
+      return [key, { label: g.name, credentialKeys: g.credentials.map((c) => c.key), payin, gateway: true }];
+    }),
+  );
+}
 
 export function payinAdapter(adapter: string, ctx: ProviderContext): PayinProvider {
   const factory = ADAPTERS[adapter]?.payin;

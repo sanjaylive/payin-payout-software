@@ -43,6 +43,8 @@ export const ID_PREFIXES = {
   schemeRate: 'scr',
   collectionAccount: 'cac',
   fundRequest: 'fnd',
+  website: 'web',
+  checkoutSession: 'cs',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

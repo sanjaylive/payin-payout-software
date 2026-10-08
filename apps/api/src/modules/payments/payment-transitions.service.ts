@@ -58,6 +58,10 @@ export class PaymentTransitionsService {
     }
     const updated = await tx.payment.updateMany({ where: { id: p.id, status: p.status, version: p.version }, data: { ...data, status: to, version: { increment: 1 } } });
     if (updated.count !== 1) throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'Payment changed concurrently');
+    // Hosted checkout: the first successful attempt pays the session (same transaction).
+    if (to === 'SUCCESS' && p.checkoutSessionId) {
+      await tx.checkoutSession.updateMany({ where: { id: p.checkoutSessionId, paymentId: null }, data: { status: 'PAID', paymentId: p.id, paidAt: new Date() } });
+    }
     // Keep daily/monthly usage in step with what counts towards limits (same transaction).
     const wasCounted = !PAYIN_UNCOUNTED.has(p.status);
     const isCounted = !PAYIN_UNCOUNTED.has(to);

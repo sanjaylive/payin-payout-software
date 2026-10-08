@@ -36,6 +36,8 @@ import { StorageSettingsModule } from './modules/storage/storage-settings.module
 import { SchemesModule } from './modules/schemes/schemes.module';
 import { BrandModule } from './modules/brand/brand.module';
 import { FundsModule } from './modules/funds/funds.module';
+import { GatewaysModule } from './modules/gateways/gateways.module';
+import { CheckoutModule } from './modules/checkout/checkout.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
 
@@ -98,6 +100,8 @@ export class AppModule implements NestModule {
         SchemesModule,
         BrandModule,
         FundsModule,
+        GatewaysModule,
+        CheckoutModule,
       ],
       controllers: [HealthController],
       providers: [

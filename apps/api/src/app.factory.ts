@@ -2,7 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import cookieParser from 'cookie-parser';
-import type { NextFunction, Request, Response } from 'express';
+import { type NextFunction, type Request, type Response, urlencoded } from 'express';
 import helmet from 'helmet';
 import { Logger } from 'nestjs-pino';
 import { metrics, statusClass } from '@pay2all/telemetry';
@@ -60,6 +60,10 @@ export async function createApp(config: ApiConfig): Promise<NestExpressApplicati
 
   app.use(cookieParser());
   app.useBodyParser('json', { limit: '1mb' });
+  // Indian payment gateways post form-encoded callbacks. Parse forms only on those paths (keeping the
+  // raw bytes for signature checks); everywhere else the API accepts JSON only.
+  const gatewayForms = urlencoded({ extended: false, limit: '256kb', verify: (req: Request & { rawBody?: Buffer }, _res, buf) => void (req.rawBody = buf) });
+  app.use(['/v1/webhooks/providers', '/v1/checkout/return'], gatewayForms);
   app.enableCors({
     origin: config.env.CORS_ALLOWED_ORIGINS,
     credentials: true,

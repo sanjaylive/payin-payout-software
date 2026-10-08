@@ -33,13 +33,25 @@ export class PayinJobsService {
     const { adapter } = await this.registry.payin(p.providerId!);
     const started = Date.now();
     try {
-      const res = await adapter.getPaymentStatus(p.providerOrderId!);
+      const res = await adapter.getPaymentStatus(p.providerOrderId!, { amountMinor: p.amountMinor });
       await this.registry.recordOutcome(p.providerId!, 'PAYIN', 'SUCCESS', Date.now() - started);
       return res;
     } catch (raw) {
       const err = classify(raw);
       await this.registry.recordOutcome(p.providerId!, 'PAYIN', healthOutcomeOf(err), Date.now() - started);
       throw err;
+    }
+  }
+
+  /** Ask the provider now (customer just came back from a hosted gateway). Best effort. */
+  async checkNow(paymentId: string): Promise<void> {
+    const p = await this.prisma.payment.findUnique({ where: { id: paymentId }, select: { status: true, providerId: true, providerOrderId: true } });
+    if (!p || !p.providerId || !p.providerOrderId || !['CREATED', 'PENDING'].includes(p.status)) return;
+    try {
+      const res = await this.status(paymentId);
+      await this.transitions.apply(paymentId, { status: res.status, amountMinor: res.amountMinor, utr: res.utr, rrn: res.rrn, payerVpa: res.payerVpa, providerTransactionId: res.providerTransactionId, failureReason: res.failureReason, completedAt: res.completedAt }, 'POLL');
+    } catch (err) {
+      this.logger.warn({ err, paymentId }, 'Return-time status check failed; the poller will retry');
     }
   }
 

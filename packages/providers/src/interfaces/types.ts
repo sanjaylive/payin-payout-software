@@ -32,7 +32,19 @@ export interface CreatePaymentRequest {
   customer?: { name?: string; mobile?: string; email?: string; vpa?: string };
   description?: string;
   expiresAt: Date;
+  /** Hosted-checkout gateways: where the gateway sends the customer back (our API return endpoint). */
+  returnUrl?: string;
+  /** Server-to-server notification URL (our provider webhook endpoint), for gateways that take it per order. */
+  notifyUrl?: string;
 }
+
+/** How to hand the customer to a hosted gateway page. */
+export type CheckoutAction =
+  | { type: 'REDIRECT'; url: string }
+  /** Auto-submitting HTML form (CCAvenue, …). Field values may contain encrypted payloads. */
+  | { type: 'FORM_POST'; url: string; fields: Record<string, string> }
+  /** NTT DATA (Atom) AIPAY: their checkout script opens with a token. */
+  | { type: 'ATOM_CHECKOUT'; scriptUrl: string; atomTokenId: string; merchId: string; custEmail: string; custMobile: string; returnUrl: string };
 
 export type PaymentProviderStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED';
 
@@ -42,6 +54,8 @@ export interface CreatePaymentResult {
   qrPayload?: string;
   upiIntent?: string;
   paymentLink?: string;
+  /** Hosted gateways: how to send the customer to pay. */
+  action?: CheckoutAction;
   expiresAt?: Date;
 }
 
@@ -146,6 +160,8 @@ export interface NormalizedWebhookEvent {
   rrn?: string;
   payerVpa?: string;
   failureReason?: string;
+  /** The callback can't be trusted for the outcome (e.g. unauthenticated encryption): check the status API now. */
+  confirmByStatusApi?: boolean;
 }
 
 export interface WebhookVerification {
@@ -164,7 +180,8 @@ export interface HealthCheckResult {
 
 export interface PayinProvider {
   createPayment(req: CreatePaymentRequest): Promise<CreatePaymentResult>;
-  getPaymentStatus(providerOrderId: string): Promise<PaymentStatusResult>;
+  /** `hint` carries what some gateways need to look an order up (NTT DATA wants the amount). */
+  getPaymentStatus(providerOrderId: string, hint?: { amountMinor?: bigint }): Promise<PaymentStatusResult>;
   refundPayment(req: RefundRequest): Promise<RefundResult>;
   verifyWebhook(rawBody: Buffer, headers: Record<string, string | undefined>): WebhookVerification;
   healthCheck(): Promise<HealthCheckResult>;

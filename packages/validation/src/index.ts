@@ -21,3 +21,4 @@ export * from './storage';
 export * from './schemes';
 export * from './brand';
 export * from './funds';
+export * from './checkout';

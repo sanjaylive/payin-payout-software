@@ -2,12 +2,13 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { newId } from '@pay2all/auth';
 import { isUniqueViolation, type Payment, type Prisma, type PrismaClient } from '@pay2all/database';
 import { minorToMajorString } from '@pay2all/ledger';
-import { type Candidate, classify, executeWithFailover, FailoverStoppedError, type HealthOutcome, NoProviderAvailableError, type ProviderError } from '@pay2all/providers';
+import { ADAPTERS, type Candidate, type CheckoutAction, classify, executeWithFailover, FailoverStoppedError, type HealthOutcome, NoProviderAvailableError, type ProviderError } from '@pay2all/providers';
 import { metrics } from '@pay2all/telemetry';
 import { ErrorCode } from '@pay2all/types';
 import type { createPaymentSchema, listPaymentsQuerySchema, paymentStatsQuerySchema } from '@pay2all/validation';
 import type { z } from 'zod';
 import { RequestContextStore } from '../../common/context/request-context';
+import { ApiConfig } from '../../config/api-config';
 import { AppError } from '../../common/errors/app-error';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { decodeCursor, toPage } from '../../common/http/paginated';
@@ -51,6 +52,7 @@ export class PaymentsService {
     private readonly audit: AuditService,
     private readonly risk: RiskEngineService,
     private readonly usage: PeriodUsageService,
+    private readonly config: ApiConfig,
   ) {}
 
   /** Steps 4–6: merchant approved, KYC approved, payin enabled. */
@@ -80,6 +82,22 @@ export class PaymentsService {
     if (actor.organizationType !== 'MERCHANT') throw new AppError(ErrorCode.FORBIDDEN, 'Payments are created by merchant accounts');
     const merchantId = actor.organizationId;
     return this.idempotency.run({ merchantId, key: idempotencyKey, method: 'POST', path: '/v1/payments', body: rawBody }, async (recordId) => {
+      const payment = await this.createCore(merchantId, actor.userId, input, { recordId });
+      return { status: 201, data: presentPayment(payment), resourceId: payment.id };
+    });
+  }
+
+  /**
+   * Everything after authentication and idempotency: shared by the API and hosted checkout.
+   * `gatewayOnly` restricts routing to hosted payment gateways (checkout's cards / netbanking option).
+   */
+  async createCore(
+    merchantId: string,
+    userId: string | null,
+    input: z.output<typeof createPaymentSchema>,
+    opts: { recordId?: string; checkoutSessionId?: string; gatewayOnly?: boolean } = {},
+  ): Promise<Payment> {
+    {
       const merchant = await this.assertMerchantCanCollect(merchantId);
       const periodLimits = await this.perTxnLimits(merchantId, input.amount);
 
@@ -95,7 +113,8 @@ export class PaymentsService {
       }
 
       const decision = await this.routing.decide({ service: 'PAYIN', merchantId, amountMinor: input.amount, method: input.method });
-      const candidates = decision.candidates.slice(0, MAX_PROVIDER_ATTEMPTS);
+      const eligible = opts.gatewayOnly ? await this.gatewaysOnly(decision.candidates) : decision.candidates;
+      const candidates = eligible.slice(0, MAX_PROVIDER_ATTEMPTS);
       if (candidates.length === 0) throw new AppError(ErrorCode.PROVIDER_UNAVAILABLE, 'No provider can accept this payment right now');
 
       const quote = await this.pricing.quote({ merchantId, service: 'PAYIN', method: input.method, providerId: candidates[0]!.providerId, amountMinor: input.amount });
@@ -111,6 +130,7 @@ export class PaymentsService {
               merchantId,
               resellerId: merchant.resellerId,
               merchantOrderId: input.merchant_order_id,
+              checkoutSessionId: opts.checkoutSessionId ?? null,
               method: input.method,
               amountMinor: input.amount,
               feeMinor: quote.merchantFeeMinor,
@@ -128,12 +148,12 @@ export class PaymentsService {
               // Same instant the period usage is keyed by, so a later release hits the same rows.
               createdAt: now,
               nextPollAt: new Date(now.getTime() + FIRST_POLL_DELAY_MS),
-              createdById: actor.userId,
+              createdById: userId,
               requestId: RequestContextStore.get()?.requestId ?? null,
             },
           });
           await this.pricing.snapshot(tx, 'PAYIN', id, merchantId, quote);
-          await this.idempotency.attachResource(tx, recordId, id);
+          if (opts.recordId) await this.idempotency.attachResource(tx, opts.recordId, id);
           await this.risk.record(tx, risk);
           // Step 7b, last in the transaction so the merchant's usage row is locked only until commit.
           await this.usage.consume(tx, merchantId, 'PAYIN', input.amount, periodLimits, now);
@@ -147,8 +167,28 @@ export class PaymentsService {
       // Step 12: provider call after commit, so any callback can always find the payment.
       const payment = await this.initiateWithProvider(id, candidates, input, expiresAt);
       metrics.paymentsCreated.inc({ method: input.method, outcome: payment.status === 'FAILED' ? 'provider_failed' : 'created' });
-      return { status: 201, data: presentPayment(payment), resourceId: id };
-    });
+      return payment;
+    }
+  }
+
+  private async gatewaysOnly(candidates: Candidate[]): Promise<Candidate[]> {
+    const providers = await this.prisma.provider.findMany({ where: { id: { in: candidates.map((c) => c.providerId) } }, select: { id: true, adapter: true } });
+    const gateway = new Set(providers.filter((p) => ADAPTERS[p.adapter]?.gateway).map((p) => p.id));
+    return candidates.filter((c) => gateway.has(c.providerId));
+  }
+
+  /** Where hosted gateways send the customer back, and where they post notifications. */
+  returnUrl(paymentId: string) {
+    return `${this.config.env.API_PUBLIC_URL.replace(/\/$/, '')}/v1/checkout/return/${paymentId}`;
+  }
+  private notifyUrl(providerCode: string) {
+    return `${this.config.env.API_PUBLIC_URL.replace(/\/$/, '')}/v1/webhooks/providers/${providerCode}`;
+  }
+  /** A payment link for any gateway action (form-post / script gateways go through our redirect page). */
+  private linkFor(paymentId: string, link: string | undefined, action: CheckoutAction | undefined): string | null {
+    if (link) return link;
+    if (action && action.type !== 'REDIRECT') return `${this.config.env.API_PUBLIC_URL.replace(/\/$/, '')}/v1/checkout/pay/${paymentId}`;
+    return action?.url ?? null;
   }
 
   private async initiateWithProvider(paymentId: string, candidates: Candidate[], input: z.output<typeof createPaymentSchema>, expiresAt: Date): Promise<Payment> {
@@ -161,7 +201,7 @@ export class PaymentsService {
           const started = Date.now();
           try {
             const { adapter } = await this.registry.payin(c.providerId);
-            const res = await adapter.createPayment({ reference: paymentId, amountMinor: input.amount, currency: 'INR', method: input.method, customer: input.customer, description: input.description, expiresAt });
+            const res = await adapter.createPayment({ reference: paymentId, amountMinor: input.amount, currency: 'INR', method: input.method, customer: input.customer, description: input.description, expiresAt, returnUrl: this.returnUrl(paymentId), notifyUrl: this.notifyUrl(c.providerCode) });
             const latency = Date.now() - started;
             await this.prisma.paymentAttempt.update({ where: { id: attemptId }, data: { status: 'SUCCEEDED', providerOrderId: res.providerOrderId, latencyMs: latency, completedAt: new Date() } });
             await this.registry.recordOutcome(c.providerId, 'PAYIN', 'SUCCESS', latency);
@@ -185,7 +225,8 @@ export class PaymentsService {
           providerOrderId: result.providerOrderId,
           qrPayload: result.qrPayload ?? null,
           upiIntent: result.upiIntent ?? null,
-          paymentLink: result.paymentLink ?? null,
+          paymentLink: this.linkFor(p.id, result.paymentLink, result.action),
+          checkoutAction: result.action ? (JSON.parse(JSON.stringify(result.action)) as Prisma.InputJsonValue) : undefined,
         });
         await this.events.emit(tx, p.merchantId, 'payment.pending', p.id, presentPayment(next));
         return next;

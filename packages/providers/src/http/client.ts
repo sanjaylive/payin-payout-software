@@ -10,6 +10,10 @@ export interface HttpRequest {
   method: 'GET' | 'POST';
   path: string;
   body?: unknown;
+  /** Send `application/x-www-form-urlencoded` instead of JSON (most Indian PGs). */
+  form?: Record<string, string>;
+  /** Parse the response as text instead of JSON (e.g. `status=0&enc_response=…`). */
+  responseType?: 'json' | 'text';
   headers?: Record<string, string>;
   timeoutMs: number;
   requestId: string;
@@ -36,11 +40,11 @@ function errorCode(err: unknown): string | undefined {
  *  - non-JSON 2xx → AMBIGUOUS (we can't know what happened)
  */
 export async function httpJson<T>(req: HttpRequest): Promise<HttpResponse<T>> {
-  const payload = req.body === undefined ? '' : JSON.stringify(req.body, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+  const payload = req.form ? new URLSearchParams(req.form).toString() : req.body === undefined ? '' : JSON.stringify(req.body, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
   const headers: Record<string, string> = {
-    Accept: 'application/json',
+    Accept: req.responseType === 'text' ? '*/*' : 'application/json',
     'X-Request-Id': req.requestId,
-    ...(payload ? { 'Content-Type': 'application/json' } : {}),
+    ...(payload ? { 'Content-Type': req.form ? 'application/x-www-form-urlencoded' : 'application/json' } : {}),
     ...req.headers,
   };
   if (req.signing) {
@@ -78,6 +82,9 @@ export async function httpJson<T>(req: HttpRequest): Promise<HttpResponse<T>> {
 
   const latencyMs = Date.now() - started;
   const text = await res.text();
+  if (req.responseType === 'text') {
+    if (res.ok) return { status: res.status, body: text as T, latencyMs };
+  }
   let body: unknown;
   try {
     body = text ? JSON.parse(text) : {};
