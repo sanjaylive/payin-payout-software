@@ -140,5 +140,5 @@ done
 if [ "$ok" = 1 ]; then echo "https://$DOMAIN is up (release $REL)."
 else echo "⚠ https://$DOMAIN did not answer yet. Check DNS (A record → $DEPLOY_HOST), ports 80/443, and: ssh $DEPLOY_USER@$DEPLOY_HOST 'docker compose -p pay2all logs --tail 100 api web'"; fi
 
-remote "cd '$DEPLOY_DIR/releases' && ls -1t | grep -v -x '$REL' | tail -n +$KEEP_RELEASES | while read -r old; do rm -rf \"\$old\"; docker image rm \"pay2all-app:\$old\" >/dev/null 2>&1 || true; done; docker builder prune -f --filter until=168h >/dev/null 2>&1 || true"
+remote "cd '$DEPLOY_DIR/releases' && { ls -1t | grep -v -x '$REL' || true; } | tail -n +$KEEP_RELEASES | while read -r old; do rm -rf \"\$old\"; docker image rm \"pay2all-app:\$old\" >/dev/null 2>&1 || true; done; docker builder prune -f --filter until=168h >/dev/null 2>&1 || true"
 echo "Rollback, if needed: npm run deploy -- --rollback <previous release>"
