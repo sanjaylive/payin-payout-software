@@ -1,0 +1,19 @@
+<p class="text-muted">{{ text_redirect }}</p>
+<div class="text-end">
+  <button type="button" id="button-pay2all" class="btn btn-primary">{{ button_confirm }}</button>
+</div>
+<script type="text/javascript"><!--
+$('#button-pay2all').on('click', function () {
+  var element = this;
+  $.ajax({
+    url: '{{ confirm }}',
+    dataType: 'json',
+    beforeSend: function () { $(element).button('loading'); },
+    complete: function () { $(element).button('reset'); },
+    success: function (json) {
+      if (json['error']) { $('#alert').prepend('<div class="alert alert-danger alert-dismissible"><i class="fa-solid fa-circle-exclamation"></i> ' + json['error'] + ' <button type="button" class="btn-close" data-bs-dismiss="alert"></button></div>'); }
+      if (json['redirect']) { location = json['redirect']; }
+    }
+  });
+});
+//--></script>

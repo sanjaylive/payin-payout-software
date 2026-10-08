@@ -86,6 +86,7 @@ export const MERCHANT_NAV: NavItem[] = [
     children: [
       { label: 'API Keys', href: '/developers/api-keys', phase: 9, permission: 'api_key.read' },
       { label: 'Documentation', href: '/developers/docs', phase: 9 },
+      { label: 'Integrations', href: '/developers/integrations', phase: 9, permission: 'api_key.read' },
       { label: 'Webhooks', href: '/developers/webhooks', phase: 7, permission: 'webhook.read' },
       { label: 'Webhook Logs', href: '/developers/webhook-logs', phase: 7, permission: 'webhook.read' },
       { label: 'Websites', href: '/developers/websites', phase: 9, permission: 'api_key.read' },

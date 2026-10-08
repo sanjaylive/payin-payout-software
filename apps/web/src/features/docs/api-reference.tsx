@@ -3,7 +3,7 @@
 import { Input } from '@pay2all/ui/components/ui/input';
 import { cn } from '@pay2all/ui/lib/utils';
 import { AlertTriangle, ArrowRight, Check, CheckCircle2, Copy, Hash, Info, Search, ShieldCheck } from 'lucide-react';
-import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { API_URL } from '@/lib/api/client';
 import { useBrand } from '@/lib/brand/brand-provider';
 import { call, helpers, type Lang, LANGS, WEBHOOK_VERIFY } from './samples';
@@ -11,6 +11,28 @@ import { call, helpers, type Lang, LANGS, WEBHOOK_VERIFY } from './samples';
 // ---- Language preference (shared by every sample on the page) -------------------------------------
 
 const LangContext = createContext<{ lang: Lang; setLang: (l: Lang) => void }>({ lang: 'node', setLang: () => undefined });
+
+/** The web app's origin (where checkout.js is served), known only in the browser. */
+const noopSubscribe = () => () => undefined;
+const useWebOrigin = () => useSyncExternalStore(noopSubscribe, () => window.location.origin, () => 'https://pay.example.com');
+
+export const popupSnippet = (origin: string) => `<script src="${origin}/js/v1/checkout.js"></script>
+<button id="pay">Pay ₹2,499</button>
+<script>
+  let sessionId;
+  document.getElementById('pay').onclick = () =>
+    Pay2All.checkout({
+      // Your server creates the session (POST /v1/checkout/sessions).
+      // The window opens immediately; the url loads when this resolves.
+      url: () =>
+        fetch('/api/checkout', { method: 'POST' })
+          .then((r) => r.json())
+          .then((s) => ((sessionId = s.id), s.url)),
+      onSuccess: () => location.assign('/orders/thanks?session=' + sessionId), // verify on your server
+      onFailure: (r) => alert('Payment ' + r.status.toLowerCase()),
+      onClose: () => fetch('/api/checkout/' + sessionId + '/sync'),          // it may still be paid
+    });
+</script>`;
 
 // ---- Building blocks ------------------------------------------------------------------------------
 
@@ -33,7 +55,7 @@ function CopyIcon({ text }: { text: string }) {
   );
 }
 
-function CodePanel({ title, samples, single }: { title?: string; samples?: Record<Lang, string>; single?: { label: string; code: string } }) {
+export function CodePanel({ title, samples, single }: { title?: string; samples?: Record<Lang, string>; single?: { label: string; code: string } }) {
   const { lang, setLang } = useContext(LangContext);
   const code = single ? single.code : samples![lang];
   return (
@@ -187,7 +209,7 @@ function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
 
 const NAV: { group: string; items: { id: string; label: string; method?: string }[] }[] = [
   { group: 'Get started', items: [{ id: 'introduction', label: 'Introduction' }, { id: 'quickstart', label: 'Quickstart' }, { id: 'authentication', label: 'Authentication' }, { id: 'idempotency', label: 'Idempotency' }, { id: 'errors', label: 'Errors' }, { id: 'pagination', label: 'Pagination' }, { id: 'rate-limits', label: 'Rate limits' }, { id: 'testing', label: 'Testing' }] },
-  { group: 'Checkout', items: [{ id: 'checkout', label: 'How checkout works' }, { id: 'checkout-create', label: 'Create a session', method: 'POST' }, { id: 'checkout-retrieve', label: 'Retrieve a session', method: 'GET' }, { id: 'checkout-list', label: 'List sessions', method: 'GET' }, { id: 'checkout-cancel', label: 'Cancel a session', method: 'POST' }, { id: 'checkout-return', label: 'After payment' }] },
+  { group: 'Checkout', items: [{ id: 'checkout', label: 'How checkout works' }, { id: 'checkout-create', label: 'Create a session', method: 'POST' }, { id: 'checkout-retrieve', label: 'Retrieve a session', method: 'GET' }, { id: 'checkout-list', label: 'List sessions', method: 'GET' }, { id: 'checkout-cancel', label: 'Cancel a session', method: 'POST' }, { id: 'checkout-return', label: 'After payment' }, { id: 'checkout-popup', label: 'Popup checkout (checkout.js)' }, { id: 'plugins', label: 'Plugins & SDKs' }] },
   { group: 'Payment links', items: [{ id: 'links', label: 'How links work' }, { id: 'links-create', label: 'Create a link', method: 'POST' }, { id: 'links-retrieve', label: 'Retrieve a link', method: 'GET' }, { id: 'links-list', label: 'List links', method: 'GET' }, { id: 'links-notify', label: 'Send a link', method: 'POST' }, { id: 'links-cancel', label: 'Cancel a link', method: 'POST' }] },
   { group: 'Static QR', items: [{ id: 'static-qr', label: 'Static QR codes', method: 'GET' }, { id: 'static-qr-payments', label: 'QR payments', method: 'GET' }] },
   { group: 'Payments', items: [{ id: 'payments-create', label: 'Create a payment', method: 'POST' }, { id: 'payments-retrieve', label: 'Retrieve a payment', method: 'GET' }, { id: 'payments-list', label: 'List payments', method: 'GET' }, { id: 'refunds-create', label: 'Refund a payment', method: 'POST' }, { id: 'refunds-list', label: 'List refunds', method: 'GET' }] },
@@ -343,6 +365,7 @@ export function ApiReference() {
   const brand = useBrand();
   const base = API_URL.replace(/\/$/, '');
   const name = brand.short_name;
+  const origin = useWebOrigin();
 
   return (
     <LangContext.Provider value={{ lang, setLang }}>
@@ -648,6 +671,68 @@ export function ApiReference() {
           <Endpoint id="static-qr-payments" method="GET" path="/v1/static-qrs/:id/payments" title="QR payments" response={{ success: true, data: [{ ...PAYMENT, merchant_order_id: 'SQR-pay_NsK1a2b3', method: 'UPI_STATIC_QR', static_qr_id: 'sqr_01JC8ZH…', amount: '250.00', status: 'SUCCESS', utr: '412398765432' }] }}>
             <p>The latest payments received on one QR code, newest first.</p>
           </Endpoint>
+
+          <Section id="checkout-popup" title="Popup checkout (checkout.js)" aside={<CodePanel title="Your checkout page" single={{ label: 'HTML', code: popupSnippet(origin) }} />}>
+            <p>
+              Keep customers on your page: <code>checkout.js</code> opens the hosted checkout in a secure popup window and tells your page how it ended. Your server still creates the session; the script only displays it.
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>
+                Call <code>Pay2All.checkout()</code> directly inside a click handler, so the browser allows the popup. If a popup is blocked, the customer is sent to the checkout page instead (the normal redirect flow).
+              </li>
+              <li>
+                <code>onSuccess</code> / <code>onFailure</code> receive <code>{'{ status, checkout_session_id, merchant_order_id, payment_id }'}</code>. The result is posted only to your approved website&apos;s origin.
+              </li>
+              <li>
+                <code>onClose</code> runs when the customer closes the window without a result. Check the order on your server: a payment may still have completed (for example if a bank page cut the link to your window).
+              </li>
+              <li>
+                Your page must not send <code>Cross-Origin-Opener-Policy: same-origin</code> (use <code>same-origin-allow-popups</code>), or the popup can&apos;t report back.
+              </li>
+            </ul>
+            <Callout tone="warn">
+              <p>
+                Treat the popup&apos;s result as a hint for your UI. Fulfil orders only after <code>GET /v1/checkout/sessions/:id</code> or the <code>payment.success</code> webhook confirms them.
+              </p>
+            </Callout>
+          </Section>
+
+          <Section id="plugins" title="Plugins & SDKs">
+            <ul className="divide-y rounded-lg border">
+              <li className="flex flex-wrap items-center justify-between gap-2 p-3">
+                <span>
+                  <strong>WooCommerce</strong> — hosted checkout, webhook confirmation, refunds from the order screen.
+                </span>
+                <a className="text-primary text-sm font-medium hover:underline" href="/downloads/pay2all-woocommerce-1.0.0.zip" download>
+                  Download v1.0.0
+                </a>
+              </li>
+              <li className="flex flex-wrap items-center justify-between gap-2 p-3">
+                <span>
+                  <strong>OpenCart 4.0.2+</strong> (beta) — hosted checkout and webhook confirmation.
+                </span>
+                <a className="text-primary text-sm font-medium hover:underline" href="/downloads/pay2all-opencart-1.0.0.ocmod.zip" download>
+                  Download v1.0.0
+                </a>
+              </li>
+              <li className="flex flex-wrap items-center justify-between gap-2 p-3">
+                <span>
+                  <strong>PHP SDK</strong> — one file: signed requests, idempotency keys, webhook verification.
+                </span>
+                <a className="text-primary text-sm font-medium hover:underline" href="/downloads/pay2all-php-1.0.0.zip" download>
+                  Download v1.0.0
+                </a>
+              </li>
+            </ul>
+            <p>
+              Every plugin needs your store&apos;s address approved under Developers → Websites, an API key, and a webhook endpoint for <code>payment.success</code>. Step-by-step setup is on the Developers → Integrations page of your dashboard.
+            </p>
+            <Callout>
+              <p>
+                <strong>Shopify:</strong> Shopify only lets approved payment partners add a checkout payment method, so there is no Pay2All app for Shopify checkout. You can still collect for Shopify orders with a <a href="#links">payment link</a> (for example with a manual payment method).
+              </p>
+            </Callout>
+          </Section>
 
           <Endpoint
             id="payments-create"

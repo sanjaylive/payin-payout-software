@@ -1,0 +1,56 @@
+{{ header }}{{ column_left }}
+<div id="content">
+  <div class="page-header">
+    <div class="container-fluid">
+      <div class="float-end">
+        <button type="submit" form="form-payment" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i></button>
+        <a href="{{ back }}" class="btn btn-light"><i class="fa-solid fa-reply"></i></a>
+      </div>
+      <h1>{{ heading_title }}</h1>
+      <ol class="breadcrumb">{% for b in breadcrumbs %}<li class="breadcrumb-item"><a href="{{ b.href }}">{{ b.text }}</a></li>{% endfor %}</ol>
+    </div>
+  </div>
+  <div class="container-fluid">
+    <div class="card">
+      <div class="card-header"><i class="fa-solid fa-pencil"></i> {{ text_edit }}</div>
+      <div class="card-body">
+        <p class="text-muted">{{ help_website }}</p>
+        <form id="form-payment" action="{{ save }}" method="post" data-oc-toggle="ajax">
+          <div class="row mb-3">
+            <label for="input-api-base" class="col-sm-2 col-form-label">{{ entry_api_base }}</label>
+            <div class="col-sm-10"><input type="url" name="payment_pay2all_api_base" value="{{ payment_pay2all_api_base }}" id="input-api-base" class="form-control" placeholder="https://api.example.com"/><div id="error-api-base" class="invalid-feedback"></div></div>
+          </div>
+          <div class="row mb-3">
+            <label for="input-key-id" class="col-sm-2 col-form-label">{{ entry_key_id }}</label>
+            <div class="col-sm-10"><input type="text" name="payment_pay2all_key_id" value="{{ payment_pay2all_key_id }}" id="input-key-id" class="form-control" placeholder="pk_live_…"/><div id="error-key-id" class="invalid-feedback"></div></div>
+          </div>
+          <div class="row mb-3">
+            <label for="input-key-secret" class="col-sm-2 col-form-label">{{ entry_key_secret }}</label>
+            <div class="col-sm-10"><input type="password" name="payment_pay2all_key_secret" value="" id="input-key-secret" class="form-control" autocomplete="new-password" placeholder="{{ payment_pay2all_key_secret ? '••••••••' : '' }}"/><div class="form-text">{{ help_secret }}</div><div id="error-key-secret" class="invalid-feedback"></div></div>
+          </div>
+          <div class="row mb-3">
+            <label for="input-webhook-secret" class="col-sm-2 col-form-label">{{ entry_webhook_secret }}</label>
+            <div class="col-sm-10"><input type="password" name="payment_pay2all_webhook_secret" value="" id="input-webhook-secret" class="form-control" autocomplete="new-password" placeholder="{{ payment_pay2all_webhook_secret ? '••••••••' : 'whsec_…' }}"/><div class="form-text">{{ help_webhook }} <code>{{ webhook_url }}</code></div></div>
+          </div>
+          <div class="row mb-3">
+            <label for="input-order-status" class="col-sm-2 col-form-label">{{ entry_order_status }}</label>
+            <div class="col-sm-10"><select name="payment_pay2all_order_status_id" id="input-order-status" class="form-select">{% for s in order_statuses %}<option value="{{ s.order_status_id }}"{% if s.order_status_id == payment_pay2all_order_status_id %} selected{% endif %}>{{ s.name }}</option>{% endfor %}</select></div>
+          </div>
+          <div class="row mb-3">
+            <label for="input-geo-zone" class="col-sm-2 col-form-label">{{ entry_geo_zone }}</label>
+            <div class="col-sm-10"><select name="payment_pay2all_geo_zone_id" id="input-geo-zone" class="form-select"><option value="0">All zones</option>{% for z in geo_zones %}<option value="{{ z.geo_zone_id }}"{% if z.geo_zone_id == payment_pay2all_geo_zone_id %} selected{% endif %}>{{ z.name }}</option>{% endfor %}</select></div>
+          </div>
+          <div class="row mb-3">
+            <label class="col-sm-2 col-form-label">{{ entry_status }}</label>
+            <div class="col-sm-10"><div class="form-check form-switch form-switch-lg"><input type="hidden" name="payment_pay2all_status" value="0"/><input type="checkbox" name="payment_pay2all_status" value="1" id="input-status" class="form-check-input"{% if payment_pay2all_status %} checked{% endif %}/></div></div>
+          </div>
+          <div class="row mb-3">
+            <label for="input-sort-order" class="col-sm-2 col-form-label">{{ entry_sort_order }}</label>
+            <div class="col-sm-10"><input type="number" name="payment_pay2all_sort_order" value="{{ payment_pay2all_sort_order }}" id="input-sort-order" class="form-control"/></div>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{{ footer }}

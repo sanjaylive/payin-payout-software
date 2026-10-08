@@ -255,7 +255,10 @@ export class CheckoutService {
     const status = this.effectiveStatus(s);
     const methods = status === 'OPEN' ? await this.methods(s) : { upi: false, gateways: [] };
     return {
+      id: s.id,
       kind: s.kind,
+      // Popup checkout (checkout.js) reports the outcome only to the merchant's own approved website.
+      embed_origin: s.returnUrl ? new URL(s.returnUrl).origin : null,
       merchant: { name: merchant.profile?.displayName ?? merchant.organization.name },
       platform: { name: brand.product_name },
       page: page ? { slug: page.slug, title: page.title, success_message: page.successMessage } : null,

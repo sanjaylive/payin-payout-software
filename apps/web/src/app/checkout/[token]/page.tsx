@@ -6,8 +6,8 @@ import { HostedCheckout } from '@/features/checkout/hosted-checkout';
 
 function Page() {
   const { token } = useParams<{ token: string }>();
-  const returned = useSearchParams().get('returned') === '1';
-  return <HostedCheckout token={token} returned={returned} />;
+  const params = useSearchParams();
+  return <HostedCheckout token={token} returned={params.get('returned') === '1'} embed={params.get('embed') === 'popup'} />;
 }
 
 export default function CheckoutPage() {

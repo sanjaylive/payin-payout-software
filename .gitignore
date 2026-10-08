@@ -20,3 +20,6 @@ generated/
 # Load tests: generated credentials and raw k6 output never leave the machine.
 load/k6/.loadtest.env
 load/k6/results/
+
+# Plugin zips are build output (apps/web/scripts/build-plugins.mjs).
+apps/web/public/downloads/

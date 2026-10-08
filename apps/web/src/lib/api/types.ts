@@ -1200,7 +1200,9 @@ export interface PublicCheckoutPayment {
   failure_reason: string | null;
 }
 export interface PublicCheckout {
+  id: string;
   kind: 'CHECKOUT' | 'LINK' | 'PAGE';
+  embed_origin: string | null;
   merchant: { name: string };
   platform: { name: string };
   page: { slug: string; title: string; success_message: string | null } | null;

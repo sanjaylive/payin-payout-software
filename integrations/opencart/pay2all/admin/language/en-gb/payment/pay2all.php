@@ -1,0 +1,21 @@
+<?php
+$_['heading_title'] = 'Pay2All';
+$_['text_extension'] = 'Extensions';
+$_['text_success'] = 'Pay2All settings saved.';
+$_['text_edit'] = 'Edit Pay2All';
+$_['text_pay2all'] = '<strong>Pay2All</strong> — UPI, cards, netbanking';
+$_['entry_api_base'] = 'API URL';
+$_['entry_key_id'] = 'API key id';
+$_['entry_key_secret'] = 'API secret';
+$_['entry_webhook_secret'] = 'Webhook signing secret';
+$_['entry_order_status'] = 'Order status when paid';
+$_['entry_geo_zone'] = 'Geo zone';
+$_['entry_status'] = 'Status';
+$_['entry_sort_order'] = 'Sort order';
+$_['help_secret'] = 'Leave blank to keep the saved value.';
+$_['help_webhook'] = 'In Pay2All → Developers → Webhooks, add this URL for payment.success:';
+$_['help_website'] = 'Add your store address under Pay2All → Developers → Websites and wait for approval before going live.';
+$_['error_permission'] = 'You do not have permission to modify Pay2All.';
+$_['error_api_base'] = 'Enter the API URL (https://…).';
+$_['error_key_id'] = 'Enter an API key id starting with pk_test_ or pk_live_.';
+$_['error_key_secret'] = 'Enter the API secret.';

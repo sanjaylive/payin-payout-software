@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prebuild": "node scripts/build-plugins.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

@@ -27,8 +27,40 @@ function useCountdown(until: string | null | undefined) {
   return { seconds: s, text: `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` };
 }
 
+/**
+ * Popup checkout (checkout.js): the page runs in a window the merchant's site opened. The flag
+ * survives gateway round-trips in sessionStorage (same window), and the result goes back to the
+ * opener only at the merchant's approved website origin.
+ */
+function useEmbedded(token: string, requested: boolean) {
+  const [embedded] = useState(() => {
+    const key = `p2a_embed_${token}`;
+    try {
+      if (requested) sessionStorage.setItem(key, '1');
+      return requested || sessionStorage.getItem(key) === '1';
+    } catch {
+      return requested;
+    }
+  });
+  return embedded && typeof window !== 'undefined' && Boolean(window.opener);
+}
+
+function notifyOpener(d: PublicCheckout, status: string): boolean {
+  if (!d.embed_origin || !window.opener) return false;
+  try {
+    (window.opener as Window).postMessage(
+      { source: 'pay2all', type: 'checkout.result', status, checkout_session_id: d.id, merchant_order_id: d.order.id, payment_id: status === 'PAID' ? (d.payment?.id ?? null) : null },
+      d.embed_origin,
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The customer-facing hosted checkout (docs/CHECKOUT.md). Public; addressed by the session token. */
-export function HostedCheckout({ token, returned }: { token: string; returned: boolean }) {
+export function HostedCheckout({ token, returned, embed = false }: { token: string; returned: boolean; embed?: boolean }) {
+  const embedded = useEmbedded(token, embed);
   const qc = useQueryClient();
   const key = ['public-checkout', token];
   const q = useQuery({
@@ -42,6 +74,14 @@ export function HostedCheckout({ token, returned }: { token: string; returned: b
     },
   });
   const [choosing, setChoosing] = useState(false);
+  const finalStatus = q.data && q.data.status !== 'OPEN' ? q.data.status : null;
+  useEffect(() => {
+    if (!embedded || !finalStatus || !q.data) return;
+    if (!notifyOpener(q.data, finalStatus)) return;
+    const t = setTimeout(() => window.close(), finalStatus === 'PAID' ? 2500 : 800);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per final status
+  }, [embedded, finalStatus]);
 
   if (q.isError) {
     return (
@@ -65,7 +105,7 @@ export function HostedCheckout({ token, returned }: { token: string; returned: b
   const refresh = () => qc.invalidateQueries({ queryKey: key });
 
   let body: React.ReactNode;
-  if (d.status === 'PAID') body = <Paid d={d} />;
+  if (d.status === 'PAID') body = <Paid d={d} embedded={embedded} />;
   else if (d.status === 'EXPIRED' || d.status === 'CANCELLED') {
     body = (
       <Center
@@ -85,7 +125,7 @@ export function HostedCheckout({ token, returned }: { token: string; returned: b
     );
   } else if (p && OPEN.includes(p.status) && p.method === 'UPI_QR' && !choosing) body = <UpiWait p={p} onBack={() => setChoosing(true)} />;
   else if (p && OPEN.includes(p.status) && p.method === 'PAYMENT_LINK' && returned && !choosing) body = <GatewayWait onRetry={() => setChoosing(true)} />;
-  else body = <Choose d={d} token={token} failed={p && (p.status === 'FAILED' || p.status === 'EXPIRED') ? p : null} onStarted={() => { setChoosing(false); void refresh(); }} />;
+  else body = <Choose d={d} token={token} embedded={embedded} failed={p && (p.status === 'FAILED' || p.status === 'EXPIRED') ? p : null} onStarted={() => { setChoosing(false); void refresh(); }} />;
 
   return (
     <Shell>
@@ -152,7 +192,7 @@ function Center({ icon, title, text, action }: { icon: React.ReactNode; title: s
   );
 }
 
-function Choose({ d, token, failed, onStarted }: { d: PublicCheckout; token: string; failed: PublicCheckoutPayment | null; onStarted: () => void }) {
+function Choose({ d, token, embedded, failed, onStarted }: { d: PublicCheckout; token: string; embedded: boolean; failed: PublicCheckoutPayment | null; onStarted: () => void }) {
   const [name, setName] = useState(d.customer.name ?? '');
   const [email, setEmail] = useState(d.customer.email ?? '');
   const [mobile, setMobile] = useState(d.customer.mobile ?? '');
@@ -228,7 +268,16 @@ function Choose({ d, token, failed, onStarted }: { d: PublicCheckout; token: str
           <ShieldCheck className="size-3.5" /> Your card details are entered only on the bank’s secure page.
         </span>
         {d.cancel_url && (
-          <a href={d.cancel_url} onClick={(e) => { e.preventDefault(); void apiRequest(`/v1/public/checkout/${token}/cancel`, { method: 'POST', auth: false, body: {} }).finally(() => window.location.assign(d.cancel_url!)); }} className="hover:text-foreground shrink-0 underline-offset-2 hover:underline">
+          <a
+            href={d.cancel_url}
+            onClick={(e) => {
+              e.preventDefault();
+              void apiRequest(`/v1/public/checkout/${token}/cancel`, { method: 'POST', auth: false, body: {} }).finally(() => {
+                if (embedded && notifyOpener(d, 'CANCELLED')) window.close();
+                else window.location.assign(d.cancel_url!);
+              });
+            }}
+            className="hover:text-foreground shrink-0 underline-offset-2 hover:underline">
             Cancel
           </a>
         )}
@@ -293,13 +342,14 @@ function GatewayWait({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-function Paid({ d }: { d: PublicCheckout }) {
+function Paid({ d, embedded }: { d: PublicCheckout; embedded: boolean }) {
   const [deadline] = useState(() => Date.now() + 6000);
   useEffect(() => {
-    if (!d.return_url) return;
+    // In a popup the merchant's page takes over (the window closes itself).
+    if (!d.return_url || embedded) return;
     const id = setTimeout(() => window.location.assign(d.return_url!), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(id);
-  }, [d.return_url, deadline]);
+  }, [d.return_url, deadline, embedded]);
   const icon = (
     <span className="flex size-16 items-center justify-center rounded-full bg-emerald-500/10">
       <CheckCircle2 className="size-10 text-emerald-600" />
@@ -310,7 +360,7 @@ function Paid({ d }: { d: PublicCheckout }) {
       <Center
         icon={icon}
         title="Payment successful"
-        text={`${inr(d.order.amount)} paid to ${d.merchant.name}${d.payment?.utr ? ` · Ref ${d.payment.utr}` : ''}. Taking you back to the merchant…`}
+        text={`${inr(d.order.amount)} paid to ${d.merchant.name}${d.payment?.utr ? ` · Ref ${d.payment.utr}` : ''}. ${embedded ? 'This window will close…' : 'Taking you back to the merchant…'}`}
         action={<Button onClick={() => window.location.assign(d.return_url!)}>Return to {d.merchant.name}</Button>}
       />
     );
