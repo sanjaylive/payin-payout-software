@@ -49,6 +49,8 @@ export const ID_PREFIXES = {
   staticQr: 'sqr',
   statementImport: 'sti',
   statementLine: 'stln',
+  dispute: 'dsp',
+  disputeEvidence: 'dev',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

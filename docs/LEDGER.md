@@ -218,7 +218,7 @@ If the refund fails at the provider: `REFUND_REVERSAL` posts the exact mirror.
 | Cr | `platform:FEE_REVENUE` | 200.00 |
 | Cr | `platform:GST_PAYABLE` | 36.00 |
 
-**Dispute won:** Dr `LIEN` 1,000 / Cr `AVAILABLE` 1,000.
+**Dispute won:** Dr `LIEN` 1,000 / Cr the buckets the lien came from (`AVAILABLE`, `UNSETTLED`, or `RECEIVABLE` for any part the merchant couldn't cover), as recorded on the dispute. Workflow: docs/DISPUTES.md.
 
 If AVAILABLE is short when the dispute opens, the shortfall is lien-ed from UNSETTLED. If both are short, the remainder goes to `RECEIVABLE` and a `HOLD_SETTLEMENT` risk action is raised.
 

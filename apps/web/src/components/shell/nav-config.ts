@@ -55,6 +55,7 @@ export const MERCHANT_NAV: NavItem[] = [
       { label: 'Payment Links', href: '/payin/payment-links', phase: 5, permission: 'payin.read' },
       { label: 'Payment Pages', href: '/payin/payment-pages', phase: 5, permission: 'payin.read' },
       { label: 'Refunds', href: '/payin/refunds', phase: 5, permission: 'payin.read' },
+      { label: 'Disputes', href: '/payin/disputes', phase: 5, permission: 'dispute.read' },
     ],
   },
   {
@@ -165,6 +166,7 @@ export const ADMIN_NAV: NavItem[] = [
       { label: 'Payin', href: '/admin/transactions/payin', phase: 5, permission: 'payin.read' },
       { label: 'Payout', href: '/admin/transactions/payout', phase: 6, permission: 'payout.read' },
       { label: 'Refunds', href: '/admin/transactions/refunds', phase: 5, permission: 'payin.read' },
+      { label: 'Disputes', href: '/admin/disputes', phase: 5, permission: 'dispute.read' },
     ],
   },
   { label: 'Settlements', href: '/admin/settlements', icon: Landmark, phase: 8, permission: 'settlement.read' },

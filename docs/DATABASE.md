@@ -165,5 +165,6 @@ Search by free text (customer name, VPA) goes through specific indexed columns o
 ## 7. Migrations
 
 - `prisma migrate dev` locally, and `prisma migrate deploy` in CI/CD (never `db push` outside throwaway dev).
+- **Every deploy, after migrations:** `pnpm --filter @pay2all/database db:sync-rbac`. It makes permissions and system roles match `packages/auth`, so new permissions (e.g. `dispute.*`) reach existing roles. It creates no organizations, users or demo data and is safe in production; the demo seed is not.
 - Hand-written SQL (triggers, partial indexes, CHECK constraints Prisma can't express) is appended to the generated migration file in the same migration, so schema and guards ship together.
 - Zero-downtime discipline: expand → migrate data → contract. No destructive change ships in the same release as the code that stops using the column.

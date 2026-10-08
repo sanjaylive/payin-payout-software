@@ -12,6 +12,7 @@ import { CommissionsModule } from '../modules/commissions/commissions.module';
 import { RiskModule } from '../modules/risk/risk.module';
 import { ReportsModule } from '../modules/reports/reports.module';
 import { StaticQrModule } from '../modules/static-qr/static-qr.module';
+import { DisputesModule } from '../modules/disputes/disputes.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -37,6 +38,7 @@ export class JobsModule {
         RiskModule,
         ReportsModule,
         StaticQrModule,
+        DisputesModule,
       ],
       providers: [JobsRunner],
     };

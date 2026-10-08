@@ -1331,3 +1331,36 @@ export interface StatementImportDetail {
     matched_at: string | null;
   }[];
 }
+
+export interface DisputeRow {
+  id: string;
+  payment_id: string;
+  merchant_id: string;
+  merchant_name?: string;
+  provider_case_id: string | null;
+  reason_code: string;
+  reason: string;
+  amount: string;
+  status: 'OPEN' | 'UNDER_REVIEW' | 'WON' | 'LOST';
+  respond_by: string;
+  overdue: boolean;
+  accepted: boolean;
+  merchant_note: string | null;
+  submitted_at: string | null;
+  fee: string;
+  tax: string;
+  resolution_note: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  payment?: { id: string; merchant_order_id: string; amount: string; method: string; utr: string | null; created_at: string; customer_name: string | null };
+  evidence?: { id: string; file_name: string; content_type: string; size_bytes: number; description: string | null; created_at: string }[];
+}
+
+export interface DisputeSummary {
+  open: number;
+  needs_response: number;
+  overdue: number;
+  held_amount: string;
+  won: number;
+  lost: number;
+}

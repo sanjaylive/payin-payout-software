@@ -40,6 +40,9 @@ export const PERMISSIONS = {
   'payin.read': { description: 'View payin transactions', scopes: ALL },
   'payin.create': { description: 'Create payments and payment links', scopes: ['API_PARTNER', 'MERCHANT'] },
   'payin.refund': { description: 'Initiate refunds', scopes: ['PLATFORM', 'API_PARTNER', 'MERCHANT'] },
+  'dispute.read': { description: 'View disputes and chargebacks', scopes: ['PLATFORM', 'MERCHANT'] },
+  'dispute.respond': { description: 'Upload evidence for, or accept, disputes', scopes: ['MERCHANT'] },
+  'dispute.manage': { description: 'Open and decide disputes (freezes and debits merchant funds)', scopes: P },
 
   'payout.read': { description: 'View payouts', scopes: ALL },
   'payout.create': { description: 'Create payouts', scopes: ['API_PARTNER', 'MERCHANT'] },

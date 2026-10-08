@@ -20,7 +20,11 @@ export type MerchantEventType =
   | 'payout.rejected'
   | 'payout.reversed'
   | 'settlement.processed'
-  | 'settlement.failed';
+  | 'settlement.failed'
+  | 'dispute.created'
+  | 'dispute.updated'
+  | 'dispute.won'
+  | 'dispute.lost';
 
 /**
  * Records a merchant-facing event (the thing a merchant webhook will carry) and the matching outbox

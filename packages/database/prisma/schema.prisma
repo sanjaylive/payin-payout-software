@@ -2576,6 +2576,7 @@ enum InboxCategory {
   REPORT
   SYSTEM
   WALLET
+  DISPUTE
 }
 
 enum InboxSeverity {
@@ -2852,6 +2853,77 @@ model StatementLine {
   @@index([importId, lineNo])
   @@index([collectionAccountId, status])
   @@map("statement_lines")
+}
+
+enum DisputeStatus {
+  /// Opened; the merchant can add evidence until respond_by.
+  OPEN
+  /// Merchant submitted evidence (or the deadline passed); waiting for the bank / network.
+  UNDER_REVIEW
+  /// Decided for the merchant: the lien is released.
+  WON
+  /// Decided for the customer: the amount (and any chargeback fee) is debited.
+  LOST
+}
+
+/// A customer dispute / chargeback on a captured payment (docs/DISPUTES.md). Money is frozen in the
+/// merchant's LIEN bucket while it is open (CHARGEBACK_LIEN), then released or debited.
+model Dispute {
+  id                  String        @id
+  paymentId           String        @map("payment_id")
+  merchantId          String        @map("merchant_id")
+  /// The bank / network's case number, when known.
+  providerCaseId      String?       @map("provider_case_id") @db.VarChar(80)
+  reasonCode          String        @map("reason_code") @db.VarChar(40)
+  reason              String        @db.VarChar(500)
+  amountMinor         BigInt        @map("amount_minor")
+  status              DisputeStatus @default(OPEN)
+  respondBy           DateTime      @map("respond_by") @db.Timestamptz(3)
+  /// The payment's status before the dispute (restored when it is won).
+  paymentStatusBefore PaymentStatus @map("payment_status_before")
+  /// Where the lien came from: { available, unsettled, receivable } in paise (as strings).
+  lienSources         Json          @map("lien_sources")
+  lienJournalId       String        @unique @map("lien_journal_id")
+  outcomeJournalId    String?       @unique @map("outcome_journal_id")
+  feeMinor            BigInt        @default(0) @map("fee_minor")
+  taxMinor            BigInt        @default(0) @map("tax_minor")
+  merchantNote        String?       @map("merchant_note") @db.VarChar(2000)
+  submittedAt         DateTime?     @map("submitted_at") @db.Timestamptz(3)
+  /// The merchant accepted the dispute instead of contesting it.
+  accepted            Boolean       @default(false)
+  resolutionNote      String?       @map("resolution_note") @db.VarChar(500)
+  resolvedById        String?       @map("resolved_by_id")
+  resolvedAt          DateTime?     @map("resolved_at") @db.Timestamptz(3)
+  createdById         String        @map("created_by_id")
+  version             Int           @default(1)
+  createdAt           DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  evidence DisputeEvidence[]
+
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@index([status, respondBy])
+  @@index([paymentId])
+  @@map("disputes")
+}
+
+/// A file the merchant uploaded for a dispute (stored encrypted like every file).
+model DisputeEvidence {
+  id           String   @id
+  disputeId    String   @map("dispute_id")
+  storageKey   String   @map("storage_key") @db.VarChar(300)
+  fileName     String   @map("file_name") @db.VarChar(160)
+  contentType  String   @map("content_type") @db.VarChar(40)
+  sizeBytes    Int      @map("size_bytes")
+  sha256       String   @db.Char(64)
+  description  String?  @db.VarChar(300)
+  uploadedById String   @map("uploaded_by_id")
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  dispute Dispute @relation(fields: [disputeId], references: [id], onDelete: Restrict)
+
+  @@index([disputeId, createdAt])
+  @@map("dispute_evidence")
 }
 
 enum WebsiteStatus {

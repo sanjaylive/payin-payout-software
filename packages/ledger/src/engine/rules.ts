@@ -43,7 +43,8 @@ const RULES: Partial<Record<JournalType, Rule>> = {
   REFUND_REVERSAL: { allowedMerchantLegs: [C('UNSETTLED'), C('AVAILABLE')], allowedPlatform: ['platform:provider:', 'platform:MERCHANT_COMMISSION'] },
   CHARGEBACK_LIEN: { allowedMerchantLegs: [D('AVAILABLE'), D('UNSETTLED'), D('RECEIVABLE'), C('LIEN')], allowedPlatform: [] },
   CHARGEBACK_DEBIT: { allowedMerchantLegs: [D('LIEN'), D('AVAILABLE'), D('RECEIVABLE')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE'] },
-  CHARGEBACK_RELEASE: { exactMerchantLegs: [D('LIEN'), C('AVAILABLE')], allowedPlatform: [] },
+  // A won dispute returns the lien to where it came from (available, unsettled, or what the merchant owed).
+  CHARGEBACK_RELEASE: { allowedMerchantLegs: [D('LIEN'), C('AVAILABLE'), C('UNSETTLED'), C('RECEIVABLE')], allowedPlatform: [] },
   PROVIDER_SETTLEMENT: { allowedMerchantLegs: [], allowedPlatform: ['platform:bank:', 'platform:PROVIDER_COST', 'platform:provider:'] },
   PROVIDER_CHARGE: { allowedMerchantLegs: [], allowedPlatform: ['platform:PROVIDER_COST', 'platform:provider:'] },
   COMMISSION_ACCRUAL: { allowedMerchantLegs: [], allowedPlatform: ['platform:COMMISSION_EXPENSE'] },

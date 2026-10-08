@@ -15,6 +15,7 @@ import { SettlementsService } from '../modules/settlements/settlements.service';
 import { CommissionsService } from '../modules/commissions/commissions.service';
 import { RiskSweepService } from '../modules/risk/risk-sweep.service';
 import { StaticQrService } from '../modules/static-qr/static-qr.service';
+import { DisputesService } from '../modules/disputes/disputes.service';
 import { ReportGeneratorService } from '../modules/reports/report-generator.service';
 
 const job = (name: string, seconds: number, run: () => Promise<unknown>): ScheduledJob => ({
@@ -52,6 +53,7 @@ export class JobsRunner implements OnApplicationShutdown {
     private readonly riskSweep: RiskSweepService,
     private readonly reports: ReportGeneratorService,
     private readonly staticQrs: StaticQrService,
+    private readonly disputes: DisputesService,
   ) {}
 
   async start(): Promise<void> {
@@ -82,6 +84,7 @@ export class JobsRunner implements OnApplicationShutdown {
         job('api-log-retention', 3600, () => this.purgeApiLogs()),
         job('idempotency-sweeper', 60, () => this.payin.sweepIdempotency()),
         job('static-qr-reconcile', 60, () => this.staticQrs.pollActive()),
+        job('dispute-reminders', 6 * 3600, () => this.disputes.remindDue()),
       ],
       5_000,
     );

@@ -23,6 +23,8 @@ Pay2All sends an HTTPS `POST` to your endpoint when something happens to your pa
 
 An endpoint can subscribe to specific events or to all of them, including types added later.
 
+Dispute events (docs/DISPUTES.md): `dispute.created`, `dispute.updated`, `dispute.won`, `dispute.lost`. Each carries the dispute object: id, payment_id, amount, status, respond_by, reason and outcome fields.
+
 ## Request
 
 ```http

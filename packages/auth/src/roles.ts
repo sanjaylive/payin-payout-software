@@ -45,7 +45,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     description: 'KYC/KYB review, merchant approval and risk review',
     permissions: [
       'organization.read', 'user.read', 'audit.read', 'merchant.read', 'merchant.approve',
-      'merchant.suspend', 'compliance.read', 'compliance.approve', 'risk.read', 'risk.review', 'risk.manage',
+      'merchant.suspend', 'compliance.read', 'compliance.approve', 'risk.read', 'risk.review', 'risk.manage', 'dispute.read', 'dispute.manage',
       'payin.read', 'payout.read', 'settlement.read', 'settlement.hold', 'limit.read', 'report.read',
     ],
   },
@@ -56,7 +56,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Ledger, settlements, reconciliation and adjustments',
     permissions: [
-      'organization.read', 'audit.read', 'merchant.read', 'payin.read', 'payout.read',
+      'organization.read', 'audit.read', 'merchant.read', 'payin.read', 'payout.read', 'dispute.read',
       'ledger.read', 'ledger.platform.read', 'ledger.adjust', 'ledger.adjust.approve', 'settlement.read', 'fund.read', 'fund.approve',
       'settlement.process', 'settlement.hold', 'reconciliation.read', 'reconciliation.manage',
       'pricing.read', 'provider.read', 'report.read', 'report.export',
@@ -69,7 +69,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Transaction operations, providers, routing and limits',
     permissions: [
-      'organization.read', 'merchant.read', 'merchant.update', 'payin.read', 'payin.refund',
+      'organization.read', 'merchant.read', 'merchant.update', 'payin.read', 'payin.refund', 'dispute.read', 'dispute.manage',
       'payout.read', 'payout.review', 'beneficiary.read', 'provider.read', 'provider.manage',
       'routing.manage', 'webhook.read', 'webhook.manage', 'limit.read', 'limit.manage',
       'risk.read', 'risk.review', 'reconciliation.read', 'settlement.read', 'ledger.read', 'ledger.platform.read',
@@ -83,7 +83,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Read-only investigation of merchants and transactions',
     permissions: [
-      'organization.read', 'user.read', 'merchant.read', 'payin.read', 'payout.read',
+      'organization.read', 'user.read', 'merchant.read', 'payin.read', 'payout.read', 'dispute.read',
       'webhook.read', 'settlement.read', 'report.read', 'fund.read',
     ],
   },
@@ -164,7 +164,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: false,
     description: 'Payouts, approvals, balances and settlements',
     permissions: [
-      'organization.read', 'payin.read', 'payin.refund', 'payout.read', 'payout.create',
+      'organization.read', 'payin.read', 'payin.refund', 'dispute.read', 'dispute.respond', 'payout.read', 'payout.create',
       'payout.approve', 'beneficiary.read', 'beneficiary.manage', 'ledger.read',
       'settlement.read', 'limit.read', 'report.read', 'report.export', 'fund.read', 'fund.request',
     ],
@@ -176,7 +176,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: false,
     description: 'Day-to-day payments, payouts and refunds',
     permissions: [
-      'organization.read', 'payin.read', 'payin.create', 'payin.refund', 'payout.read',
+      'organization.read', 'payin.read', 'payin.create', 'payin.refund', 'dispute.read', 'dispute.respond', 'payout.read',
       'payout.create', 'beneficiary.read', 'beneficiary.manage', 'settlement.read', 'report.read',
     ],
   },
@@ -187,7 +187,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: false,
     description: 'Read-only access',
     permissions: [
-      'organization.read', 'merchant.read', 'payin.read', 'payout.read', 'settlement.read',
+      'organization.read', 'merchant.read', 'payin.read', 'dispute.read', 'payout.read', 'settlement.read',
       'ledger.read', 'report.read',
     ],
   },

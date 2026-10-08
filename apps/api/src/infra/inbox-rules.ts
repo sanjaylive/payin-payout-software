@@ -51,6 +51,14 @@ export function inboxRulesFor(type: MerchantEventType, resourceId: string, d: Da
       return [{ audience: { permission: 'settlement.read' }, category: 'SETTLEMENT', severity: 'SUCCESS', title: `Settlement of ${rupees(d.net)} sent`, body: `${str(d.settlement_date, '')} · ${str(d.payment_count, '')} payments${d.utr ? ` · UTR ${str(d.utr)}` : ''}.`, link: '/settlements', resourceType: 'settlement', resourceId, dedupeKey: `settlement:${resourceId}:processed` }];
     case 'settlement.failed':
       return [{ audience: { permission: 'settlement.read' }, category: 'SETTLEMENT', severity: 'CRITICAL', title: `Settlement of ${rupees(d.net)} failed`, body: `${str(d.failure_reason, 'The bank transfer failed')}. The funds stay in your balance and will be settled again.`, link: '/settlements', resourceType: 'settlement', resourceId, dedupeKey: `settlement:${resourceId}:failed:${str(d.processed_at, '')}` }];
+    case 'dispute.created': {
+      const due = typeof d.respond_by === 'string' ? new Date(d.respond_by).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }) : '';
+      return [{ audience: { permission: 'dispute.respond' }, category: 'DISPUTE', severity: 'CRITICAL', title: `Dispute of ${rupees(d.amount)} — respond by ${due}`, body: `${str(d.reason, 'A customer disputed a payment')}. The amount is on hold until it's decided. Upload evidence to contest it.`, link: `/payin/disputes?dispute=${resourceId}`, resourceType: 'dispute', resourceId, dedupeKey: `dispute:${resourceId}:created` }];
+    }
+    case 'dispute.won':
+      return [{ audience: { permission: 'dispute.read' }, category: 'DISPUTE', severity: 'SUCCESS', title: `Dispute won — ${rupees(d.amount)} released`, body: `${str(d.resolution_note, 'Decided in your favour')}. The held amount is back in your balance.`, link: `/payin/disputes?dispute=${resourceId}`, resourceType: 'dispute', resourceId, dedupeKey: `dispute:${resourceId}:won` }];
+    case 'dispute.lost':
+      return [{ audience: { permission: 'dispute.read' }, category: 'DISPUTE', severity: 'WARNING', title: `Dispute lost — ${rupees(d.amount)} debited`, body: `${str(d.resolution_note, 'Decided in the customer’s favour')}${d.fee && d.fee !== '0.00' ? ` · chargeback fee ${rupees(d.fee)} + GST` : ''}.`, link: `/payin/disputes?dispute=${resourceId}`, resourceType: 'dispute', resourceId, dedupeKey: `dispute:${resourceId}:lost` }];
     default:
       return [];
   }

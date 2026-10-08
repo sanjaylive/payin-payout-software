@@ -870,6 +870,9 @@ export function ApiReference() {
                 ['payout.queued / payout.processing', 'Approved / accepted by the bank'],
                 ['payout.success', 'Credited (utr included)'],
                 ['payout.failed / payout.rejected / payout.reversed', 'Not paid or returned; funds back in your balance'],
+                ['settlement.processed / settlement.failed', 'A settlement was paid to your bank, or the transfer failed'],
+                ['dispute.created', 'A customer disputed a payment — the amount is on hold; respond before respond_by'],
+                ['dispute.updated / dispute.won / dispute.lost', 'Evidence submitted, or the outcome (lost: debited, plus any fee)'],
               ].map(([e, w]) => [<code key="e">{e}</code>, w])}
             />
             <Callout>
