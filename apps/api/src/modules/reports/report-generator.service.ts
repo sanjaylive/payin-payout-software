@@ -73,8 +73,8 @@ export class ReportGeneratorService {
     const link = `${this.config.env.WEB_PUBLIC_URL.replace(/\/$/, '')}${path}`;
     const text =
       outcome === 'COMPLETED'
-        ? `Hi ${user.name},\n\nYour ${label} export for ${f.from} to ${f.to} is ready (${rows ?? 0} rows).\n\nDownload it after signing in: ${link}\nThe file is available for 7 days.\n\n— Pay2All Payments`
-        : `Hi ${user.name},\n\nYour ${label} export for ${f.from} to ${f.to} could not be generated. Please request it again from ${link}.\n\n— Pay2All Payments`;
+        ? `Hi ${user.name},\n\nYour ${label} export for ${f.from} to ${f.to} is ready (${rows ?? 0} rows).\n\nDownload it after signing in: ${link}\nThe file is available for 7 days.`
+        : `Hi ${user.name},\n\nYour ${label} export for ${f.from} to ${f.to} could not be generated. Please request it again from ${link}.`;
     await this.notifications.queue(this.prisma, {
       to: user.email,
       subject: outcome === 'COMPLETED' ? `Your ${label} export is ready` : `Your ${label} export failed`,

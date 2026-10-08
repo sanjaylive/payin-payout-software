@@ -2618,3 +2618,49 @@ model StorageObject {
   @@index([backendId])
   @@map("storage_objects")
 }
+
+enum BrandAssetKind {
+  /// Full logo for light backgrounds.
+  LOGO
+  /// Full logo for dark backgrounds (sidebar, sign-in panel, dark mode).
+  LOGO_DARK
+  /// Square mark: favicon and compact places.
+  ICON
+}
+
+/// White-label brand (single row, id = 'default'; docs/BRANDING.md). Missing = built-in defaults.
+model BrandSettings {
+  id            String   @id @default("default") @db.VarChar(20)
+  productName   String   @map("product_name") @db.VarChar(60)
+  shortName     String   @map("short_name") @db.VarChar(30)
+  companyName   String   @map("company_name") @db.VarChar(160)
+  tagline       String   @db.VarChar(160)
+  /// #RRGGBB; null = the built-in theme colour.
+  primaryColor  String?  @map("primary_color") @db.Char(7)
+  supportEmail  String?  @map("support_email") @db.VarChar(254)
+  supportPhone  String?  @map("support_phone") @db.VarChar(20)
+  websiteUrl    String?  @map("website_url") @db.VarChar(300)
+  loginHeadline String   @map("login_headline") @db.VarChar(120)
+  loginSubtext  String   @map("login_subtext") @db.VarChar(300)
+  footerText    String?  @map("footer_text") @db.VarChar(200)
+  version       Int      @default(1)
+  updatedById   String?  @map("updated_by_id")
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("brand_settings")
+}
+
+/// Uploaded brand images, served publicly by GET /v1/brand/assets/:kind (small; kept in the database).
+model BrandAsset {
+  kind        BrandAssetKind @id
+  contentType String         @map("content_type") @db.VarChar(40)
+  bytes       Bytes
+  sizeBytes   Int            @map("size_bytes")
+  sha256      String         @db.Char(64)
+  width       Int?
+  height      Int?
+  updatedById String?        @map("updated_by_id")
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("brand_assets")
+}

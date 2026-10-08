@@ -6,8 +6,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from 'next-themes';
 import { type ReactNode, useState } from 'react';
 import { ApiError } from '@/lib/api/client';
+import type { Brand } from '@/lib/brand/brand';
+import { BrandProvider } from '@/lib/brand/brand-provider';
 
-export function Providers({ children, nonce }: { children: ReactNode; nonce?: string }) {
+export function Providers({ children, nonce, brand }: { children: ReactNode; nonce?: string; brand: Brand }) {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -25,10 +27,12 @@ export function Providers({ children, nonce }: { children: ReactNode; nonce?: st
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange nonce={nonce}>
       <QueryClientProvider client={queryClient}>
-        <TooltipProvider delayDuration={200}>
-          {children}
-          <Toaster richColors position="top-right" />
-        </TooltipProvider>
+        <BrandProvider initial={brand}>
+          <TooltipProvider delayDuration={200}>
+            {children}
+            <Toaster richColors position="top-right" />
+          </TooltipProvider>
+        </BrandProvider>
       </QueryClientProvider>
     </ThemeProvider>
   );

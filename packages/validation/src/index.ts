@@ -19,3 +19,4 @@ export * from './vendors';
 export * from './login-events';
 export * from './storage';
 export * from './schemes';
+export * from './brand';

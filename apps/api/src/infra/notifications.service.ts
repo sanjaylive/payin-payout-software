@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { FieldEncryptor, newId } from '@pay2all/auth';
 import type { DbClient } from '@pay2all/database';
+import { BrandService } from './brand.service';
 import { RequestContextStore } from '../common/context/request-context';
 import { OutboxService } from './outbox.service';
 
@@ -46,11 +47,13 @@ export class NotificationsService {
   constructor(
     private readonly encryptor: FieldEncryptor,
     private readonly outbox: OutboxService,
+    private readonly brand: BrandService,
   ) {}
 
   async queue(db: DbClient, message: NotificationMessage): Promise<string> {
     const id = newId('notification');
     const channel = message.channel ?? 'EMAIL';
+    const { subject, text } = await this.brand.render(message.subject, message.text, channel);
     await db.notification.create({
       data: {
         id,
@@ -60,7 +63,7 @@ export class NotificationsService {
         userId: message.userId ?? null,
         targetServiceId: message.targetServiceId ?? null,
         contentEncrypted: this.encryptor.encrypt(
-          JSON.stringify({ to: message.to, subject: message.subject ?? '', text: message.text, variables: message.variables ?? {} }),
+          JSON.stringify({ to: message.to, subject: subject ?? '', text, variables: message.variables ?? {} }),
           notificationAad(id),
         ),
         nextAttemptAt: new Date(),

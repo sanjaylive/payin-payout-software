@@ -16,6 +16,7 @@ import { FormField } from '@/components/common/form-field';
 import { api } from '@/lib/api/client';
 import type { Me, SessionTokens } from '@/lib/api/types';
 import { useAuthStore } from '@/lib/auth/store';
+import { useBrand } from '@/lib/brand/brand-provider';
 import { useLoginLocation } from '@/lib/auth/use-login-location';
 import { homePathFor, ME_QUERY_KEY } from '@/lib/auth/use-me';
 
@@ -27,6 +28,7 @@ function safeNext(next: string | null): string | null {
 }
 
 export function LoginForm() {
+  const brand = useBrand();
   const router = useRouter();
   const params = useSearchParams();
   const queryClient = useQueryClient();
@@ -99,7 +101,7 @@ export function LoginForm() {
   }
 
   return (
-    <AuthCard title="Sign in" description="Welcome back. Sign in to your Pay2All account.">
+    <AuthCard title="Sign in" description={`Welcome back. Sign in to your ${brand.short_name} account.`}>
       <FormError error={error} />
       <form onSubmit={onCredentials} className="space-y-5" noValidate>
         <FormField label="Email or mobile number" autoComplete="username" autoFocus error={credentials.formState.errors.identifier?.message} {...credentials.register('identifier')} />

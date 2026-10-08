@@ -42,7 +42,7 @@ export function Sidebar({ nav, footer }: { nav: NavItem[]; footer?: React.ReactN
   return (
     <aside className="bg-sidebar text-sidebar-foreground flex h-full w-64 flex-col">
       <div className="border-sidebar-border flex h-16 items-center border-b px-5">
-        <Link href="/" aria-label="Pay2All home">
+        <Link href="/" aria-label="Home" className="min-w-0">
           <Brand inverted />
         </Link>
       </div>

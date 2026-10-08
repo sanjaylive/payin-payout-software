@@ -5,6 +5,7 @@ import Redis from 'ioredis';
 import { ApiConfig } from '../config/api-config';
 import { IdempotencyService } from '../common/idempotency/idempotency.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { BrandService } from './brand.service';
 import { MerchantEventsService } from './merchant-events.service';
 import { NotificationsService } from './notifications.service';
 import { OutboxService } from './outbox.service';
@@ -14,6 +15,7 @@ import { PRISMA, REDIS } from './tokens';
 @Global()
 @Module({
   providers: [
+    BrandService,
     {
       provide: PRISMA,
       inject: [ApiConfig],
@@ -46,7 +48,7 @@ import { PRISMA, REDIS } from './tokens';
     IdempotencyService,
     MerchantEventsService,
   ],
-  exports: [PRISMA, REDIS, FieldEncryptor, RateLimitService, NotificationsService, StorageService, OutboxService, IdempotencyService, MerchantEventsService],
+  exports: [BrandService, PRISMA, REDIS, FieldEncryptor, RateLimitService, NotificationsService, StorageService, OutboxService, IdempotencyService, MerchantEventsService],
 })
 export class InfraModule implements OnApplicationShutdown {
   private readonly logger = new Logger(InfraModule.name);

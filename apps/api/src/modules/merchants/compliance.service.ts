@@ -154,7 +154,7 @@ export class ComplianceService {
   async requestInformation(actor: Actor, merchantId: string, input: z.output<typeof complianceDecisionSchema>) {
     await this.access.require(actor, merchantId);
     await this.prisma.$transaction((tx) => this.transition(tx, actor, merchantId, 'INFORMATION_REQUESTED', { reason: input.reason, notes: input.notes ?? null }));
-    await this.notifyMerchant(merchantId, 'Action needed on your Pay2All application', `Our compliance team needs more information:\n\n${input.reason}\n\nSign in to Pay2All, update your application under Compliance, and resubmit.`);
+    await this.notifyMerchant(merchantId, 'Action needed on your {{short}} application', `Our compliance team needs more information:\n\n${input.reason}\n\nSign in to {{short}}, update your application under Compliance, and resubmit.`);
     return { status: 'MORE_INFORMATION_REQUIRED' };
   }
 
@@ -186,7 +186,7 @@ export class ComplianceService {
         details: { risk_category: input.risk_category, payin_enabled: input.payin_enabled, payout_enabled: input.payout_enabled, checklist: requirements.map((r) => r.key) },
       });
     });
-    await this.notifyMerchant(merchantId, 'Your Pay2All account is approved', 'Your business has been approved on Pay2All Payments. Sign in to generate API keys and start accepting payments.');
+    await this.notifyMerchant(merchantId, 'Your {{short}} account is approved', 'Your business has been approved on {{product}}. Sign in to generate API keys and start accepting payments.');
     return { status: 'APPROVED' };
   }
 
@@ -196,7 +196,7 @@ export class ComplianceService {
       await this.assertIndependentReviewer(tx, actor, merchantId);
       await this.transition(tx, actor, merchantId, 'REJECTED', { reason: input.reason, notes: input.notes ?? null, data: { payinEnabled: false, payoutEnabled: false } });
     });
-    await this.notifyMerchant(merchantId, 'Update on your Pay2All application', 'We are unable to approve your application at this time. Contact your account manager for details.');
+    await this.notifyMerchant(merchantId, 'Update on your {{short}} application', 'We are unable to approve your application at this time. Contact your account manager for details.');
     return { status: 'REJECTED' };
   }
 

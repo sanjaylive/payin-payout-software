@@ -54,11 +54,11 @@ export class PasswordService {
     await this.notifications.queue(this.prisma, {
         template: 'password_reset',
       to: user.email,
-      subject: 'Reset your Pay2All password',
+      subject: 'Reset your {{short}} password',
       text: [
         `Hi ${user.name},`,
         '',
-        'We received a request to reset your Pay2All Payments password. This link expires in 30 minutes:',
+        'We received a request to reset your {{product}} password. This link expires in 30 minutes:',
         this.link('/reset-password', token),
         '',
         "If you didn't request this, you can ignore this email — your password won't change.",
@@ -131,8 +131,8 @@ export class PasswordService {
     await this.notifications.queue(this.prisma, {
         template: 'password_changed',
       to: user.email,
-      subject: 'Your Pay2All password was changed',
-      text: `Your Pay2All Payments password was just set. If this wasn't you, contact support immediately. (${maskEmail(user.email)})`,
+      subject: 'Your {{short}} password was changed',
+      text: `Your {{product}} password was just set. If this wasn't you, contact support immediately. (${maskEmail(user.email)})`,
     });
   }
 

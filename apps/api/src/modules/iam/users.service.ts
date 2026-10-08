@@ -178,15 +178,15 @@ export class UsersService {
       await this.notifications.queue(this.prisma, {
         template: 'team_invite',
         to: input.email,
-        subject: `You've been invited to ${org.name} on Pay2All`,
-        text: `Hi ${input.name},\n\nYou've been invited to join ${org.name} on Pay2All Payments. Set your password within 72 hours:\n${this.passwords.link('/reset-password', inviteToken)}\n`,
+        subject: `You've been invited to ${org.name} on {{short}}`,
+        text: `Hi ${input.name},\n\nYou've been invited to join ${org.name} on {{product}}. Set your password within 72 hours:\n${this.passwords.link('/reset-password', inviteToken)}\n`,
       });
     } else {
       await this.notifications.queue(this.prisma, {
         template: 'team_membership_added',
         to: input.email,
-        subject: `You've been added to ${org.name} on Pay2All`,
-        text: `You now have access to ${org.name} on Pay2All Payments.`,
+        subject: `You've been added to ${org.name} on {{short}}`,
+        text: `You now have access to ${org.name} on {{product}}.`,
       });
     }
     if (userId) await this.profiles.invalidateUser(userId);

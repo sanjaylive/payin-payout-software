@@ -105,7 +105,7 @@ export class MerchantPartiesService {
         await this.audit.record({ action: 'merchant.bank_account.added', resourceType: 'merchant_bank_account', resourceId: created.id, organizationId: merchantId, newValue: presentBankAccount(created) }, tx);
         return created;
       });
-      if (merchant.status === 'APPROVED') await this.notifyOwners(merchantId, 'A new settlement bank account was added', `Account ${account.accountNumberMasked} (${account.ifsc}) was added to your Pay2All account. It will be used only after verification. If you did not make this change, contact support immediately.`);
+      if (merchant.status === 'APPROVED') await this.notifyOwners(merchantId, 'A new settlement bank account was added', `Account ${account.accountNumberMasked} (${account.ifsc}) was added to your {{short}} account. It will be used only after verification. If you did not make this change, contact support immediately.`);
       return presentBankAccount(account);
     } catch (err) {
       if (isUniqueViolation(err)) throw new AppError(ErrorCode.CONFLICT, 'This bank account is already registered');

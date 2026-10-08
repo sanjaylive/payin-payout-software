@@ -10,6 +10,7 @@ import type { NavItem } from './nav-config';
 import { Sidebar } from './sidebar';
 import { UserMenu } from './user-menu';
 import { NotificationBell } from '@/features/notifications/notification-bell';
+import { useBrand } from '@/lib/brand/brand-provider';
 
 const ORG_LABEL: Record<string, string> = { PLATFORM: 'Platform', RESELLER: 'Reseller', API_PARTNER: 'API Partner', MERCHANT: 'Merchant' };
 
@@ -56,8 +57,38 @@ export function AppShell({ me, nav, securityHref, children }: { me: Me; nav: Nav
             the shell (a long blank area under every long page). */}
         <main className="relative flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-7xl px-4 py-6 lg:px-8 lg:py-8">{children}</div>
+          <BrandFooter />
         </main>
       </div>
     </div>
+  );
+}
+
+/** Company line and support contact from Settings → Brand. */
+function BrandFooter() {
+  const b = useBrand();
+  return (
+    <footer className="text-muted-foreground mx-auto flex w-full max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 border-t px-4 py-4 text-xs lg:px-8">
+      <span>
+        © {new Date().getFullYear()} {b.company_name}
+      </span>
+      {b.footer_text && <span className="min-w-0">{b.footer_text}</span>}
+      {(b.support_email || b.support_phone) && (
+        <span className="sm:ml-auto">
+          Support:{' '}
+          {b.support_email && (
+            <a href={`mailto:${b.support_email}`} className="hover:text-foreground underline-offset-2 hover:underline">
+              {b.support_email}
+            </a>
+          )}
+          {b.support_email && b.support_phone && ' · '}
+          {b.support_phone && (
+            <a href={`tel:${b.support_phone.replace(/[\s-]/g, '')}`} className="hover:text-foreground underline-offset-2 hover:underline">
+              {b.support_phone}
+            </a>
+          )}
+        </span>
+      )}
+    </footer>
   );
 }

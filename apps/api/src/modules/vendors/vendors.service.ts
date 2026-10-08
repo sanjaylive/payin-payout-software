@@ -242,11 +242,11 @@ export class VendorsService {
       to = digits;
     }
     const vendor = await this.prisma.apiVendor.findUniqueOrThrow({ where: { id: m.vendorId }, select: { name: true } });
-    const text = `Pay2All test message via ${vendor.name} (${m.name}). If you received this, the integration works.`;
+    const text = `{{short}} test message via ${vendor.name} (${m.name}). If you received this, the integration works.`;
     const notificationId = await this.notifications.queue(this.prisma, {
       channel: m.channel,
       to,
-      subject: 'Pay2All test message',
+      subject: '{{short}} test message',
       text,
       template: 'test',
       variables: { message: text, vendor: vendor.name },

@@ -2,3 +2,19 @@
 
 /* App sources (the UI package registers its own). */
 @source "../";
+
+/* White-label colour (Settings → Brand). Variables are set on <html> from the brand. */
+html[data-brand-color] {
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-fg);
+  --ring: var(--brand-primary);
+  --sidebar-primary: var(--brand-primary);
+  --sidebar-primary-foreground: var(--brand-primary-fg);
+}
+html[data-brand-color].dark {
+  --primary: var(--brand-primary-dark);
+  --primary-foreground: var(--brand-primary-dark-fg);
+  --ring: var(--brand-primary-dark);
+  --sidebar-primary: var(--brand-primary-dark);
+  --sidebar-primary-foreground: var(--brand-primary-dark-fg);
+}

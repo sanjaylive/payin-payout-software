@@ -64,7 +64,7 @@ export class MfaService {
       await this.notifications.queue(this.prisma, {
         template: 'mfa_recovery_code_used',
         to: user.email,
-        subject: 'A Pay2All recovery code was used',
+        subject: 'A {{short}} recovery code was used',
         text: `A recovery code was just used to sign in to your account. ${remaining} codes remain. If this wasn't you, reset your password and contact support immediately.`,
       });
     }
@@ -98,7 +98,7 @@ export class MfaService {
     await this.notifications.queue(this.prisma, {
         template: 'mfa_reset_by_admin',
       to: user.email,
-      subject: 'Your Pay2All two-factor authentication was reset',
+      subject: 'Your {{short}} two-factor authentication was reset',
       text: 'An administrator reset two-factor authentication on your account. You will be asked to set it up again at your next sign-in. If you did not request this, contact support immediately.',
     });
   }
