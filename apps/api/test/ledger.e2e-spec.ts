@@ -2,7 +2,7 @@ import { newId } from '@pay2all/auth';
 import { Accounts } from '@pay2all/ledger/engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let ledger: LedgerService;
@@ -28,7 +28,7 @@ async function approvedMerchant() {
   await ctx.prisma.organization.create({ data: { id, type: 'MERCHANT', name: `Ledger Test ${id.slice(-6)}`, slug: `ledger-${id.slice(-10).toLowerCase()}`, parentId: platformId } });
   await ctx.prisma.merchant.create({ data: { id, status: 'APPROVED', payinEnabled: true, payoutEnabled: true } });
   const owner = await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id });
-  return { id, ownerToken: (await login(ctx, owner.email)).accessToken! };
+  return { id, ownerToken: (await signIn(ctx, owner.email)).accessToken! };
 }
 
 const INR = 'INR';

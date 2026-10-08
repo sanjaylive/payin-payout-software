@@ -50,6 +50,8 @@ export class MeService {
       session: { id: actor.sessionId, restricted: actor.restricted },
       mfa: {
         enabled: mfa.enabled,
+        totp_enabled: mfa.totpEnabled,
+        passkeys: mfa.passkeys,
         recovery_codes_remaining: mfa.recoveryCodesRemaining,
         required: this.config.env.AUTH_ENFORCE_MFA && (profile?.requiresMfa ?? false),
       },

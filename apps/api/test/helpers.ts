@@ -106,6 +106,29 @@ export async function loginWithMfaEnrollment(ctx: TestContext, email: string) {
   return { accessToken: enable.body.data.access_token as string, secret, refresh: first.refresh };
 }
 
+/**
+ * Sign in to a full session whatever the user's two-factor state: enrolls TOTP when the role requires
+ * it, or answers the TOTP challenge using the stored secret (tests only — decrypted with the app key).
+ */
+export async function signIn(ctx: TestContext, identifier: string, password = SEED_PASSWORD, ip = randomIp()) {
+  const first = await login(ctx, identifier, password, ip);
+  const status = first.res.body?.data?.status as string | undefined;
+  if (status === 'MFA_ENROLLMENT_REQUIRED') {
+    const setup = await ctx.http().post('/v1/auth/mfa/totp/setup').set('X-Forwarded-For', ip).set('Authorization', `Bearer ${first.accessToken!}`);
+    const enable = await ctx.http().post('/v1/auth/mfa/totp/enable').set('X-Forwarded-For', ip).set('Authorization', `Bearer ${first.accessToken!}`).send({ code: await generateTotpCode(setup.body.data.secret) });
+    return { res: enable, accessToken: enable.body.data.access_token as string, refresh: first.refresh };
+  }
+  if (status !== 'MFA_REQUIRED') return first;
+  const enc = ctx.app.get(FieldEncryptor);
+  const claims = JSON.parse(Buffer.from((first.res.body.data.mfa_token as string).split('.')[1]!, 'base64url').toString()) as { sub: string };
+  const factor = await ctx.prisma.mfaFactor.findFirstOrThrow({ where: { userId: claims.sub, type: 'TOTP', status: 'ACTIVE' } });
+  // Several sign-ins of one seeded user can fall in the same 30 s step; reset the replay watermark.
+  await ctx.prisma.mfaFactor.update({ where: { id: factor.id }, data: { lastUsedStep: null } });
+  const code = await generateTotpCode(enc.decrypt(factor.secretEncrypted!, claims.sub));
+  const verify = await ctx.http().post('/v1/auth/mfa/verify').set('X-Forwarded-For', ip).send({ mfa_token: first.res.body.data.mfa_token, code });
+  return { res: verify, accessToken: verify.body.data?.access_token as string | undefined, refresh: extractRefreshCookie(verify) };
+}
+
 export function bearer(token: string) {
   return { Authorization: `Bearer ${token}` };
 }
@@ -135,6 +158,7 @@ export async function createApprovedMerchant(ctx: TestContext, opts: { payoutEna
   await ctx.prisma.merchant.create({ data: { id, status: 'APPROVED', payinEnabled: true, payoutEnabled: opts.payoutEnabled ?? true, approvedAt: new Date() } });
   await ctx.prisma.merchantProfile.create({ data: { merchantId: id, displayName: 'Test merchant' } });
   await ctx.prisma.merchantKyc.create({ data: { merchantId: id } });
-  const owner = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id })).email)).accessToken!;
-  return { id, owner };
+  // Owners must use two-factor (docs/SECURITY.md §1.5): sign in through enrollment.
+  const enrolled = await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id })).email);
+  return { id, owner: enrolled.accessToken, ownerTotpSecret: enrolled.secret };
 }

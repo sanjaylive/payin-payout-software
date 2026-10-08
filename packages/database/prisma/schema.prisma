@@ -48,6 +48,8 @@ enum UserStatus {
 
 enum MfaFactorType {
   TOTP
+  /// WebAuthn passkey / security key (phishing-resistant).
+  PASSKEY
 }
 
 enum MfaFactorStatus {
@@ -93,12 +95,13 @@ model Organization {
   createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  merchant Merchant?
-  parent   Organization?  @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
-  children Organization[] @relation("OrganizationHierarchy")
-  members  UserRole[]
-  roles    Role[]
-  sessions Session[]
+  merchant         Merchant?
+  parent           Organization?     @relation("OrganizationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children         Organization[]    @relation("OrganizationHierarchy")
+  members          UserRole[]
+  roles            Role[]
+  sessions         Session[]
+  dashboardIpRules DashboardIpRule[]
 
   @@index([parentId])
   @@index([type, status, createdAt(sort: Desc)])
@@ -217,6 +220,8 @@ model Session {
   mfaVerifiedAt         DateTime? @map("mfa_verified_at") @db.Timestamptz(3)
   /// Restricted session: user must enroll TOTP before reaching protected routes.
   mfaEnrollmentRequired Boolean   @default(false) @map("mfa_enrollment_required")
+  /// Last time the user proved who they are (sign-in or step-up). Sensitive actions need it recent.
+  reauthenticatedAt     DateTime  @default(now()) @map("reauthenticated_at") @db.Timestamptz(3)
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   lastUsedAt            DateTime  @default(now()) @map("last_used_at") @db.Timestamptz(3)
   expiresAt             DateTime  @map("expires_at") @db.Timestamptz(3)
@@ -253,10 +258,20 @@ model MfaFactor {
   userId          String          @map("user_id")
   type            MfaFactorType   @default(TOTP)
   status          MfaFactorStatus @default(PENDING)
-  /// AES-256-GCM envelope (v1.<keyId>.<iv>.<tag>.<ct>), AAD = user id.
-  secretEncrypted String          @map("secret_encrypted")
+  /// TOTP only: AES-256-GCM envelope (v1.<keyId>.<iv>.<tag>.<ct>), AAD = user id.
+  secretEncrypted String?         @map("secret_encrypted")
   /// Last accepted TOTP time step — codes at or before it are rejected (replay protection).
   lastUsedStep    Int?            @map("last_used_step")
+  /// PASSKEY only: user-given label ("MacBook Touch ID").
+  name            String?         @db.VarChar(60)
+  /// PASSKEY only: base64url credential id (globally unique).
+  credentialId    String?         @unique @map("credential_id") @db.VarChar(1024)
+  /// PASSKEY only: COSE public key. Public data, not a secret.
+  publicKey       Bytes?          @map("public_key")
+  /// PASSKEY only: authenticator signature counter (clone detection when non-zero).
+  signCount       BigInt?         @map("sign_count")
+  transports      String[]        @default([])
+  lastUsedAt      DateTime?       @map("last_used_at") @db.Timestamptz(3)
   confirmedAt     DateTime?       @map("confirmed_at") @db.Timestamptz(3)
   disabledAt      DateTime?       @map("disabled_at") @db.Timestamptz(3)
   createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
@@ -2173,6 +2188,22 @@ model IpAllowlistEntry {
   @@map("ip_allowlist_entries")
 }
 
+/// Dashboard sign-in allowlist (docs/SECURITY.md §1.8). Once an organization has entries, its users can
+/// sign in and use the dashboard only from these addresses. The platform org's list covers all staff.
+model DashboardIpRule {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  cidr           String   @db.VarChar(64)
+  label          String?  @db.VarChar(80)
+  createdById    String?  @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, cidr])
+  @@map("dashboard_ip_rules")
+}
+
 /// One row per API-key request (no bodies, no query strings). Purged after 90 days.
 model ApiRequestLog {
   id             String   @id
@@ -2491,6 +2522,8 @@ enum LoginOutcome {
   NOT_ACTIVATED
   NO_ACTIVE_ORGANIZATION
   UNKNOWN_USER
+  /// Correct password, but the address is outside the organization's dashboard IP allowlist.
+  IP_NOT_ALLOWED
 }
 
 /// One sign-in attempt (docs/SECURITY.md §1.6). Append-only. Location is the browser's own

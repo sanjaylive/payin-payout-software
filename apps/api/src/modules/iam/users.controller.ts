@@ -4,7 +4,7 @@ import { assignRoleSchema, createUserSchema, idSchema, listUsersQuerySchema, upd
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { MfaService } from '../auth/mfa.service';
 import { UsersService } from './users.service';
@@ -40,6 +40,7 @@ export class UsersController {
   }
 
   @Post()
+  @RequireStepUp()
   @RequirePermissions('user.manage')
   @ApiOperation({ summary: 'Invite a user to an organization with a role' })
   @ApiZodBody(createUserSchema)
@@ -48,6 +49,7 @@ export class UsersController {
   }
 
   @Patch(':id/status')
+  @RequireStepUp()
   @RequirePermissions('user.manage')
   @ApiOperation({ summary: 'Enable/disable a user account globally (platform staff only)' })
   @ApiZodBody(updateUserStatusSchema)
@@ -60,6 +62,7 @@ export class UsersController {
   }
 
   @Post(':id/mfa/reset')
+  @RequireStepUp()
   @RequirePermissions('user.manage')
   @ApiOperation({ summary: 'Reset a user\'s two-factor authentication (platform staff; audited; signs the user out)' })
   @ApiZodBody(mfaResetSchema)
@@ -74,6 +77,7 @@ export class UsersController {
   }
 
   @Post(':id/roles')
+  @RequireStepUp()
   @RequirePermissions('user.manage')
   @ApiZodBody(assignRoleSchema)
   assignRole(

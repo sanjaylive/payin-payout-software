@@ -4,7 +4,7 @@ import { createWebhookEndpointSchema, idSchema, ipAllowlistEntrySchema, updateWe
 import type { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import { ApiKeysService } from '../api-keys/api-keys.service';
 import type { Actor } from '../auth/actor';
 import { WebhooksService } from '../webhooks/webhooks.service';
@@ -34,6 +34,7 @@ export class MerchantIntegrationsController {
   }
 
   @Post('webhook-endpoints')
+  @RequireStepUp()
   @RequirePermissions('merchant.integration.manage')
   @ApiOperation({ summary: 'Add a webhook endpoint for the merchant (signing secret shown once)' })
   @ApiZodBody(createWebhookEndpointSchema)
@@ -42,6 +43,7 @@ export class MerchantIntegrationsController {
   }
 
   @Patch('webhook-endpoints/:endpointId')
+  @RequireStepUp()
   @RequirePermissions('merchant.integration.manage')
   @ApiZodBody(updateWebhookEndpointSchema)
   updateEndpoint(
@@ -54,6 +56,7 @@ export class MerchantIntegrationsController {
   }
 
   @Post('webhook-endpoints/:endpointId/rotate-secret')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('merchant.integration.manage')
   rotate(@CurrentActor() actor: Actor, @Param('merchantId', merchantId) id: string, @Param('endpointId', endpointId) endpoint: string) {
@@ -74,6 +77,7 @@ export class MerchantIntegrationsController {
   }
 
   @Post('ip-allowlist')
+  @RequireStepUp()
   @RequirePermissions('merchant.integration.manage')
   @ApiZodBody(ipAllowlistEntrySchema)
   addAllowlist(@CurrentActor() actor: Actor, @Param('merchantId', merchantId) id: string, @Body(new ZodValidationPipe(ipAllowlistEntrySchema)) body: z.output<typeof ipAllowlistEntrySchema>) {
@@ -81,6 +85,7 @@ export class MerchantIntegrationsController {
   }
 
   @Delete('ip-allowlist/:entryId')
+  @RequireStepUp()
   @RequirePermissions('merchant.integration.manage')
   removeAllowlist(@CurrentActor() actor: Actor, @Param('merchantId', merchantId) id: string, @Param('entryId', entryId) entry: string) {
     return this.keys.removeAllowlist(actor, entry, id);

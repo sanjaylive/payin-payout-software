@@ -17,7 +17,7 @@ import { memoryStorage } from 'multer';
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { ApiKeyAccess, CurrentActor, RequireAnyPermission, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequireAnyPermission, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { BeneficiariesService } from './beneficiaries.service';
 import { BULK_MAX_BYTES, BulkPayoutsService } from './bulk-payouts.service';
@@ -87,6 +87,7 @@ export class PayoutsController {
   }
 
   @Post('payouts/bulk/:id/confirm')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('payout.create')
   @ApiOperation({ summary: 'Confirm a validated batch (maker, MFA session). Rows are then created as payouts.' })
@@ -102,6 +103,7 @@ export class PayoutsController {
   }
 
   @Post('payouts/bulk/:id/approve')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('payout.approve')
   @ApiOperation({ summary: 'Approve every payout of the batch you can still vote on' })
@@ -126,6 +128,7 @@ export class PayoutsController {
   }
 
   @Post('payouts/:id/approve')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('payout.approve')
   @ApiOperation({ summary: 'Approve a payout (checker; not the maker; MFA-verified session)' })

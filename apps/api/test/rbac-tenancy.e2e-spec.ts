@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext, uniqueEmail } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, uniqueEmail, signIn } from './helpers';
 
 let ctx: TestContext;
 let sharma: { id: string };
@@ -19,8 +19,8 @@ beforeAll(async () => {
   nimbus = await orgBySlug(ctx, 'nimbus-software');
   reseller = await orgBySlug(ctx, 'acme-partners');
   platform = await orgBySlug(ctx, 'pay2all');
-  sharmaOwnerToken = (await login(ctx, 'owner@sharma-electronics.local')).accessToken!;
-  kiranaOwnerToken = (await login(ctx, 'owner@kirana-fresh.local')).accessToken!;
+  sharmaOwnerToken = (await signIn(ctx, 'owner@sharma-electronics.local')).accessToken!;
+  kiranaOwnerToken = (await signIn(ctx, 'owner@kirana-fresh.local')).accessToken!;
   const resellerUser = await createUser(ctx, { roleKey: 'RESELLER', organizationId: reseller.id });
   resellerToken = (await loginWithMfaEnrollment(ctx, resellerUser.email)).accessToken;
   const admin = await createUser(ctx, { roleKey: 'SUPER_ADMIN', organizationId: platform.id });
@@ -96,7 +96,7 @@ describe('permission enforcement', () => {
 
   it('viewers cannot manage users', async () => {
     const viewer = await createUser(ctx, { roleKey: 'MERCHANT_VIEWER', organizationId: sharma.id });
-    const token = (await login(ctx, viewer.email)).accessToken!;
+    const token = (await signIn(ctx, viewer.email)).accessToken!;
     const res = await ctx.http().post('/v1/users').set(bearer(token)).send({ name: 'X Y', email: uniqueEmail(), role_key: 'MERCHANT_VIEWER' });
     expect(res.status).toBe(403);
   });
@@ -147,14 +147,14 @@ describe('role assignment and privilege escalation', () => {
   it('the last owner of an organization cannot be removed', async () => {
     const kiranaOwner = await ctx.prisma.user.findUniqueOrThrow({ where: { email: 'owner@kirana-fresh.local' } });
     const secondAdmin = await createUser(ctx, { roleKey: 'MERCHANT_ADMIN', organizationId: kirana.id });
-    const token = (await login(ctx, secondAdmin.email)).accessToken!;
+    const token = (await signIn(ctx, secondAdmin.email)).accessToken!;
     const res = await ctx.http().delete(`/v1/users/${kiranaOwner.id}/roles/MERCHANT_OWNER`).set(bearer(token));
     expect(res.status).toBe(403);
   });
 
   it('revoking a role takes effect on the next request (permission cache invalidated)', async () => {
     const dev = await createUser(ctx, { roleKey: 'MERCHANT_ADMIN', organizationId: sharma.id });
-    const devToken = (await login(ctx, dev.email)).accessToken!;
+    const devToken = (await signIn(ctx, dev.email)).accessToken!;
     expect((await ctx.http().get('/v1/users').set(bearer(devToken))).status).toBe(200);
     const revoke = await ctx.http().delete(`/v1/users/${dev.id}/roles/MERCHANT_ADMIN`).set(bearer(sharmaOwnerToken));
     expect(revoke.status).toBe(200);
@@ -176,7 +176,7 @@ describe('organization lifecycle', () => {
     expect(created.body.data.reseller?.id).toBe(reseller.id);
 
     const owner = await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: orgId });
-    const ownerToken = (await login(ctx, owner.email)).accessToken!;
+    const ownerToken = (await signIn(ctx, owner.email)).accessToken!;
     expect((await ctx.http().get('/v1/auth/me').set(bearer(ownerToken))).status).toBe(200);
 
     const suspend = await ctx.http().patch(`/v1/organizations/${orgId}/status`).set(bearer(adminToken)).send({ status: 'SUSPENDED', reason: 'KYC documents expired' });

@@ -71,8 +71,12 @@ export class MfaService {
     return true;
   }
 
-  async regenerateRecoveryCodes(actor: Actor, code: string): Promise<string[]> {
-    if (!(await this.verifyForLogin(actor.userId, code))) throw new AppError(ErrorCode.MFA_INVALID_CODE);
+  /** Needs a current authenticator code, or (passkey users) a recent step-up checked by the caller. */
+  async regenerateRecoveryCodes(actor: Actor, proof: { code: string } | { steppedUp: true }): Promise<string[]> {
+    if ((await this.prisma.mfaFactor.count({ where: { userId: actor.userId, status: 'ACTIVE' } })) === 0) {
+      throw new AppError(ErrorCode.INVALID_REQUEST, 'Turn on two-factor authentication first');
+    }
+    if ('code' in proof && !(await this.verifyForLogin(actor.userId, proof.code))) throw new AppError(ErrorCode.MFA_INVALID_CODE);
     return this.prisma.$transaction(async (tx) => {
       const codes = await this.issueRecoveryCodes(tx, actor.userId);
       await this.audit.record({ action: 'auth.mfa.recovery_codes_regenerated', resourceType: 'user', resourceId: actor.userId }, tx);
@@ -104,18 +108,25 @@ export class MfaService {
   }
 
   async status(userId: string) {
-    const [active, recoveryCodesRemaining] = await Promise.all([
-      this.prisma.mfaFactor.findFirst({ where: { userId, status: 'ACTIVE' }, select: { confirmedAt: true } }),
+    const [factors, recoveryCodesRemaining] = await Promise.all([
+      this.prisma.mfaFactor.findMany({ where: { userId, status: 'ACTIVE' }, select: { type: true, confirmedAt: true }, orderBy: { confirmedAt: 'asc' } }),
       this.prisma.mfaRecoveryCode.count({ where: { userId, usedAt: null } }),
     ]);
-    return { enabled: Boolean(active), confirmedAt: active?.confirmedAt ?? null, recoveryCodesRemaining };
+    const totp = factors.find((f) => f.type === 'TOTP');
+    return {
+      enabled: factors.length > 0,
+      confirmedAt: factors[0]?.confirmedAt ?? null,
+      totpEnabled: Boolean(totp),
+      passkeys: factors.filter((f) => f.type === 'PASSKEY').length,
+      recoveryCodesRemaining,
+    };
   }
 
   /** Start enrollment. Returns the secret/QR exactly once; a previous pending enrollment is discarded. */
   async setup(actor: Actor) {
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: actor.userId }, select: { email: true } });
-    if ((await this.status(actor.userId)).enabled) {
-      throw new AppError(ErrorCode.CONFLICT, 'Two-factor authentication is already enabled');
+    if ((await this.status(actor.userId)).totpEnabled) {
+      throw new AppError(ErrorCode.CONFLICT, 'An authenticator app is already set up');
     }
     const secret = generateTotpSecret();
     await this.prisma.$transaction(async (tx) => {
@@ -140,16 +151,17 @@ export class MfaService {
   /** Confirm enrollment with a valid code; lifts a restricted session. */
   async enable(actor: Actor, code: string) {
     const pending = await this.prisma.mfaFactor.findFirst({
-      where: { userId: actor.userId, status: 'PENDING' },
+      where: { userId: actor.userId, type: 'TOTP', status: 'PENDING' },
       orderBy: { createdAt: 'desc' },
     });
     if (!pending) throw new AppError(ErrorCode.INVALID_REQUEST, 'Start two-factor setup first');
 
-    const secret = this.encryptor.decrypt(pending.secretEncrypted, actor.userId);
+    const secret = this.encryptor.decrypt(pending.secretEncrypted!, actor.userId);
     const result = await verifyTotp(secret, code);
     if (!result.valid) throw new AppError(ErrorCode.MFA_INVALID_CODE);
 
     const now = new Date();
+    const hadFactor = (await this.prisma.mfaFactor.count({ where: { userId: actor.userId, status: 'ACTIVE' } })) > 0;
     const recoveryCodes = await this.prisma.$transaction(async (tx) => {
       const activated = await tx.mfaFactor.updateMany({
         where: { id: pending.id, status: 'PENDING' },
@@ -158,18 +170,19 @@ export class MfaService {
       if (activated.count !== 1) throw new AppError(ErrorCode.CONFLICT, 'Enrollment changed, please retry');
       await tx.session.update({
         where: { id: actor.sessionId },
-        data: { mfaVerifiedAt: now, mfaEnrollmentRequired: false },
+        data: { mfaVerifiedAt: now, mfaEnrollmentRequired: false, reauthenticatedAt: now },
       });
       await this.audit.record({ action: 'auth.mfa.enabled', resourceType: 'user', resourceId: actor.userId }, tx);
-      return this.issueRecoveryCodes(tx, actor.userId);
+      // A second factor keeps the existing recovery codes; the first one creates them.
+      return hadFactor ? null : this.issueRecoveryCodes(tx, actor.userId);
     });
     return { ...(await this.sessions.reissueAccessToken(actor.sessionId)), recoveryCodes };
   }
 
   /** Verify a login code for the user's ACTIVE factor, atomically advancing the replay watermark. */
   async verifyForLogin(userId: string, code: string): Promise<boolean> {
-    const factor = await this.prisma.mfaFactor.findFirst({ where: { userId, status: 'ACTIVE' } });
-    if (!factor) return false;
+    const factor = await this.prisma.mfaFactor.findFirst({ where: { userId, type: 'TOTP', status: 'ACTIVE' } });
+    if (!factor?.secretEncrypted) return false;
     const result = await verifyTotp(this.encryptor.decrypt(factor.secretEncrypted, userId), code, factor.lastUsedStep);
     if (!result.valid || result.timeStep === undefined) return false;
     // Conditional update prevents two concurrent requests both using the same code.
@@ -185,9 +198,10 @@ export class MfaService {
   }
 
   async disable(actor: Actor, code: string, password: string): Promise<void> {
+    const passkeys = await this.prisma.mfaFactor.count({ where: { userId: actor.userId, type: 'PASSKEY', status: 'ACTIVE' } });
     const profile = await this.profiles.load(actor.userId, actor.organizationId);
-    if (this.config.env.AUTH_ENFORCE_MFA && profile?.requiresMfa) {
-      throw new AppError(ErrorCode.FORBIDDEN, 'Two-factor authentication is mandatory for your role');
+    if (!passkeys && this.config.env.AUTH_ENFORCE_MFA && profile?.requiresMfa) {
+      throw new AppError(ErrorCode.FORBIDDEN, 'Two-factor authentication is mandatory for your role. Add a passkey before removing the authenticator app.');
     }
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: actor.userId },
@@ -198,10 +212,10 @@ export class MfaService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.mfaFactor.updateMany({
-        where: { userId: actor.userId, status: 'ACTIVE' },
+        where: { userId: actor.userId, type: 'TOTP', status: 'ACTIVE' },
         data: { status: 'DISABLED', disabledAt: new Date() },
       });
-      await tx.mfaRecoveryCode.deleteMany({ where: { userId: actor.userId } });
+      if (!passkeys) await tx.mfaRecoveryCode.deleteMany({ where: { userId: actor.userId } });
       await this.audit.record({ action: 'auth.mfa.disabled', resourceType: 'user', resourceId: actor.userId }, tx);
     });
   }

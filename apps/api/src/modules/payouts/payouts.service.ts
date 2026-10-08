@@ -15,6 +15,8 @@ import { PRISMA } from '../../infra/tokens';
 import { TenantScopeService } from '../access/tenant-scope.service';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from '../auth/actor';
+import { StepUpService } from '../auth/step-up.service';
+import { ApiConfig } from '../../config/api-config';
 import { LedgerService } from '../ledger/ledger.service';
 import { LimitsService } from '../limits/limits.service';
 import { PeriodUsageService, periodLimitsOf } from '../limits/period-usage.service';
@@ -53,6 +55,8 @@ export class PayoutsService {
     private readonly audit: AuditService,
     private readonly risk: RiskEngineService,
     private readonly usage: PeriodUsageService,
+    private readonly stepUp: StepUpService,
+    private readonly config: ApiConfig,
   ) {}
 
   private async assertMerchantCanPay(merchantId: string) {
@@ -77,6 +81,10 @@ export class PayoutsService {
 
   async create(actor: Actor, input: z.output<typeof createPayoutSchema>, rawBody: unknown, idempotencyKey: string | undefined, opts: CreatePayoutOptions = {}) {
     if (actor.organizationType !== 'MERCHANT') throw new AppError(ErrorCode.FORBIDDEN, 'Payouts are created by merchant accounts');
+    // Large dashboard payouts need a fresh step-up (bulk rows were confirmed as a batch; API keys sign every call).
+    if (actor.kind === 'user' && opts.source !== 'BULK' && input.amount >= BigInt(this.config.env.STEP_UP_PAYOUT_MIN_RUPEES) * 100n) {
+      await this.stepUp.assertFresh(actor);
+    }
     const merchantId = actor.organizationId;
     return this.idempotency.run({ merchantId, key: idempotencyKey, method: 'POST', path: '/v1/payouts', body: rawBody }, async (recordId) => {
       // Steps 1–4 before any lock (PAYOUT_FLOW.md §5): cheap checks first.

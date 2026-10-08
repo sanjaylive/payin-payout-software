@@ -6,7 +6,7 @@ export interface Me {
   roles: string[];
   permissions: string[];
   session: { id: string; restricted: boolean };
-  mfa: { enabled: boolean; required: boolean; recovery_codes_remaining: number };
+  mfa: { enabled: boolean; totp_enabled: boolean; passkeys: number; required: boolean; recovery_codes_remaining: number };
   memberships: { organization_id: string; organization_name: string; organization_type: OrganizationType; role_key: string; role_name: string }[];
 }
 
@@ -14,7 +14,22 @@ export interface SessionTokens {
   status: 'AUTHENTICATED' | 'MFA_ENROLLMENT_REQUIRED' | 'MFA_REQUIRED';
   access_token?: string;
   mfa_token?: string;
+  mfa_methods?: { totp: boolean; passkey: boolean };
   expires_in: number;
+}
+
+export interface PasskeyRow {
+  id: string;
+  name: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  transports: string[];
+}
+
+export interface DashboardIpList {
+  enforced: boolean;
+  your_ip: string | null;
+  rules: { id: string; cidr: string; label: string | null; created_at: string }[];
 }
 
 export interface Organization {

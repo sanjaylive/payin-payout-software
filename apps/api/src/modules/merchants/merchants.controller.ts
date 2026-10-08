@@ -11,7 +11,7 @@ import {
 import type { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { MerchantPartiesService } from './merchant-parties.service';
 import { MerchantsService } from './merchants.service';
@@ -90,6 +90,7 @@ export class MerchantsController {
   }
 
   @Post(':merchantId/bank-accounts')
+  @RequireStepUp()
   @RequirePermissions('merchant.update')
   @ApiOperation({ summary: 'Add a settlement bank account (number is encrypted; only a masked copy is returned)' })
   @ApiZodBody(merchantBankAccountSchema)
@@ -102,6 +103,7 @@ export class MerchantsController {
   }
 
   @Post(':merchantId/bank-accounts/:accountId/primary')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('merchant.update')
   setPrimary(@CurrentActor() actor: Actor, @Param('merchantId', merchantIdPipe) merchantId: string, @Param('accountId', accountIdPipe) accountId: string) {

@@ -6,7 +6,7 @@ import { ErrorCode } from '@pay2all/types';
 import { AppError } from '../../common/errors/app-error';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { WebhooksService } from './webhooks.service';
 
@@ -24,6 +24,7 @@ export class WebhooksController {
   constructor(private readonly webhooks: WebhooksService) {}
 
   @Post('endpoints')
+  @RequireStepUp()
   @RequirePermissions('webhook.manage')
   @ApiOperation({ summary: 'Add an endpoint. The signing secret is returned once — store it now.' })
   @ApiZodBody(createWebhookEndpointSchema)
@@ -38,6 +39,7 @@ export class WebhooksController {
   }
 
   @Patch('endpoints/:id')
+  @RequireStepUp()
   @RequirePermissions('webhook.manage')
   @ApiZodBody(updateWebhookEndpointSchema)
   update(@CurrentActor() actor: Actor, @Param('id', endpointIdPipe) id: string, @Body(new ZodValidationPipe(updateWebhookEndpointSchema)) body: z.output<typeof updateWebhookEndpointSchema>) {
@@ -45,6 +47,7 @@ export class WebhooksController {
   }
 
   @Post('endpoints/:id/rotate-secret')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('webhook.manage')
   @ApiOperation({ summary: 'Issue a new signing secret (returned once); the old one keeps signing alongside it for 24 h.' })

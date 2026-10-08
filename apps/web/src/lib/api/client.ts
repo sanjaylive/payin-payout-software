@@ -1,5 +1,6 @@
 import type { ApiFailure, ApiSuccess, PaginationMeta } from '@pay2all/types';
 import { useAuthStore } from '../auth/store';
+import { requestStepUp } from '../auth/step-up';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 
@@ -95,10 +96,18 @@ async function sendForm(path: string, form: FormData): Promise<Response> {
   return fetch(buildUrl(path), { method: 'POST', credentials: 'include', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
 }
 
+/** True when the API asks for a fresh identity confirmation (docs/SECURITY.md §1.9). */
+async function needsStepUp(res: Response): Promise<boolean> {
+  if (res.status !== 403) return false;
+  const body = (await res.clone().json().catch(() => null)) as ApiFailure | null;
+  return body?.error?.code === 'STEP_UP_REQUIRED';
+}
+
 /** Multipart upload (KYC documents). The browser sets the multipart boundary. */
 export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
   let res = await sendForm(path, form);
   if (res.status === 401 && (await refreshSession())) res = await sendForm(path, form);
+  if ((await needsStepUp(res)) && (await requestStepUp())) res = await sendForm(path, form);
   return (await parse<T>(res)).data;
 }
 
@@ -120,6 +129,8 @@ export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Pr
   if (res.status === 401 && opts.auth !== false) {
     if (await refreshSession()) res = await send(path, opts);
   }
+  // Sensitive action with a stale confirmation: confirm in the dialog, then retry once.
+  if (opts.auth !== false && (await needsStepUp(res)) && (await requestStepUp())) res = await send(path, opts);
   return parse<T>(res);
 }
 

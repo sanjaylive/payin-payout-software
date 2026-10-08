@@ -4,7 +4,7 @@ import { activateStorageSchema, removeStorageBackendSchema, saveStorageBackendSc
 import { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { StorageSettingsService } from './storage-settings.service';
 
@@ -25,6 +25,7 @@ export class StorageSettingsController {
   }
 
   @Put('backends/:kind')
+  @RequireStepUp()
   @RequirePermissions('system.settings.manage')
   @ApiOperation({ summary: 'Create or update a backend (credentials are write-only)' })
   @ApiZodBody(saveStorageBackendSchema)
@@ -49,6 +50,7 @@ export class StorageSettingsController {
   }
 
   @Post('active')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('system.settings.manage')
   @ApiOperation({ summary: 'Choose where new files go (runs a connection test first)' })

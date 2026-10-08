@@ -15,7 +15,7 @@ import {
 import type { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { ApiKeyAccess, CurrentActor, RequireAnyPermission, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequireAnyPermission, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { AdjustmentsService } from './adjustments.service';
 import { LedgerService } from './ledger.service';
@@ -98,6 +98,7 @@ export class LedgerController {
   }
 
   @Post('journals/:id/reverse')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('ledger.adjust.approve')
   @ApiOperation({ summary: 'Post an exact mirror of a wrong journal (once; never a reversal of a reversal)' })
@@ -120,6 +121,7 @@ export class LedgerController {
   }
 
   @Post('adjustments')
+  @RequireStepUp()
   @RequirePermissions('ledger.adjust')
   @ApiOperation({ summary: 'Raise a manual adjustment (maker). Posted only after independent approval.' })
   @ApiZodBody(createAdjustmentSchema)
@@ -128,6 +130,7 @@ export class LedgerController {
   }
 
   @Post('adjustments/:id/approve')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('ledger.adjust.approve')
   @ApiZodBody(adjustmentDecisionSchema)

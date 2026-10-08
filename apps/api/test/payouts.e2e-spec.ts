@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LedgerService } from '../src/modules/ledger/ledger.service';
 import { BulkPayoutsService } from '../src/modules/payouts/bulk-payouts.service';
 import { PayoutProcessorService } from '../src/modules/payouts/payout-processor.service';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let ops: string; // platform operations (payout.review)
@@ -31,10 +31,10 @@ async function newMerchant(fundRupees = 0): Promise<Merchant> {
   await ctx.prisma.merchant.create({ data: { id, status: 'APPROVED', payinEnabled: true, payoutEnabled: true, approvedAt: new Date() } });
   await ctx.prisma.merchantProfile.create({ data: { merchantId: id, displayName: 'Payout Test' } });
   await ctx.prisma.merchantKyc.create({ data: { merchantId: id } });
-  const owner = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id })).email)).accessToken!;
+  const owner = (await signIn(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id })).email)).accessToken!;
   const checkers: string[] = [];
   for (let i = 0; i < 3; i++) checkers.push((await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_FINANCE', organizationId: id })).email)).accessToken);
-  const checkerNoMfa = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_FINANCE', organizationId: id })).email)).accessToken!;
+  const checkerNoMfa = (await signIn(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_FINANCE', organizationId: id })).email)).accessToken!;
   if (fundRupees > 0) await fund(id, BigInt(Math.round(fundRupees * 100)));
   return { id, owner, checkers, checkerNoMfa };
 }
@@ -432,7 +432,7 @@ describe('bulk payouts', () => {
     expect((await upload(m.checkers[0]!, file)).status).toBe(409); // same file twice
 
     const batchId = ok.body.data.batch_id as string;
-    expect((await ctx.http().post(`/v1/payouts/bulk/${batchId}/confirm`).set(bearer(m.owner))).body.error.code).toBe('MFA_ENROLLMENT_REQUIRED');
+    expect((await ctx.http().post(`/v1/payouts/bulk/${batchId}/confirm`).set(bearer(m.checkerNoMfa))).body.error.code).toBe('MFA_ENROLLMENT_REQUIRED');
     const confirmed = await ctx.http().post(`/v1/payouts/bulk/${batchId}/confirm`).set(bearer(m.checkers[0]!));
     expect(confirmed.body.data).toMatchObject({ status: 'CONFIRMED', approvals_required: 0 });
     await ctx.app.get(BulkPayoutsService).processConfirmed();

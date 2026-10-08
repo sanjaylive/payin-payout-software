@@ -16,7 +16,7 @@ import type { z } from 'zod';
 import { AppError } from '../../common/errors/app-error';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { ApiKeyAccess, CurrentActor, RequirePermissions } from '../access/decorators';
+import { ApiKeyAccess, CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { SettlementsService } from './settlements.service';
 
@@ -54,6 +54,7 @@ export class SettlementsController {
   }
 
   @Put('config/:merchantId')
+  @RequireStepUp()
   @RequirePermissions('settlement.process')
   @ApiOperation({ summary: 'Platform: set a merchant’s settlement cycle, cutoff, minimum and destination' })
   @ApiZodBody(settlementConfigSchema)
@@ -145,6 +146,7 @@ export class SettlementsController {
   }
 
   @Post(':id/paid')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('settlement.process')
   @ApiZodBody(markSettlementPaidSchema)

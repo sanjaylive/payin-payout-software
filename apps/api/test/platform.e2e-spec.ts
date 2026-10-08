@@ -1,6 +1,6 @@
 import { newId } from '@pay2all/auth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bearer, createTestContext, login, type TestContext } from './helpers';
+import { bearer, createTestContext, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 
@@ -65,7 +65,7 @@ describe('HTTP contract', () => {
   });
 
   it('returns paginated envelopes with opaque cursors', async () => {
-    const token = (await login(ctx, 'owner@sharma-electronics.local')).accessToken!;
+    const token = (await signIn(ctx, 'owner@sharma-electronics.local')).accessToken!;
     const page1 = await ctx.http().get('/v1/audit-logs?limit=2').set(bearer(token));
     expect(page1.body.meta).toMatchObject({ limit: 2, has_more: true });
     const page2 = await ctx.http().get(`/v1/audit-logs?limit=2&cursor=${page1.body.meta.next_cursor}`).set(bearer(token));

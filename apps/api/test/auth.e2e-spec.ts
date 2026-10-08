@@ -13,6 +13,7 @@ import {
   refresh,
   queuedMail,
   SEED_PASSWORD,
+  signIn,
   type TestContext,
 } from './helpers';
 
@@ -32,7 +33,9 @@ afterAll(async () => {
 
 describe('login', () => {
   it('authenticates with email and sets a hardened refresh cookie', async () => {
-    const { res, accessToken } = await login(ctx, 'owner@sharma-electronics.local');
+    // A role where two-factor is optional (owners and admins must use it).
+    const finance = await createUser(ctx, { roleKey: 'MERCHANT_FINANCE', organizationId: merchantOrgId });
+    const { res, accessToken } = await login(ctx, finance.email);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, data: { status: 'AUTHENTICATED', token_type: 'Bearer' } });
     expect(accessToken).toBeTruthy();
@@ -190,8 +193,8 @@ describe('sessions and logout', () => {
   });
 
   it("cannot revoke another user's session", async () => {
-    const owner = await login(ctx, 'owner@sharma-electronics.local');
-    const other = await login(ctx, 'owner@kirana-fresh.local');
+    const owner = await signIn(ctx, 'owner@sharma-electronics.local');
+    const other = await signIn(ctx, 'owner@kirana-fresh.local');
     const otherSessionId = (await ctx.prisma.refreshToken.findUniqueOrThrow({ where: { tokenHash: sha256Hex(other.refresh!) } })).sessionId;
     const res = await ctx.http().delete(`/v1/auth/sessions/${otherSessionId}`).set(bearer(owner.accessToken!));
     expect(res.status).toBe(404);
@@ -277,7 +280,7 @@ describe('MFA', () => {
   });
 
   it('refuses an access token presented as an MFA challenge token', async () => {
-    const { accessToken } = await login(ctx, 'owner@sharma-electronics.local');
+    const { accessToken } = await signIn(ctx, 'owner@sharma-electronics.local');
     const res = await ctx.http().post('/v1/auth/mfa/verify').send({ mfa_token: accessToken, code: '123456' });
     expect(res.status).toBe(401);
   });

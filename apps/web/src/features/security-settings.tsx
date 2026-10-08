@@ -10,20 +10,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@pay2all/ui/co
 import { formatDateTime, formatRelative } from '@pay2all/ui/lib/format';
 import { changePasswordSchema } from '@pay2all/validation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, LogOut, ShieldCheck, ShieldOff } from 'lucide-react';
+import { KeyRound, Loader2, LogOut, Plus, ShieldCheck, ShieldOff, Smartphone, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { toast } from 'sonner';
 import type { z } from 'zod';
 import { FormError } from '@/components/auth/form-error';
+import { PasskeyEnrollment } from '@/components/auth/passkey-enrollment';
 import { TotpEnrollment } from '@/components/auth/totp-enrollment';
 import { FormField } from '@/components/common/form-field';
 import { PageHeader } from '@/components/common/page-header';
 import { api, ApiError, logout } from '@/lib/api/client';
 import { errorMessage, toTableError } from '@/lib/api/errors';
-import type { Me, SessionRow } from '@/lib/api/types';
+import type { Me, PasskeyRow, SessionRow } from '@/lib/api/types';
+import { passkeysSupported } from '@/lib/auth/passkey';
 import { ME_QUERY_KEY } from '@/lib/auth/use-me';
+import { DashboardIpCard } from './security/dashboard-ip';
 
 function describeAgent(ua: string | null): string {
   if (!ua) return 'Unknown device';
@@ -97,31 +100,117 @@ export function RecoveryCodesDialog({ codes, onClose }: { codes: string[] | null
   );
 }
 
-function RegenerateCodes({ onCodes }: { onCodes: (codes: string[]) => void }) {
+function RegenerateCodes({ totp, onCodes }: { totp: boolean; onCodes: (codes: string[]) => void }) {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
+  async function run() {
+    setBusy(true);
+    try {
+      // Without an authenticator app, a recent confirmation (passkey) is used instead of a code.
+      const res = await api.post<{ recovery_codes: string[] }>('/v1/auth/mfa/recovery-codes', totp ? { code } : {});
+      setCode('');
+      onCodes(res.recovery_codes);
+    } catch (e) {
+      toast.error(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <div className="flex flex-wrap items-end gap-2">
-      <FormField label="Authenticator code" name="regen-code" inputMode="numeric" maxLength={6} className="w-36 font-mono" value={code} onChange={(e) => setCode(e.target.value)} />
-      <Button
-        variant="outline"
-        disabled={busy || code.length !== 6}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            const res = await api.post<{ recovery_codes: string[] }>('/v1/auth/mfa/recovery-codes', { code });
-            setCode('');
-            onCodes(res.recovery_codes);
-          } catch (e) {
-            toast.error(errorMessage(e));
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        Generate new recovery codes
+      {totp && <FormField label="Authenticator code" name="regen-code" inputMode="numeric" maxLength={6} className="w-36 font-mono" value={code} onChange={(e) => setCode(e.target.value)} />}
+      <Button variant="outline" disabled={busy || (totp && code.length !== 6)} onClick={() => void run()}>
+        {busy && <Loader2 className="animate-spin" />} Generate new recovery codes
       </Button>
     </div>
+  );
+}
+
+function PasskeysSection({ onCodes }: { onCodes: (codes: string[]) => void }) {
+  const queryClient = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState<PasskeyRow | null>(null);
+  const [newName, setNewName] = useState('');
+  const [removing, setRemoving] = useState<PasskeyRow | null>(null);
+  const passkeys = useQuery({ queryKey: ['auth', 'passkeys'], queryFn: () => api.get<PasskeyRow[]>('/v1/auth/passkeys') });
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['auth', 'passkeys'] });
+    void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
+  };
+  const rename = useMutation({
+    mutationFn: () => api.post(`/v1/auth/passkeys/${renaming!.id}/rename`, { name: newName.trim() }),
+    onSuccess: () => { setRenaming(null); refresh(); },
+    onError: (e) => toast.error(errorMessage(e)),
+  });
+  const remove = useMutation({
+    mutationFn: (id: string) => api.delete(`/v1/auth/passkeys/${id}`),
+    onSuccess: () => { setRemoving(null); toast.success('Passkey removed'); refresh(); },
+    onError: (e) => { setRemoving(null); toast.error(errorMessage(e)); },
+  });
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold"><KeyRound className="size-4" /> Passkeys</h3>
+          <p className="text-muted-foreground text-xs">Sign in with your fingerprint, face, device PIN or a security key. Phishing-resistant.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => setAdding(true)} disabled={!passkeysSupported()}>
+          <Plus /> Add passkey
+        </Button>
+      </div>
+      {passkeys.data?.length ? (
+        <ul className="divide-y rounded-lg border">
+          {passkeys.data.map((p) => (
+            <li key={p.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{p.name ?? 'Passkey'}</p>
+                <p className="text-muted-foreground text-xs">Added {formatDateTime(p.created_at)} · {p.last_used_at ? `last used ${formatRelative(p.last_used_at)}` : 'not used yet'}</p>
+              </div>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => { setRenaming(p); setNewName(p.name ?? ''); }}>Rename</Button>
+                <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setRemoving(p)}><Trash2 /> Remove</Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        !passkeys.isPending && <p className="text-muted-foreground rounded-lg border border-dashed px-4 py-3 text-sm">No passkeys yet.</p>
+      )}
+      <Dialog open={adding} onOpenChange={setAdding}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>Add a passkey</DialogTitle></DialogHeader>
+          {adding && (
+            <PasskeyEnrollment
+              onAdded={(r) => {
+                setAdding(false);
+                toast.success('Passkey added');
+                if (r.recovery_codes) onCodes(r.recovery_codes);
+                refresh();
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={Boolean(renaming)} onOpenChange={(o) => !o && setRenaming(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Rename passkey</DialogTitle></DialogHeader>
+          <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); rename.mutate(); }}>
+            <FormField name="passkey-rename" label="Name" maxLength={60} value={newName} onChange={(e) => setNewName(e.target.value)} autoFocus />
+            <Button type="submit" className="w-full" disabled={!newName.trim() || rename.isPending}>{rename.isPending && <Loader2 className="animate-spin" />} Save</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={Boolean(removing)}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={`Remove “${removing?.name ?? 'Passkey'}”?`}
+        description="You won’t be able to sign in with it any more. You may be asked to confirm it’s you."
+        confirmLabel="Remove passkey"
+        destructive
+        pending={remove.isPending}
+        onConfirm={() => removing && remove.mutate(removing.id)}
+      />
+    </section>
   );
 }
 
@@ -135,39 +224,46 @@ function MfaCard({ me }: { me: Me }) {
         <div className="space-y-1.5">
           <CardTitle>Two-factor authentication</CardTitle>
           <CardDescription>
-            {me.mfa.required ? 'Required for your role.' : 'Protect your account with an authenticator app.'}
+            {me.mfa.required ? 'Required for your role. Keep at least one method.' : 'A second step at sign-in keeps your account safe even if your password leaks.'}
           </CardDescription>
         </div>
         <StatusBadge status={me.mfa.enabled ? 'ENABLED' : 'DISABLED'} tone={me.mfa.enabled ? 'success' : 'warning'} />
       </CardHeader>
-      <CardContent>
-        {me.mfa.enabled ? (
-          <div className="space-y-4">
+      <CardContent className="space-y-6">
+        <PasskeysSection onCodes={setCodes} />
+        <section className="space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold"><Smartphone className="size-4" /> Authenticator app</h3>
+          {me.mfa.totp_enabled ? (
             <p className="text-muted-foreground flex items-center gap-2 text-sm">
-              <ShieldCheck className="text-success size-4" /> Authenticator app is active. Codes are required at every sign-in.
+              <ShieldCheck className="text-success size-4" /> Active. You can use 6-digit codes at sign-in.
             </p>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => setEnrolling(true)}>
+              <ShieldOff /> Set up authenticator app
+            </Button>
+          )}
+        </section>
+        {me.mfa.enabled && (
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold">Recovery codes</h3>
             <p className="text-sm">
-              Recovery codes remaining: <span className={me.mfa.recovery_codes_remaining < 3 ? 'text-destructive font-semibold' : 'font-semibold'}>{me.mfa.recovery_codes_remaining}</span>
+              Remaining: <span className={me.mfa.recovery_codes_remaining < 3 ? 'text-destructive font-semibold' : 'font-semibold'}>{me.mfa.recovery_codes_remaining}</span>
             </p>
-            <RegenerateCodes onCodes={setCodes} />
-          </div>
-        ) : (
-          <Button variant="outline" onClick={() => setEnrolling(true)}>
-            <ShieldOff /> Set up authenticator
-          </Button>
+            <RegenerateCodes totp={me.mfa.totp_enabled} onCodes={setCodes} />
+          </section>
         )}
       </CardContent>
       <Dialog open={enrolling} onOpenChange={setEnrolling}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Set up two-factor authentication</DialogTitle>
+            <DialogTitle>Set up an authenticator app</DialogTitle>
           </DialogHeader>
           {enrolling && (
             <TotpEnrollment
               onEnabled={(recoveryCodes) => {
                 setEnrolling(false);
-                setCodes(recoveryCodes);
-                toast.success('Two-factor authentication enabled');
+                if (recoveryCodes?.length) setCodes(recoveryCodes);
+                toast.success('Authenticator app enabled');
                 void queryClient.invalidateQueries({ queryKey: ME_QUERY_KEY });
               }}
             />
@@ -264,11 +360,12 @@ function SessionsCard() {
 export function SecuritySettings({ me, embedded = false }: { me: Me; embedded?: boolean }) {
   return (
     <>
-      <PageHeader level={embedded ? 2 : 1} title={embedded ? 'My security' : 'Security'} description="Password, two-factor authentication and signed-in devices." />
+      <PageHeader level={embedded ? 2 : 1} title={embedded ? 'My security' : 'Security'} description="Passkeys, two-factor authentication, password and signed-in devices." />
       <div className="space-y-6">
         <MfaCard me={me} />
         <ChangePasswordCard />
         <SessionsCard />
+        {me.permissions.includes('user.read') && <DashboardIpCard me={me} />}
       </div>
     </>
   );

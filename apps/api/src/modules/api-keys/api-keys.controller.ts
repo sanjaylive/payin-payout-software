@@ -4,7 +4,7 @@ import { apiLogsQuerySchema, apiUsageQuerySchema, createApiKeySchema, idSchema, 
 import type { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { ApiKeysService } from './api-keys.service';
 
@@ -17,6 +17,7 @@ export class ApiKeysController {
   constructor(private readonly keys: ApiKeysService) {}
 
   @Post('api-keys')
+  @RequireStepUp()
   @RequirePermissions('api_key.manage')
   @ApiOperation({ summary: 'Create an API key. The secret is returned once.' })
   @ApiZodBody(createApiKeySchema)
@@ -31,6 +32,7 @@ export class ApiKeysController {
   }
 
   @Post('api-keys/:id/rotate')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('api_key.manage')
   @ApiZodBody(rotateApiKeySchema)
@@ -52,6 +54,7 @@ export class ApiKeysController {
   }
 
   @Post('ip-allowlist')
+  @RequireStepUp()
   @RequirePermissions('api_key.manage')
   @ApiZodBody(ipAllowlistEntrySchema)
   addAllowlist(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(ipAllowlistEntrySchema)) body: z.output<typeof ipAllowlistEntrySchema>) {
@@ -59,6 +62,7 @@ export class ApiKeysController {
   }
 
   @Delete('ip-allowlist/:id')
+  @RequireStepUp()
   @RequirePermissions('api_key.manage')
   removeAllowlist(@CurrentActor() actor: Actor, @Param('id', new ZodValidationPipe(idSchema('ipa'))) id: string) {
     return this.keys.removeAllowlist(actor, id);

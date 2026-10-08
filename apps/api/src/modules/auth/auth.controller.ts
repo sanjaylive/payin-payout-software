@@ -7,7 +7,11 @@ import {
   idSchema,
   loginSchema,
   mfaVerifySchema,
+  passkeyChallengeSchema,
+  passkeyRegisterSchema,
+  passkeyRenameSchema,
   regenerateRecoveryCodesSchema,
+  stepUpSchema,
   resetPasswordSchema,
   totpDisableSchema,
   totpEnableSchema,
@@ -20,7 +24,7 @@ import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
 import { ApiConfig } from '../../config/api-config';
-import { AllowRestrictedSession, AuthenticatedOnly, CurrentActor, Public } from '../access/decorators';
+import { AllowRestrictedSession, AuthenticatedOnly, CurrentActor, Public, RequireStepUp } from '../access/decorators';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from './actor';
 import { assertCsrf, clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './auth.cookies';
@@ -28,8 +32,11 @@ import { AuthService } from './auth.service';
 import { RATE_LIMITS } from './auth.util';
 import { MeService } from './me.service';
 import { MfaService } from './mfa.service';
+import { PasskeyService } from './passkey.service';
 import { PasswordService } from './password.service';
 import { type IssuedSession, SessionService } from './session.service';
+import { StepUpService } from './step-up.service';
+import { TokenService } from './token.service';
 
 function presentSession(s: IssuedSession) {
   return {
@@ -52,7 +59,16 @@ export class AuthController {
     private readonly audit: AuditService,
     private readonly rateLimit: RateLimitService,
     private readonly config: ApiConfig,
+    private readonly passkeys: PasskeyService,
+    private readonly stepUp: StepUpService,
+    private readonly tokens: TokenService,
   ) {}
+
+  /** Adding a second (or further) factor to an account is sensitive; the very first enrollment isn't gated. */
+  private async assertMayAddFactor(actor: Actor) {
+    if (actor.restricted) return;
+    if ((await this.mfa.status(actor.userId)).enabled) await this.stepUp.assertFresh(actor);
+  }
 
   @Public()
   @Post('login')
@@ -65,7 +81,7 @@ export class AuthController {
   ) {
     const result = await this.auth.login(body.identifier, body.password, body.location);
     if (result.kind === 'mfa_required') {
-      return { status: 'MFA_REQUIRED', mfa_token: result.mfaToken, expires_in: result.expiresIn };
+      return { status: 'MFA_REQUIRED', mfa_token: result.mfaToken, expires_in: result.expiresIn, mfa_methods: result.methods };
     }
     setRefreshCookie(res, this.config, result.session.refreshToken);
     return presentSession(result.session);
@@ -80,12 +96,29 @@ export class AuthController {
     @Body(new ZodValidationPipe(mfaVerifySchema)) body: z.output<typeof mfaVerifySchema>,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const session = await this.auth.completeMfaLogin(body.mfa_token, (userId) =>
-      body.recovery_code ? this.mfa.verifyRecoveryCode(userId, body.recovery_code) : this.mfa.verifyForLogin(userId, body.code!),
+    const session = await this.auth.completeMfaLogin(
+      body.mfa_token,
+      (userId, challengeId) =>
+        body.passkey
+          ? this.passkeys.verifyAssertion(userId, 'login', `${userId}:${challengeId}`, body.passkey)
+          : body.recovery_code
+            ? this.mfa.verifyRecoveryCode(userId, body.recovery_code)
+            : this.mfa.verifyForLogin(userId, body.code!),
       body.location,
     );
     setRefreshCookie(res, this.config, session.refreshToken);
     return presentSession(session);
+  }
+
+  @Public()
+  @Post('mfa/passkey/options')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Sign-in second step: get a passkey challenge for the pending sign-in' })
+  @ApiZodBody(passkeyChallengeSchema)
+  async passkeyLoginOptions(@Body(new ZodValidationPipe(passkeyChallengeSchema)) body: z.output<typeof passkeyChallengeSchema>) {
+    await this.rateLimit.enforce(RATE_LIMITS.mfaByIp, RequestContextStore.get()?.ipAddress ?? 'unknown');
+    const claims = await this.tokens.verifyMfaChallenge(body.mfa_token);
+    return this.passkeys.authenticationOptions(claims.sub, 'login', `${claims.sub}:${claims.jti}`);
   }
 
   @Public()
@@ -218,6 +251,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Begin TOTP enrollment — returns secret and QR once' })
   async setupTotp(@CurrentActor() actor: Actor) {
+    await this.assertMayAddFactor(actor);
     const result = await this.mfa.setup(actor);
     return { secret: result.secret, otpauth_url: result.otpauthUrl, qr_data_url: result.qrDataUrl };
   }
@@ -233,22 +267,25 @@ export class AuthController {
     @CurrentActor() actor: Actor,
     @Body(new ZodValidationPipe(totpEnableSchema)) body: z.output<typeof totpEnableSchema>,
   ) {
+    await this.assertMayAddFactor(actor);
     const token = await this.mfa.enable(actor, body.code);
-    // Recovery codes are returned exactly once; only their keyed hashes are stored.
-    return { status: 'AUTHENTICATED', access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn, recovery_codes: token.recoveryCodes };
+    // Recovery codes are returned exactly once (first factor only); only their keyed hashes are stored.
+    return { status: 'AUTHENTICATED', access_token: token.accessToken, token_type: 'Bearer', expires_in: token.expiresIn, ...(token.recoveryCodes ? { recovery_codes: token.recoveryCodes } : {}) };
   }
 
   @AuthenticatedOnly()
   @Post('mfa/recovery-codes')
   @HttpCode(200)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Regenerate recovery codes (invalidates previous ones; requires a current TOTP code)' })
+  @ApiOperation({ summary: 'Regenerate recovery codes (invalidates previous ones; needs a current TOTP code or a recent step-up)' })
   @ApiZodBody(regenerateRecoveryCodesSchema)
   async regenerateRecoveryCodes(
     @CurrentActor() actor: Actor,
     @Body(new ZodValidationPipe(regenerateRecoveryCodesSchema)) body: z.output<typeof regenerateRecoveryCodesSchema>,
   ) {
-    return { recovery_codes: await this.mfa.regenerateRecoveryCodes(actor, body.code) };
+    if (body.code) return { recovery_codes: await this.mfa.regenerateRecoveryCodes(actor, { code: body.code }) };
+    await this.stepUp.assertFresh(actor);
+    return { recovery_codes: await this.mfa.regenerateRecoveryCodes(actor, { steppedUp: true }) };
   }
 
   @AuthenticatedOnly()
@@ -263,5 +300,93 @@ export class AuthController {
   ) {
     await this.mfa.disable(actor, body.code, body.password);
     return { mfa_enabled: false };
+  }
+
+  // ---- Passkeys --------------------------------------------------------------------------------
+
+  @AuthenticatedOnly()
+  @Get('passkeys')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'List your passkeys' })
+  listPasskeys(@CurrentActor() actor: Actor) {
+    return this.passkeys.list(actor.userId);
+  }
+
+  @AuthenticatedOnly()
+  @AllowRestrictedSession()
+  @Post('passkeys/register/options')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Begin adding a passkey (WebAuthn creation options)' })
+  async passkeyRegistrationOptions(@CurrentActor() actor: Actor) {
+    await this.assertMayAddFactor(actor);
+    return this.passkeys.registrationOptions(actor);
+  }
+
+  @AuthenticatedOnly()
+  @AllowRestrictedSession()
+  @Post('passkeys/register')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Finish adding a passkey' })
+  @ApiZodBody(passkeyRegisterSchema)
+  async registerPasskey(
+    @CurrentActor() actor: Actor,
+    @Body(new ZodValidationPipe(passkeyRegisterSchema)) body: z.output<typeof passkeyRegisterSchema>,
+  ) {
+    await this.assertMayAddFactor(actor);
+    return this.passkeys.register(actor, body.name, body.response);
+  }
+
+  @AuthenticatedOnly()
+  @Post('passkeys/:passkeyId/rename')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Rename a passkey' })
+  @ApiZodBody(passkeyRenameSchema)
+  renamePasskey(
+    @CurrentActor() actor: Actor,
+    @Param('passkeyId', new ZodValidationPipe(idSchema('mfa'))) id: string,
+    @Body(new ZodValidationPipe(passkeyRenameSchema)) body: z.output<typeof passkeyRenameSchema>,
+  ) {
+    return this.passkeys.rename(actor, id, body.name);
+  }
+
+  @AuthenticatedOnly()
+  @RequireStepUp()
+  @Delete('passkeys/:passkeyId')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Remove a passkey (needs a recent step-up)' })
+  removePasskey(@CurrentActor() actor: Actor, @Param('passkeyId', new ZodValidationPipe(idSchema('mfa'))) id: string) {
+    return this.passkeys.remove(actor, id);
+  }
+
+  // ---- Step-up ---------------------------------------------------------------------------------
+
+  @AuthenticatedOnly()
+  @Get('step-up')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'How you can confirm it is you, and whether a recent confirmation is still valid' })
+  stepUpMethods(@CurrentActor() actor: Actor) {
+    return this.stepUp.methods(actor);
+  }
+
+  @AuthenticatedOnly()
+  @Post('step-up/passkey/options')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Passkey challenge for a step-up confirmation' })
+  stepUpPasskeyOptions(@CurrentActor() actor: Actor) {
+    return this.stepUp.passkeyOptions(actor);
+  }
+
+  @AuthenticatedOnly()
+  @Post('step-up')
+  @HttpCode(200)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Confirm it is you (passkey, authenticator code, recovery code; password only without two-factor)' })
+  @ApiZodBody(stepUpSchema)
+  confirmStepUp(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(stepUpSchema)) body: z.output<typeof stepUpSchema>) {
+    return this.stepUp.confirm(actor, body);
   }
 }

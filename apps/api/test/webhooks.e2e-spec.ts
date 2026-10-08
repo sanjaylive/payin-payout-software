@@ -1,6 +1,6 @@
 import { newId } from '@pay2all/auth';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let owner: string; // Sharma owner (webhook.manage)
@@ -12,9 +12,9 @@ let sharmaId: string;
 beforeAll(async () => {
   ctx = await createTestContext();
   sharmaId = (await orgBySlug(ctx, 'sharma-electronics')).id;
-  owner = (await login(ctx, 'owner@sharma-electronics.local')).accessToken!;
-  viewer = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_VIEWER', organizationId: sharmaId })).email)).accessToken!;
-  kirana = (await login(ctx, 'owner@kirana-fresh.local')).accessToken!;
+  owner = (await signIn(ctx, 'owner@sharma-electronics.local')).accessToken!;
+  viewer = (await signIn(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_VIEWER', organizationId: sharmaId })).email)).accessToken!;
+  kirana = (await signIn(ctx, 'owner@kirana-fresh.local')).accessToken!;
   const platform = await orgBySlug(ctx, 'pay2all');
   ops = (await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'OPERATIONS', organizationId: platform.id })).email)).accessToken;
 });

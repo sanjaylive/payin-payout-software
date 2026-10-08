@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { bearer, createTestContext, createUser, login, orgBySlug, SEED_PASSWORD, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, login, orgBySlug, SEED_PASSWORD, type TestContext, signIn } from './helpers';
 import { generateTotpCode } from '@pay2all/auth';
 
 let ctx: TestContext;
@@ -62,7 +62,7 @@ describe('MFA recovery codes', () => {
     // Merchant owners cannot reset anyone's MFA.
     const sharma = await orgBySlug(ctx, 'sharma-electronics');
     const owner = await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: sharma.id });
-    const ownerToken = (await login(ctx, owner.email)).accessToken!;
+    const ownerToken = (await signIn(ctx, owner.email)).accessToken!;
     const viewer = await createUser(ctx, { roleKey: 'MERCHANT_VIEWER', organizationId: sharma.id });
     expect((await ctx.http().post(`/v1/users/${viewer.id}/mfa/reset`).set(bearer(ownerToken)).send({ reason: 'trying it' })).status).toBe(403);
   });

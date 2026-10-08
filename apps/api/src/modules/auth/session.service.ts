@@ -8,6 +8,7 @@ import { RequestContextStore } from '../../common/context/request-context';
 import { ApiConfig } from '../../config/api-config';
 import { PRISMA, REDIS } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
+import { DashboardIpService } from './dashboard-ip.service';
 import { TokenService } from './token.service';
 
 /** Two tabs refreshing at the same moment shouldn't be treated as token theft. */
@@ -43,6 +44,7 @@ export class SessionService {
     private readonly config: ApiConfig,
     private readonly tokens: TokenService,
     private readonly audit: AuditService,
+    private readonly dashboardIp: DashboardIpService,
   ) {}
 
   async create(input: {
@@ -141,6 +143,9 @@ export class SessionService {
       await this.revoke(session.id, 'USER_DISABLED');
       throw new AppError(ErrorCode.ACCOUNT_DISABLED);
     }
+
+    // The token stays unused, so the user can continue once back on an allowed network.
+    await this.dashboardIp.assertAllowed(session.organizationId);
 
     const newRefreshToken = generateToken();
     await this.prisma.$transaction(async (tx) => {

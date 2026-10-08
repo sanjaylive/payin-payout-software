@@ -4,7 +4,7 @@ import { gatewayRemoveCredentialsSchema, gatewayToggleSchema, saveGatewaySchema 
 import { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { GatewaysService } from './gateways.service';
 
@@ -24,6 +24,7 @@ export class GatewaysController {
   }
 
   @Put(':key')
+  @RequireStepUp()
   @RequirePermissions('system.settings.manage')
   @ApiOperation({ summary: 'Connect or update a gateway: environment and credentials (merged with stored ones)' })
   @ApiZodBody(saveGatewaySchema)
@@ -40,6 +41,7 @@ export class GatewaysController {
   }
 
   @Post(':key/enabled')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('system.settings.manage')
   @ApiZodBody(gatewayToggleSchema)
@@ -48,6 +50,7 @@ export class GatewaysController {
   }
 
   @Post(':key/credentials/remove')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('system.settings.manage')
   @ApiZodBody(gatewayRemoveCredentialsSchema)

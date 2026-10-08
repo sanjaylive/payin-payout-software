@@ -13,6 +13,7 @@ process.env.TRUST_PROXY_HOPS = '1'; // lets tests vary client IPs via X-Forwarde
 process.env.LOG_LEVEL = 'silent';
 process.env.SWAGGER_ENABLED = 'false';
 process.env.AUTH_ENFORCE_MFA = 'true';
+process.env.AUTH_STEP_UP_SECONDS = '3600'; // suites run longer than 5 min; step-up tests backdate the session instead
 process.env.SEED_PASSWORD = 'Test-Seed-Password-2026!';
 process.env.S3_BUCKET = 'pay2all-documents-test';
 process.env.MAX_DOCUMENT_BYTES = String(1024 * 1024);

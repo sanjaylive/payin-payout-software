@@ -13,7 +13,7 @@ import {
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { ProvidersService } from './providers.service';
 import { RoutingService } from './routing.service';
@@ -66,6 +66,7 @@ export class ProvidersController {
   }
 
   @Patch('providers/:id/status')
+  @RequireStepUp()
   @RequirePermissions('provider.manage')
   @ApiOperation({ summary: 'Manual status: MAINTENANCE / DISABLED (never auto-overridden) or ACTIVE (hand back to health management)' })
   @ApiZodBody(providerStatusSchema)
@@ -74,6 +75,7 @@ export class ProvidersController {
   }
 
   @Put('providers/:id/credentials')
+  @RequireStepUp()
   @RequirePermissions('provider.manage')
   @ApiOperation({ summary: 'Set or rotate credentials (write-only; values are encrypted and never returned)' })
   @ApiZodBody(providerCredentialsSchema)

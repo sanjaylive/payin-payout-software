@@ -7,7 +7,7 @@ import { memoryStorage } from 'multer';
 import { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { FundsService } from './funds.service';
 
@@ -32,6 +32,7 @@ export class FundsController {
   }
 
   @Post('accounts')
+  @RequireStepUp()
   @RequirePermissions('system.settings.manage')
   @ApiZodBody(collectionAccountSchema)
   createAccount(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(collectionAccountSchema)) body: z.output<typeof collectionAccountSchema>) {
@@ -39,6 +40,7 @@ export class FundsController {
   }
 
   @Put('accounts/:id')
+  @RequireStepUp()
   @RequirePermissions('system.settings.manage')
   @ApiZodBody(collectionAccountSchema)
   updateAccount(@CurrentActor() actor: Actor, @Param('id', accountId) id: string, @Body(new ZodValidationPipe(updateAccountSchema)) body: z.output<typeof updateAccountSchema>) {
@@ -110,6 +112,7 @@ export class FundsController {
   }
 
   @Post('requests/:id/decision')
+  @RequireStepUp()
   @HttpCode(200)
   @RequirePermissions('fund.approve')
   @ApiOperation({ summary: 'Approve (credits the merchant wallet) or reject a fund request' })

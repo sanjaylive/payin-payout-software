@@ -54,9 +54,23 @@ POST /v1/auth/login ─▶ (MFA?) ─▶ Session row created
 - **Enrollment:** `POST /v1/auth/mfa/totp/setup` returns an otpauth URI and QR, creating a PENDING factor. `POST /v1/auth/mfa/totp/enable` with a valid code activates it.
 - **Replay prevention:** `lastUsedStep` is stored, and a code from the same or an earlier step is rejected.
 - **Login with MFA:** the password step returns `{ mfa_required: true, mfa_token }`, a 5-minute JWT with `typ:"mfa"`. `POST /v1/auth/mfa/verify` with the code creates the session. No session or refresh token exists before MFA succeeds.
-- **Mandatory MFA:** roles with `requiresMfa` are all platform staff roles and RESELLER. If such a user has no active factor, login creates a **restricted session** (`mfaEnrollmentRequired`). In a restricted session the guard allows only routes marked `@AllowRestrictedSession()` (`/auth/me`, MFA setup/enable, logout). Controlled by `AUTH_ENFORCE_MFA`.
+- **Mandatory MFA:** roles with `requiresMfa` are all platform staff roles, RESELLER, and merchant **OWNER** and **ADMIN** (since 2026-10-08; migration `…_passkeys_step_up_dashboard_ip` updated existing roles, so those users enroll at their next sign-in). If such a user has no active factor, login creates a **restricted session** (`mfaEnrollmentRequired`). In a restricted session the guard allows only routes marked `@AllowRestrictedSession()` (`/auth/me`, MFA setup/enable, logout). Controlled by `AUTH_ENFORCE_MFA`.
 - **Recovery codes:** 10 single-use 50-bit codes (`ABCDE-FGH23`), returned once at enrollment and on regeneration (which needs a current TOTP code). They are stored as a keyed HMAC (blind index) rather than a slow hash, so a leaked table alone cannot be brute-forced offline. Consuming one is race-safe, audited and emailed to the user.
 - **Admin MFA reset:** platform staff with `user.manage` can reset another user's MFA, but not their own. A reason is required. The reset disables all factors and codes, revokes every session, writes an audit entry and emails the user.
+
+#### Passkeys (WebAuthn)
+
+- A passkey is a second factor next to, or instead of, the authenticator app. It is the device's fingerprint/face/PIN unlock, a phone, or a USB/NFC security key (`@simplewebauthn/server`).
+- **Phishing-resistant:** the browser binds every signature to the origin and the relying-party id (`WEBAUTHN_RP_ID`, default the host of `WEB_PUBLIC_URL`). The server accepts only the web app's origins (`WEB_PUBLIC_URL` and `CORS_ALLOWED_ORIGINS`). A look-alike site gets nothing usable.
+- **Stored:** credential id, COSE **public** key, signature counter, transports, user-given name. No secret. A DB CHECK guarantees a row is either a TOTP factor (encrypted secret) or a passkey (credential + public key), never half of each.
+- **Challenges:** random, bound to purpose and subject (`register:<session>`, `login:<user>:<challenge jti>`, `step-up:<session>`), single use (Redis `GETDEL`), 5-minute TTL.
+- **Cloned keys:** the signature counter may only move forward (conditional update on the previous value). An authenticator that reports an older counter is rejected.
+- **Sign-in:** `POST /v1/auth/login` returns `mfa_methods: {totp, passkey}`; `POST /v1/auth/mfa/passkey/options {mfa_token}` returns the challenge; `POST /v1/auth/mfa/verify {mfa_token, passkey}` completes it. The 5-attempt cap per challenge applies as for codes.
+- **Management:** `GET /v1/auth/passkeys`, `POST /v1/auth/passkeys/register/options`, `POST /v1/auth/passkeys/register {name, response}`, `POST /v1/auth/passkeys/:id/rename`, `DELETE /v1/auth/passkeys/:id`.
+  - A first passkey works like enabling TOTP: it lifts an enrollment-only session and issues recovery codes once.
+  - Adding a further factor (passkey or TOTP) needs a recent step-up, so a hijacked session can't plant a persistent factor.
+  - Removing needs a step-up. The last factor of a role that requires two-factor can't be removed.
+- Up to 10 passkeys per user. An admin MFA reset disables passkeys too.
 
 ### 1.6 Login history (login_events)
 
@@ -69,6 +83,8 @@ Every sign-in attempt is recorded, append-only (enforced by a trigger, like `aud
 - IP address, and the user agent summarised into browser, OS and device type.
 
 **Location:** taken only from the **browser's own geolocation**, and only when the user allows it on the sign-in page. The site's Permissions-Policy is `geolocation=(self)`. Latitude/longitude (6 dp) and the accuracy radius are stored. IPs are never sent to third-party geo-lookup services.
+
+Outcome `IP_NOT_ALLOWED` records a correct password from outside the organization's dashboard allowlist (§1.8).
 
 **Who sees it:** merchants see their own organization (Team → Login activity); resellers and partners see their merchants; platform staff see any merchant (Admin → Merchant → Login activity).
 
@@ -84,6 +100,33 @@ Every sign-in attempt is recorded, append-only (enforced by a trigger, like `aud
 - **Audit:** every change is audited with `on_behalf: true`.
 - **Signing secrets:** created or rotated secrets are shown once to the staff member, who must pass them on securely, or the merchant rotates the secret itself.
 - **Generic routes are unchanged:** there, platform staff can still only disable an endpoint.
+
+### 1.8 Dashboard sign-in IP allowlist
+
+- Each organization can restrict its dashboard to listed addresses or CIDR ranges (`dashboard_ip_rules`; Settings → Security → *Sign-in IP allowlist*). No entries = open. The platform organization's list covers all staff.
+- **Checked:** at password sign-in (after the password, before any second-factor challenge or session), at the second factor, at refresh (the refresh token is left unused), and on every authenticated request (per-process cache of 15 s; local invalidation on change).
+- **Recorded:** a correct password from outside is a login event `IP_NOT_ALLOWED` and an audit `auth.login.ip_blocked` (severity HIGH), because the password may be in the wrong hands.
+- **No self-lockout:** adding or removing an entry is refused (409) if the caller's own address would no longer be allowed. Removing the last entry is always possible.
+- **Who:** `user.read` views, `user.manage` changes (with step-up). Changes are audited (`security.dashboard_ip.*`).
+- **Break glass:** `DASHBOARD_IP_ALLOWLIST_ENFORCED=false` stops the checks without deleting entries, for an operator who has locked a whole organization out (e.g. office IP changed). Turn it back on afterwards.
+- API keys keep their own allowlist (§6).
+
+### 1.9 Step-up for sensitive actions
+
+- A valid session is not enough for actions that move money, grant access or change credentials. They need the user to have proved who they are within `AUTH_STEP_UP_SECONDS` (default 5 min): signing in counts, after that a quick confirmation. Otherwise `403 STEP_UP_REQUIRED`.
+- `Session.reauthenticatedAt` is set at sign-in and by `POST /v1/auth/step-up` with one proof: a passkey (`POST /v1/auth/step-up/passkey/options` first), an authenticator code, or a recovery code. A password is accepted **only** from users who have no second factor (roles where it's optional). `GET /v1/auth/step-up` lists the methods the user has. 5 wrong tries per session per 5 minutes, then `429`. Every success and failure is audited.
+- The web app opens a "Confirm it's you" dialog on `STEP_UP_REQUIRED` and retries the request once (`lib/auth/step-up.ts`).
+- API keys are unaffected: they sign every request.
+- **Routes marked `@RequireStepUp()`:**
+  - API keys: create, rotate; API IP allowlist add/remove.
+  - Webhook endpoints: create, change, rotate secret (merchant and on-behalf admin routes).
+  - Dashboard IP allowlist add/remove; passkey removal; adding a second factor.
+  - Gateway credentials save/remove and enable/disable; provider credentials and status; messaging-service credentials; file-storage backend credentials and active backend.
+  - Ledger adjustments (create, approve), journal reversals; fund-account changes and fund-request decisions.
+  - Team: invite user, change status, grant role, reset MFA.
+  - Merchant bank accounts: add, make primary. Settlement config; marking a settlement paid.
+  - Payout approval; bulk-batch confirm and approve.
+- **Large dashboard payouts:** creating a payout of `STEP_UP_PAYOUT_MIN_RUPEES` (default ₹50,000) or more from the dashboard needs a fresh step-up. Bulk rows are covered by the batch confirmation.
 
 ## 2. Authorization: RBAC + permissions
 

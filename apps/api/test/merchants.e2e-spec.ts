@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { completeLlpProfile, llpPan, pdf, png } from './fixtures';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let resellerId: string;
@@ -18,7 +18,7 @@ beforeAll(async () => {
   resellerToken = (await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'RESELLER', organizationId: reseller.id })).email)).accessToken;
   complianceToken = (await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'COMPLIANCE', organizationId: platform.id })).email)).accessToken;
   compliance2Token = (await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'COMPLIANCE', organizationId: platform.id })).email)).accessToken;
-  otherMerchantToken = (await login(ctx, 'owner@nimbus-software.local')).accessToken!;
+  otherMerchantToken = (await signIn(ctx, 'owner@nimbus-software.local')).accessToken!;
 });
 
 afterAll(async () => {
@@ -31,7 +31,7 @@ async function newMerchant(name = 'Test Traders') {
   expect(res.status).toBe(201);
   const id = res.body.data.id as string;
   const owner = await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: id });
-  return { id, ownerToken: (await login(ctx, owner.email)).accessToken! };
+  return { id, ownerToken: (await signIn(ctx, owner.email)).accessToken! };
 }
 
 function upload(token: string, merchantId: string, type: string, file = pdf(type), name = `${type}.pdf`, extra: Record<string, string> = {}) {

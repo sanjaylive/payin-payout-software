@@ -63,6 +63,7 @@ export const ID_PREFIXES = {
   remittance: 'prm',
   apiKey: 'key',
   ipAllowlist: 'ipa',
+  dashboardIpRule: 'dip',
   apiRequest: 'apr',
   riskRule: 'rrl',
   riskEvent: 'rev',

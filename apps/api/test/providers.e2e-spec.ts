@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { newId } from '@pay2all/auth';
 import { ProviderRegistryService } from '../src/modules/providers/provider-registry.service';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let opsToken: string;
@@ -112,7 +112,7 @@ describe('provider management', () => {
   });
 
   it('is platform-only', async () => {
-    const owner = (await login(ctx, 'owner@sharma-electronics.local')).accessToken!;
+    const owner = (await signIn(ctx, 'owner@sharma-electronics.local')).accessToken!;
     expect((await ctx.http().get('/v1/providers').set(bearer(owner))).status).toBe(403);
     expect((await ctx.http().post('/v1/routing/simulate').set(bearer(owner)).send({ service: 'PAYOUT', merchant_id: sharmaId, amount: '1.00', method: 'IMPS' })).status).toBe(403);
   });

@@ -82,6 +82,14 @@ export const apiEnvSchema = z
     AUTH_ENFORCE_MFA: bool(true),
     AUTH_MAX_FAILED_LOGINS: int(5, 1),
     AUTH_LOCKOUT_SECONDS: int(900, 60),
+    /** Sensitive actions need a sign-in or step-up confirmation at most this old (docs/SECURITY.md §1.9). */
+    AUTH_STEP_UP_SECONDS: int(300, 30),
+    /** Dashboard payouts at or above this many rupees need a fresh step-up. */
+    STEP_UP_PAYOUT_MIN_RUPEES: int(50_000, 0),
+    /** Passkeys: relying-party id (the web app's registrable domain). Empty = WEB_PUBLIC_URL's host. */
+    WEBAUTHN_RP_ID: z.string().default(''),
+    /** Break-glass switch for the dashboard IP allowlist (docs/SECURITY.md §1.8). Leave on. */
+    DASHBOARD_IP_ALLOWLIST_ENFORCED: bool(true),
     /** Optional for the API's jobs process: empty = no Kafka fast path, DB polling only. */
     KAFKA_BROKERS: csv,
     KAFKA_CLIENT_ID: z.string().default('pay2all'),

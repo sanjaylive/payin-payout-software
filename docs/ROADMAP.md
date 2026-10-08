@@ -128,7 +128,7 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 1. ~~**Public API amount format.**~~ Decided before Phase 5: string decimal rupees (`"1000.00"`), JSON numbers rejected.
 2. **Settlement partner model.** Which partner bank, nodal or escrow arrangement holds merchant funds. This affects the chart of accounts labels, not the structure.
 3. **Retention periods** for transactions, audit logs and KYC documents (legal input required).
-4. **MFA for merchant OWNER/ADMIN roles.** Currently optional. Recommended to make it mandatory before go-live.
+4. ~~**MFA for merchant OWNER/ADMIN roles.**~~ Decided 2026-10-08: mandatory (passkey or authenticator app).
 
 ## Phase completion log
 

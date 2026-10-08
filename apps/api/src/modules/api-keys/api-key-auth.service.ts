@@ -1,4 +1,3 @@
-import { BlockList, isIP } from 'node:net';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { API_SIGNATURE_TOLERANCE_SECONDS, FieldEncryptor, newId, NONCE_RE, type PermissionKey, verifyApiSignature } from '@pay2all/auth';
 import type { PrismaClient } from '@pay2all/database';
@@ -7,6 +6,7 @@ import type { Request, Response } from 'express';
 import type Redis from 'ioredis';
 import { RequestContextStore } from '../../common/context/request-context';
 import { AppError } from '../../common/errors/app-error';
+import { buildIpList, ipInList, normalizeIp } from '../../common/http/ip-list';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
 import { ApiConfig } from '../../config/api-config';
 import { PRISMA, REDIS } from '../../infra/tokens';
@@ -100,16 +100,8 @@ export class ApiKeyAuthService {
   private async assertIpAllowed(organizationId: string, environment: 'TEST' | 'LIVE', ip: string | null) {
     const entries = await this.prisma.ipAllowlistEntry.findMany({ where: { organizationId, environment }, select: { cidr: true } });
     if (!entries.length) return;
-    const list = new BlockList();
-    for (const e of entries) {
-      const [addr, bits] = e.cidr.split('/');
-      const family = isIP(addr!) === 6 ? 'ipv6' : 'ipv4';
-      if (bits) list.addSubnet(addr!, Number(bits), family);
-      else list.addAddress(addr!, family);
-    }
-    const normalized = ip?.replace(/^::ffff:/, '') ?? '';
-    const family = isIP(normalized) === 6 ? 'ipv6' : 'ipv4';
-    if (!normalized || !list.check(normalized, family)) {
+    const normalized = normalizeIp(ip);
+    if (!ipInList(buildIpList(entries.map((e) => e.cidr)), normalized)) {
       this.logger.warn({ organizationId, ip }, 'API request from an address outside the allowlist');
       throw new AppError(ErrorCode.IP_NOT_ALLOWED, `Requests from ${normalized || 'this address'} are not on your IP allowlist`);
     }

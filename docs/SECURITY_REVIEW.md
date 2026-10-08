@@ -35,7 +35,6 @@ This is an end-of-build review of the platform against the OWASP API Security To
 | Risk rules fail open on evaluation errors | A Redis or DB hiccup must not take all payments down. Compensated by an alert on `risk_evaluation_errors_total` and by KYC, limits and maker-checker, which do fail closed. | Per rule `fail_closed` flag if a partner bank requires it. |
 | RLS covers export reads only | The main API relies on application-layer scoping (tested per endpoint). Turning RLS on for every request path would need `SET LOCAL` on every transaction and a non-owner runtime role. | When the production DB role layout is finalised: run the API as a non-owner role and extend policies. |
 | `security.*` signals (SECURITY.md §10) | Recorded as audit events; not yet fed into the risk engine as rules. | Next iteration: rules on login anomalies and permission-denied bursts. |
-| MFA for merchant OWNER/ADMIN is optional | Product decision (ROADMAP open decision 4). | Before go-live. |
 
 ## 4. Checks run
 

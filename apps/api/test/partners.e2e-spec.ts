@@ -5,7 +5,7 @@ import { Accounts } from '@pay2all/ledger/engine';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CommissionsService } from '../src/modules/commissions/commissions.service';
 import { ProviderRegistryService } from '../src/modules/providers/provider-registry.service';
-import { bearer, createApprovedMerchant, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createApprovedMerchant, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let admin: string; // platform ADMIN
@@ -54,7 +54,7 @@ describe('API keys', () => {
     expect(JSON.stringify(list.body)).not.toContain(k.secret);
     expect(JSON.stringify(await ctx.prisma.auditLog.findMany({ where: { resourceId: k.key_id } }))).not.toContain(k.secret);
 
-    const dev = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_DEVELOPER', organizationId: m.id })).email)).accessToken!;
+    const dev = (await signIn(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_DEVELOPER', organizationId: m.id })).email)).accessToken!;
     const tooMuch = await ctx.http().post('/v1/developers/api-keys').set(bearer(dev)).send({ name: 'Too much', permissions: ['payout.create'] });
     expect(tooMuch.status).toBe(403);
   });
@@ -192,7 +192,7 @@ describe('reseller rate cards and commissions', () => {
     await ctx.prisma.merchant.create({ data: { id: mid, resellerId: id, status: 'APPROVED', payinEnabled: true, payoutEnabled: true } });
     await ctx.prisma.merchantProfile.create({ data: { merchantId: mid, displayName: 'Reseller Merchant' } });
     await ctx.prisma.merchantKyc.create({ data: { merchantId: mid } });
-    const owner = (await login(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: mid })).email)).accessToken!;
+    const owner = (await signIn(ctx, (await createUser(ctx, { roleKey: 'MERCHANT_OWNER', organizationId: mid })).email)).accessToken!;
     return { id, token, merchantId: mid, owner };
   }
 

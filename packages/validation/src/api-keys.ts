@@ -43,6 +43,16 @@ export const ipAllowlistEntrySchema = z.strictObject({
   label: z.string().trim().max(80).optional(),
 });
 
+/** Dashboard allowlist entry, normalised to explicit CIDR (`203.0.113.10` → `203.0.113.10/32`). */
+export const dashboardIpRuleSchema = z.strictObject({
+  cidr: z
+    .string()
+    .trim()
+    .refine(isCidr, 'Enter an IP address or CIDR, e.g. 203.0.113.10 or 203.0.113.0/24 (prefix ≥ /8)')
+    .transform((v) => (v.includes('/') ? v.toLowerCase() : `${v.toLowerCase()}/${v.includes(':') ? 128 : 32}`)),
+  label: z.string().trim().max(80).optional(),
+});
+
 export const apiLogsQuerySchema = paginationQuerySchema.extend({
   api_key_id: idSchema('key').optional(),
   status: z.enum(['2xx', '4xx', '5xx']).optional(),

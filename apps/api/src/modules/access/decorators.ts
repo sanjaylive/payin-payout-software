@@ -41,3 +41,12 @@ export const CurrentActor = createParamDecorator((_data: unknown, ctx: Execution
   if (!req.actor) throw new Error('CurrentActor used on a route without authentication');
   return req.actor;
 });
+
+export const REQUIRE_STEP_UP = 'pay2all:requireStepUp';
+
+/**
+ * Sensitive dashboard action: the user must have signed in or confirmed it's them (step-up) within
+ * AUTH_STEP_UP_SECONDS, else `403 STEP_UP_REQUIRED` (docs/SECURITY.md §1.9). API-key callers are
+ * unaffected — they are authenticated by a signature on every request.
+ */
+export const RequireStepUp = () => SetMetadata(REQUIRE_STEP_UP, true);

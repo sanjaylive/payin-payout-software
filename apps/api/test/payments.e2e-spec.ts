@@ -5,7 +5,7 @@ import { Accounts } from '@pay2all/ledger/engine';
 import { PayinJobsService } from '../src/modules/payments/payin-jobs.service';
 import { RefundsService } from '../src/modules/payments/refunds.service';
 import { ProviderRegistryService } from '../src/modules/providers/provider-registry.service';
-import { bearer, createTestContext, createUser, login, loginWithMfaEnrollment, orgBySlug, type TestContext } from './helpers';
+import { bearer, createTestContext, createUser, loginWithMfaEnrollment, orgBySlug, type TestContext, signIn } from './helpers';
 
 let ctx: TestContext;
 let sharmaId: string;
@@ -49,8 +49,8 @@ beforeAll(async () => {
   ctx = await createTestContext();
   sharmaId = (await orgBySlug(ctx, 'sharma-electronics')).id;
   kiranaId = (await orgBySlug(ctx, 'kirana-fresh')).id;
-  owner = (await login(ctx, 'owner@sharma-electronics.local')).accessToken!;
-  kiranaOwner = (await login(ctx, 'owner@kirana-fresh.local')).accessToken!;
+  owner = (await signIn(ctx, 'owner@sharma-electronics.local')).accessToken!;
+  kiranaOwner = (await signIn(ctx, 'owner@kirana-fresh.local')).accessToken!;
   const platform = await orgBySlug(ctx, 'pay2all');
   ops = (await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'OPERATIONS', organizationId: platform.id })).email)).accessToken;
   admin = (await loginWithMfaEnrollment(ctx, (await createUser(ctx, { roleKey: 'ADMIN', organizationId: platform.id })).email)).accessToken;

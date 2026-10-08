@@ -15,12 +15,13 @@ import { LoginEventsService } from '../login-events/login-events.service';
 import type { loginLocationSchema } from '@pay2all/validation';
 import type { z } from 'zod';
 import { maskIdentifier, RATE_LIMITS } from './auth.util';
+import { DashboardIpService } from './dashboard-ip.service';
 import { type IssuedSession, SessionService } from './session.service';
 import { MFA_CHALLENGE_TTL_SECONDS, TokenService } from './token.service';
 
 export type LoginResult =
   | { kind: 'session'; session: IssuedSession }
-  | { kind: 'mfa_required'; mfaToken: string; expiresIn: number };
+  | { kind: 'mfa_required'; mfaToken: string; expiresIn: number; methods: { totp: boolean; passkey: boolean } };
 
 const MAX_MFA_ATTEMPTS = 5;
 
@@ -36,6 +37,7 @@ export class AuthService {
     private readonly profiles: AccessProfileService,
     private readonly audit: AuditService,
     private readonly loginEvents: LoginEventsService,
+    private readonly dashboardIp: DashboardIpService,
   ) {}
 
   async login(identifier: LoginIdentifier, password: string, location?: z.output<typeof loginLocationSchema>): Promise<LoginResult> {
@@ -84,6 +86,14 @@ export class AuthService {
       throw new AppError(ErrorCode.ACCOUNT_DISABLED, 'No active organization for this account');
     }
 
+    // Correct password from a network the organization doesn't allow: refuse before any session or
+    // second-factor challenge exists. Audited (a real user's password may be in the wrong hands).
+    if (!(await this.dashboardIp.isAllowed(membership.organizationId, ip))) {
+      await this.loginEvents.record({ userId: user.id, organizationId: membership.organizationId, identifierMasked: maskIdentifier(identifier), outcome: 'IP_NOT_ALLOWED', location });
+      await this.audit.record({ action: 'auth.login.ip_blocked', resourceType: 'user', resourceId: user.id, organizationId: membership.organizationId, actor: { type: 'USER', id: user.id }, metadata: { severity: 'HIGH' } });
+      await this.dashboardIp.assertAllowed(membership.organizationId);
+    }
+
     await this.prisma.user.update({
       where: { id: user.id },
       data: {
@@ -94,8 +104,8 @@ export class AuthService {
     });
     await this.rateLimit.reset(RATE_LIMITS.loginByIdentifier, sha256Hex(identifier.value));
 
-    const hasMfa = await this.prisma.mfaFactor.count({ where: { userId: user.id, status: 'ACTIVE' } });
-    if (hasMfa > 0) {
+    const factors = await this.prisma.mfaFactor.findMany({ where: { userId: user.id, status: 'ACTIVE' }, select: { type: true } });
+    if (factors.length > 0) {
       const { token } = await this.tokens.signMfaChallenge(user.id, membership.organizationId);
       await this.audit.record({
         action: 'auth.login.mfa_challenged',
@@ -105,7 +115,12 @@ export class AuthService {
         actor: { type: 'USER', id: user.id },
       });
       await this.loginEvents.record({ userId: user.id, organizationId: membership.organizationId, identifierMasked: maskIdentifier(identifier), outcome: 'MFA_REQUIRED', location });
-      return { kind: 'mfa_required', mfaToken: token, expiresIn: MFA_CHALLENGE_TTL_SECONDS };
+      return {
+        kind: 'mfa_required',
+        mfaToken: token,
+        expiresIn: MFA_CHALLENGE_TTL_SECONDS,
+        methods: { totp: factors.some((f) => f.type === 'TOTP'), passkey: factors.some((f) => f.type === 'PASSKEY') },
+      };
     }
 
     const profile = await this.profiles.load(user.id, membership.organizationId);
@@ -116,7 +131,7 @@ export class AuthService {
   }
 
   /** Second login step: verify the TOTP code against the challenge and create the session. */
-  async completeMfaLogin(mfaToken: string, verifySecondFactor: (userId: string) => Promise<boolean>, location?: z.output<typeof loginLocationSchema>): Promise<IssuedSession> {
+  async completeMfaLogin(mfaToken: string, verifySecondFactor: (userId: string, challengeId: string) => Promise<boolean>, location?: z.output<typeof loginLocationSchema>): Promise<IssuedSession> {
     const ip = RequestContextStore.get()?.ipAddress ?? 'unknown';
     await this.rateLimit.enforce(RATE_LIMITS.mfaByIp, ip);
     const claims = await this.tokens.verifyMfaChallenge(mfaToken);
@@ -126,7 +141,8 @@ export class AuthService {
     if (attempts === 1) await this.redis.expire(attemptsKey, MFA_CHALLENGE_TTL_SECONDS);
     if (attempts > MAX_MFA_ATTEMPTS) throw new AppError(ErrorCode.UNAUTHORIZED, 'Too many attempts. Sign in again');
 
-    if (!(await verifySecondFactor(claims.sub))) {
+    await this.dashboardIp.assertAllowed(claims.org);
+    if (!(await verifySecondFactor(claims.sub, claims.jti))) {
       await this.audit.record({
         action: 'auth.mfa.failed',
         resourceType: 'user',

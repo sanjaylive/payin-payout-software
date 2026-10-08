@@ -135,6 +135,10 @@ describe('RBAC catalog', () => {
     }
   });
 
+  it('requires MFA for merchant owners and admins', () => {
+    for (const key of ['MERCHANT_OWNER', 'MERCHANT_ADMIN']) expect(SYSTEM_ROLES.find((r) => r.key === key)?.requiresMfa, key).toBe(true);
+  });
+
   it('never gives merchant roles platform-only powers', () => {
     const merchantPerms = SYSTEM_ROLES.filter((r) => r.scope === 'MERCHANT').flatMap((r) => r.permissions);
     for (const p of ['merchant.approve', 'compliance.approve', 'provider.manage', 'ledger.adjust'] as const) {

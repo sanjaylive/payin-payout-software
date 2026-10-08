@@ -7,6 +7,7 @@ import { AccessProfileService } from '../access/access-profile.service';
 import { ApiKeyAuthService } from '../api-keys/api-key-auth.service';
 import { ALLOW_RESTRICTED_SESSION, IS_PUBLIC, type RequestWithActor } from '../access/decorators';
 import type { Actor } from './actor';
+import { DashboardIpService } from './dashboard-ip.service';
 import { SessionService } from './session.service';
 import { TokenService } from './token.service';
 
@@ -23,6 +24,7 @@ export class AuthGuard implements CanActivate {
     private readonly sessions: SessionService,
     private readonly profiles: AccessProfileService,
     private readonly apiKeys: ApiKeyAuthService,
+    private readonly dashboardIp: DashboardIpService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -49,6 +51,9 @@ export class AuthGuard implements CanActivate {
     if (profile.organizationStatus !== 'ACTIVE' && profile.organizationType !== 'PLATFORM') {
       throw new AppError(ErrorCode.FORBIDDEN, 'Organization is not active');
     }
+
+    // Dashboard IP allowlist of the session's organization (the platform's list covers all staff).
+    await this.dashboardIp.assertAllowed(profile.organizationId);
 
     if (claims.rst && !this.reflector.getAllAndOverride<boolean>(ALLOW_RESTRICTED_SESSION, targets)) {
       throw new AppError(ErrorCode.MFA_ENROLLMENT_REQUIRED);

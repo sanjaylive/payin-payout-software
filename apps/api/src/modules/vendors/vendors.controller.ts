@@ -13,7 +13,7 @@ import {
 import type { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
-import { CurrentActor, RequirePermissions } from '../access/decorators';
+import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { VendorsService } from './vendors.service';
 
@@ -84,6 +84,7 @@ export class VendorsController {
   }
 
   @Put('messaging-services/:id/credentials')
+  @RequireStepUp()
   @RequirePermissions('provider.manage')
   @ApiOperation({ summary: 'Set credentials (write-only; encrypted; audited)' })
   @ApiZodBody(messagingSecretSchema)

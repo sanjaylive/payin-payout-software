@@ -40,13 +40,37 @@ export const mfaVerifySchema = z
     location: loginLocationSchema.optional(),
     code: totpCodeSchema.optional(),
     recovery_code: recoveryCodeSchema.optional(),
+    passkey: z.record(z.string(), z.unknown()).optional(),
   })
-  .refine((v) => Boolean(v.code) !== Boolean(v.recovery_code), {
+  .refine((v) => [v.code, v.recovery_code, v.passkey].filter(Boolean).length === 1, {
     path: ['code'],
-    message: 'Provide either a 6-digit code or a recovery code',
+    message: 'Provide a 6-digit code, a recovery code or a passkey',
   });
 
-export const regenerateRecoveryCodesSchema = z.strictObject({ code: totpCodeSchema });
+/** Code optional: without one, a recent step-up (e.g. with a passkey) is required instead. */
+export const regenerateRecoveryCodesSchema = z.strictObject({ code: totpCodeSchema.optional() });
+
+export const passkeyChallengeSchema = z.strictObject({ mfa_token: z.string().min(10).max(2048) });
+
+export const passkeyRegisterSchema = z.strictObject({
+  name: z.string().trim().min(1, 'Name this passkey').max(60),
+  response: z.record(z.string(), z.unknown()),
+});
+
+export const passkeyRenameSchema = z.strictObject({ name: z.string().trim().min(1).max(60) });
+
+/** Step-up: prove it's still you. Exactly one proof; `password` only for users without two-factor. */
+export const stepUpSchema = z
+  .strictObject({
+    code: totpCodeSchema.optional(),
+    recovery_code: recoveryCodeSchema.optional(),
+    passkey: z.record(z.string(), z.unknown()).optional(),
+    password: z.string().min(1).max(128).optional(),
+  })
+  .refine((v) => [v.code, v.recovery_code, v.passkey, v.password].filter(Boolean).length === 1, {
+    path: ['code'],
+    message: 'Provide one way to confirm it is you',
+  });
 export type MfaVerifyInput = z.input<typeof mfaVerifySchema>;
 
 export const totpEnableSchema = z.strictObject({ code: totpCodeSchema });
