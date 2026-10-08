@@ -934,6 +934,29 @@ export interface MessagingNotification {
   error: string | null;
   created_at: string;
   sent_at: string | null;
+  delivery_status: 'SENT' | 'DELIVERED' | 'FAILED' | 'EXPIRED' | 'BOUNCED' | 'COMPLAINED' | null;
+  delivery_at: string | null;
+  delivery_detail: string | null;
+}
+
+export interface DeliveryStats {
+  since: string;
+  sent: number;
+  DELIVERED?: number;
+  FAILED?: number;
+  EXPIRED?: number;
+  BOUNCED?: number;
+  COMPLAINED?: number;
+  SENT?: number;
+  NO_RECEIPT?: number;
+}
+
+export interface EmailSuppressionRow {
+  id: string;
+  email: string;
+  reason: 'BOUNCE' | 'COMPLAINT' | 'MANUAL';
+  detail: string | null;
+  created_at: string;
 }
 
 // ---- Login activity -----------------------------------------------------------------------------

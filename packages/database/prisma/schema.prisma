@@ -369,10 +369,56 @@ model Notification {
   requestId          String?             @map("request_id") @db.VarChar(40)
   createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
   sentAt             DateTime?           @map("sent_at") @db.Timestamptz(3)
+  /// What the vendor later reported (delivery receipt); null until a receipt arrives.
+  deliveryStatus     DeliveryStatus?     @map("delivery_status")
+  /// Vendor's time of the latest applied receipt (receipts can arrive out of order).
+  deliveryAt         DateTime?           @map("delivery_at") @db.Timestamptz(3)
+  deliveryDetail     String?             @map("delivery_detail") @db.VarChar(300)
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([status, createdAt])
+  @@index([messagingServiceId, providerMessageId])
   @@map("notifications")
+}
+
+/// Delivery receipt states reported by messaging vendors (docs/VENDORS.md §3).
+enum DeliveryStatus {
+  /// Left the vendor / carrier (not final).
+  SENT
+  DELIVERED
+  FAILED
+  EXPIRED
+  /// Email: permanent bounce (the address is suppressed).
+  BOUNCED
+  /// Email: the recipient marked it as spam (the address is suppressed).
+  COMPLAINED
+}
+
+/// Receipts already applied, by the vendor's event id (receipts are delivered at least once).
+model MessagingReceiptEvent {
+  id                 String   @id
+  messagingServiceId String   @map("messaging_service_id")
+  externalId         String   @map("external_id") @db.VarChar(200)
+  type               String   @db.VarChar(60)
+  receivedAt         DateTime @default(now()) @map("received_at") @db.Timestamptz(3)
+
+  @@unique([messagingServiceId, externalId])
+  @@index([receivedAt])
+  @@map("messaging_receipt_events")
+}
+
+/// Email addresses we no longer send to after a hard bounce or complaint. Stored only as a keyed
+/// hash (blind index), so the list itself reveals no addresses.
+model EmailSuppression {
+  id         String   @id
+  emailIndex String   @unique @map("email_index") @db.VarChar(128)
+  /// Masked address for the admin screen (a***@example.com).
+  masked     String   @db.VarChar(254)
+  reason     String   @db.VarChar(20)
+  detail     String?  @db.VarChar(300)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@map("email_suppressions")
 }
 
 /// Single-use MFA recovery codes. Stored as keyed HMAC (blind index) — useless without the server key.

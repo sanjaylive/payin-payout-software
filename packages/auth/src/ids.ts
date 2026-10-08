@@ -52,6 +52,8 @@ export const ID_PREFIXES = {
   dispute: 'dsp',
   disputeEvidence: 'dev',
   invoice: 'inv',
+  messagingReceipt: 'mre',
+  emailSuppression: 'sup',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

@@ -13,9 +13,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
-import { api } from '@/lib/api/client';
+import { CopyButton } from '@/features/funds/shared';
+import { api, API_URL } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
-import type { MessagingChannel, MessagingNotification, MessagingServiceRow } from '@/lib/api/types';
+import type { DeliveryStats, EmailSuppressionRow, MessagingChannel, MessagingNotification, MessagingServiceRow } from '@/lib/api/types';
 import { ADAPTER_LABELS, CHANNEL_ADAPTERS, CONFIG_FIELDS, type FieldSpec, SECRET_FIELDS, SERVICE_LABELS } from './labels';
 
 type Adapter = 'ses' | 'smtp' | 'sms21';
@@ -174,12 +175,15 @@ export function CredentialsDialog({ service, onClose }: { service: MessagingServ
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [busy, setBusy] = useState(false);
   const fields = service ? SECRET_FIELDS[service.adapter] : [];
-  const valid = fields.every((f) => String(values[f.key] ?? '').trim().length > 0);
+  // With stored credentials, a blank field keeps its saved value; the first save needs every required field.
+  const hasStored = Boolean(service?.has_secret);
+  const filled = (k: string) => String(values[k] ?? '').trim().length > 0;
+  const valid = fields.some((f) => filled(f.key)) && (hasStored || fields.every((f) => f.optional || filled(f.key)));
   async function submit() {
     if (!service) return;
     setBusy(true);
     try {
-      await api.put(`/v1/messaging-services/${service.service_id}/credentials`, { secret: Object.fromEntries(fields.map((f) => [f.key, String(values[f.key]).trim()])) });
+      await api.put(`/v1/messaging-services/${service.service_id}/credentials`, { secret: Object.fromEntries(fields.filter((f) => filled(f.key)).map((f) => [f.key, String(values[f.key]).trim()])) });
       await qc.invalidateQueries({ queryKey: ['vendor', service.vendor_id] });
       toast.success('Credentials saved');
       onClose();
@@ -194,7 +198,7 @@ export function CredentialsDialog({ service, onClose }: { service: MessagingServ
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Credentials · {service?.name}</DialogTitle>
-          <DialogDescription>Encrypted as soon as they’re saved and never shown again — only replaced. Saving replaces the whole set.</DialogDescription>
+          <DialogDescription>Encrypted as soon as they’re saved and never shown again — only replaced. {hasStored ? 'Leave a field blank to keep its saved value.' : ''}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">{fields.map((f) => <FieldInput key={f.key} f={f} value={values[f.key]} onChange={(v) => setValues((s) => ({ ...s, [f.key]: v }))} />)}</div>
         <DialogFooter>
@@ -245,6 +249,23 @@ export function TestMessageDialog({ service, onClose }: { service: MessagingServ
   );
 }
 
+const DELIVERY_TONE: Record<NonNullable<MessagingNotification['delivery_status']>, string> = {
+  SENT: 'text-muted-foreground',
+  DELIVERED: 'text-emerald-600',
+  FAILED: 'text-destructive',
+  EXPIRED: 'text-amber-600',
+  BOUNCED: 'text-destructive',
+  COMPLAINED: 'text-destructive',
+};
+
+/** Where this service's vendor should post delivery receipts (docs/VENDORS.md §3). */
+function receiptUrl(service: MessagingServiceRow) {
+  const base = API_URL.replace(/\/$/, '');
+  if (service.adapter === 'sms21') return { url: `${base}/v1/webhooks/messaging/sms21/${service.service_id}`, how: 'In sms21 → Developers → Webhooks, add this URL for message events and save its signing secret (whsec_…) in this service’s credentials.' };
+  if (service.adapter === 'ses') return { url: `${base}/v1/webhooks/messaging/ses/${service.service_id}`, how: 'Create an SNS topic for SES delivery, bounce and complaint events, subscribe this URL (HTTPS), and enter the topic ARN in this service’s settings. The subscription is confirmed automatically.' };
+  return null;
+}
+
 export function RecentMessagesDrawer({ service, onClose }: { service: MessagingServiceRow | null; onClose: () => void }) {
   const q = useQuery({
     queryKey: ['messaging-notifications', service?.service_id],
@@ -252,18 +273,82 @@ export function RecentMessagesDrawer({ service, onClose }: { service: MessagingS
     enabled: Boolean(service),
     refetchInterval: 5_000,
   });
+  const stats = useQuery({ queryKey: ['messaging-delivery', service?.service_id], queryFn: () => api.get<DeliveryStats>(`/v1/messaging/services/${service!.service_id}/delivery`), enabled: Boolean(service) });
+  const receipts = service ? receiptUrl(service) : null;
+  const s = stats.data;
+  const delivered = s && s.sent ? Math.round(((s.DELIVERED ?? 0) / s.sent) * 100) : null;
   return (
     <TransactionDetailsDrawer open={Boolean(service)} onOpenChange={(o) => !o && onClose()} title={service?.name ?? ''} subtitle="Last 20 messages through this service" sections={[]}>
+      {s && s.sent > 0 && (
+        <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs">
+          <div className="rounded-lg border p-2"><p className="text-lg font-semibold">{delivered ?? '—'}%</p><p className="text-muted-foreground">delivered (7 days)</p></div>
+          <div className="rounded-lg border p-2"><p className="text-lg font-semibold">{(s.FAILED ?? 0) + (s.BOUNCED ?? 0) + (s.EXPIRED ?? 0)}</p><p className="text-muted-foreground">failed / bounced</p></div>
+          <div className="rounded-lg border p-2"><p className="text-lg font-semibold">{s.NO_RECEIPT ?? 0}</p><p className="text-muted-foreground">no receipt yet</p></div>
+        </div>
+      )}
+      {receipts && (
+        <div className="bg-muted/40 mb-3 space-y-1 rounded-lg border p-3 text-xs">
+          <p className="font-medium">Delivery receipts</p>
+          <div className="flex items-center gap-1"><code className="min-w-0 flex-1 truncate">{receipts.url}</code><CopyButton value={receipts.url} label="Receipt URL" /></div>
+          <p className="text-muted-foreground">{receipts.how}</p>
+        </div>
+      )}
       {q.data?.length === 0 && <p className="text-muted-foreground text-sm">No messages yet. Send a test.</p>}
       <ul className="divide-y rounded-lg border text-sm">
         {q.data?.map((n) => (
           <li key={n.notification_id} className="space-y-1 px-3 py-2">
             <div className="flex items-center justify-between gap-2"><span className="font-mono text-xs">{n.recipient} · {n.template}</span><StatusBadge status={n.status} /></div>
             <p className="text-muted-foreground text-xs">{formatDateTime(n.created_at)}{n.provider_message_id ? ` · ${n.provider_message_id}` : ''}{n.attempts > 1 ? ` · ${n.attempts} attempts` : ''}</p>
+            {n.delivery_status && (
+              <p className={`text-xs font-medium ${DELIVERY_TONE[n.delivery_status]}`}>
+                {n.delivery_status.charAt(0) + n.delivery_status.slice(1).toLowerCase()}
+                {n.delivery_at ? ` · ${formatDateTime(n.delivery_at)}` : ''}
+                {n.delivery_detail ? ` · ${n.delivery_detail}` : ''}
+              </p>
+            )}
             {n.error && <p className="text-destructive text-xs break-all">{n.error}</p>}
           </li>
         ))}
       </ul>
     </TransactionDetailsDrawer>
+  );
+}
+
+/** Settings → API Vendors: addresses we stopped emailing (masked), with an undo for fixed mailboxes. */
+export function EmailSuppressions() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ['email-suppressions'], queryFn: () => api.get<EmailSuppressionRow[]>('/v1/messaging/suppressions') });
+  const rows = q.data ?? [];
+  if (!rows.length) return null;
+  return (
+    <div className="space-y-2 rounded-xl border p-4">
+      <p className="text-sm font-semibold">Suppressed email addresses</p>
+      <p className="text-muted-foreground text-xs">After a hard bounce or a spam complaint, the platform stops emailing an address. Remove one only after the mailbox is fixed.</p>
+      <ul className="divide-y text-sm">
+        {rows.map((r) => (
+          <li key={r.id} className="flex items-center justify-between gap-2 py-2">
+            <div className="min-w-0">
+              <p className="font-mono text-xs">{r.email}</p>
+              <p className="text-muted-foreground truncate text-xs">{r.reason.toLowerCase()} · {formatDateTime(r.created_at)}{r.detail ? ` · ${r.detail}` : ''}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                void api
+                  .delete(`/v1/messaging/suppressions/${r.id}`)
+                  .then(() => {
+                    toast.success('Address can receive email again');
+                    return qc.invalidateQueries({ queryKey: ['email-suppressions'] });
+                  })
+                  .catch((e: unknown) => toast.error(errorMessage(e)))
+              }
+            >
+              Remove
+            </Button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }

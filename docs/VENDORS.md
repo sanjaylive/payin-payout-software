@@ -78,7 +78,25 @@ Integrated from the sms21 OpenAPI specification (`https://api.sms21.in/v1`).
 - **Errors:** sms21 codes such as `TEMPLATE_NOT_APPROVED`, `INVALID_RECIPIENT` and `RECIPIENT_SUPPRESSED` are permanent; 429, 5xx and network errors are retryable.
 
 ### Delivery receipts
-Today "SENT" means accepted by the vendor. Final delivery status (sms21 `delivered` / `failed`, SES bounces) is not yet fed back. The next step is an inbound webhook per vendor, reusing the provider webhook verification pattern.
+"SENT" means accepted by the vendor. What happens next arrives as a receipt and is stored on the notification (`delivery_status`, `delivery_at`, `delivery_detail`). It shows under Settings → API Vendors → *Recent messages*, together with a 7-day delivered / failed / no-receipt summary.
+
+- **sms21** (`POST /v1/webhooks/messaging/sms21/:serviceId`):
+  - **Setup:** add this URL as an sms21 webhook endpoint for message events, and save its signing secret as the service's `webhook_secret` credential.
+  - **Verification:** `SMS21-Signature` (`t=…,v1=HMAC-SHA256("t.raw body")`, any `v1` accepted during rotation, 5-minute window).
+  - **Status mapping:** `sent` → SENT; `delivered` → DELIVERED; `failed` / `rejected` → FAILED; `expired` → EXPIRED.
+- **Amazon SES** (`POST /v1/webhooks/messaging/ses/:serviceId`):
+  - **Setup:** publish the identity's or configuration set's Delivery, Bounce and Complaint events to an SNS topic, subscribe this HTTPS URL, and set `sns_topic_arn` in the service's settings.
+  - **Verification:** the SNS signature (v1 SHA1 or v2 SHA256), using a certificate fetched only from `https://sns.<region>.amazonaws.com/….pem` (cached 1 h). Only the configured topic is accepted, and only an SNS-hosted `SubscribeURL` is followed when confirming the subscription.
+  - **Event mapping:** Delivery → DELIVERED; permanent Bounce → BOUNCED; Complaint → COMPLAINED. Transient bounces are noted only.
+- **Applied once, never backwards:**
+  - Receipts are applied once per vendor event id (`messaging_receipt_events`).
+  - A final status is never replaced by a non-final or older one.
+- **Suppression:**
+  - A permanent bounce or a complaint adds the address to `email_suppressions`, stored only as a keyed blind index with a masked copy for display.
+  - The worker refuses to email a suppressed address and fails the notification at once.
+  - Admins see the masked list under Settings → API Vendors and can remove an entry (step-up) once the mailbox is fixed.
+
+Saving credentials merges with the stored set: a blank field keeps its value, so adding the webhook secret doesn't need the API key again.
 
 ## 4. Setting up (per environment)
 

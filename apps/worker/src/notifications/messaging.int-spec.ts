@@ -160,4 +160,24 @@ describe('SMS / WhatsApp through sms21', () => {
     expect(calls).toHaveLength(0);
     expect(await get(id)).toMatchObject({ status: 'QUEUED', attempts: 1, error: 'No active SMS service is configured' });
   });
+
+  it('never emails an address suppressed after a hard bounce or complaint', async () => {
+    const supId = newId('emailSuppression');
+    const to = `bounced.${Date.now()}@example.com`;
+    await prisma.emailSuppression.create({ data: { id: supId, emailIndex: encryptor.blindIndex(to, 'email-suppression'), masked: 'b***@example.com', reason: 'BOUNCE' } });
+    const id = newId('notification');
+    await prisma.notification.create({
+      data: { id, channel: 'EMAIL', template: 'test', recipientMasked: 'b***@example.com', contentEncrypted: encryptor.encrypt(JSON.stringify({ to: to.toUpperCase(), subject: 'Hi', text: 'Hello' }), `notification:${id}`), nextAttemptAt: new Date() },
+    });
+    try {
+      await sender().sendDue(20, id);
+      const n = await prisma.notification.findUniqueOrThrow({ where: { id } });
+      expect(n).toMatchObject({ status: 'FAILED', contentEncrypted: null });
+      expect(n.error).toMatch(/suppressed after a bounce/);
+    } finally {
+      await prisma.notification.delete({ where: { id } });
+      await prisma.emailSuppression.delete({ where: { id: supId } });
+    }
+  });
 });
+

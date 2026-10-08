@@ -217,7 +217,11 @@ export class VendorsService {
   async setSecret(actor: Actor, id: string, input: z.output<typeof messagingSecretSchema>) {
     platformOnly(actor);
     const m = await this.service(id);
-    const parsed = MESSAGING_SCHEMAS[m.adapter as MessagingAdapter].secret.safeParse(input.secret);
+    // Partial update: a blank or missing key keeps its stored value (e.g. add a webhook secret
+    // without re-entering the API key).
+    const current = m.secretEncrypted ? (JSON.parse(this.encryptor.decrypt(m.secretEncrypted, messagingSecretAad(id))) as Record<string, string>) : {};
+    const merged = { ...current, ...Object.fromEntries(Object.entries(input.secret).filter(([, v]) => v !== '' && v !== null && v !== undefined)) };
+    const parsed = MESSAGING_SCHEMAS[m.adapter as MessagingAdapter].secret.safeParse(merged);
     if (!parsed.success) throw new AppError(ErrorCode.INVALID_REQUEST, 'Invalid credentials', issues(parsed.error, 'secret'));
     const values = parsed.data as Record<string, string>;
     const fingerprints = Object.fromEntries(Object.entries(values).map(([k, v]) => [k, `…${String(v).slice(-4)}`]));
@@ -272,8 +276,8 @@ export class VendorsService {
       where: { OR: [{ messagingServiceId: serviceId }, { targetServiceId: serviceId }] },
       orderBy: { createdAt: 'desc' },
       take: 20,
-      select: { id: true, channel: true, template: true, recipientMasked: true, status: true, attempts: true, providerMessageId: true, error: true, createdAt: true, sentAt: true },
+      select: { id: true, channel: true, template: true, recipientMasked: true, status: true, attempts: true, providerMessageId: true, error: true, createdAt: true, sentAt: true, deliveryStatus: true, deliveryAt: true, deliveryDetail: true },
     });
-    return rows.map((n) => ({ notification_id: n.id, channel: n.channel, template: n.template, recipient: n.recipientMasked, status: n.status, attempts: n.attempts, provider_message_id: n.providerMessageId, error: n.error, created_at: n.createdAt, sent_at: n.sentAt }));
+    return rows.map((n) => ({ notification_id: n.id, channel: n.channel, template: n.template, recipient: n.recipientMasked, status: n.status, attempts: n.attempts, provider_message_id: n.providerMessageId, error: n.error, created_at: n.createdAt, sent_at: n.sentAt, delivery_status: n.deliveryStatus, delivery_at: n.deliveryAt, delivery_detail: n.deliveryDetail }));
   }
 }

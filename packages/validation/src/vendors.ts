@@ -55,6 +55,8 @@ export const sesConfigSchema = z.strictObject({
   configuration_set: z.string().trim().regex(/^[A-Za-z0-9_-]{1,64}$/).optional(),
   /** Use the host's IAM role (EC2/ECS/EKS) instead of stored access keys. */
   use_instance_role: z.boolean().default(false),
+  /** SNS topic that receives this identity's / configuration set's delivery, bounce and complaint events. */
+  sns_topic_arn: z.string().trim().regex(/^arn:aws(-cn|-us-gov)?:sns:[a-z0-9-]+:\d{12}:[A-Za-z0-9_-]{1,256}$/, 'An SNS topic ARN (arn:aws:sns:region:account:name)').optional(),
 });
 export const sesSecretSchema = z.strictObject({
   access_key_id: z.string().trim().regex(/^[A-Z0-9]{16,128}$/, 'AWS access key ID'),
@@ -86,6 +88,8 @@ export const sms21ConfigSchema = z.strictObject({
 });
 export const sms21SecretSchema = z.strictObject({
   api_key: z.string().trim().regex(/^sms21_(live|test)_[A-Za-z0-9_-]{8,200}$/, 'An sms21 API key (sms21_live_… or sms21_test_…)'),
+  /** Signing secret of the sms21 webhook endpoint that sends delivery receipts here. */
+  webhook_secret: z.string().trim().regex(/^whsec_[A-Za-z0-9_-]{16,200}$/, 'The webhook signing secret (whsec_…)').optional(),
 });
 
 export const MESSAGING_SCHEMAS = {

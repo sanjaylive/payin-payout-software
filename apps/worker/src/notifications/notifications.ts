@@ -100,6 +100,12 @@ export class NotificationSender {
       return this.failed(n, 'Stored message could not be decrypted', true);
     }
     const msg: OutgoingMessage = { notificationId: id, to: content.to, subject: content.subject ?? '', text: content.text, template: n.template, variables: content.variables ?? {} };
+    // Hard-bounced or complaining addresses are never mailed again (same blind index as the API's
+    // receipts service: purpose 'email-suppression', lower-cased address).
+    if (n.channel === 'EMAIL') {
+      const suppressed = await this.prisma.emailSuppression.findUnique({ where: { emailIndex: this.encryptor.blindIndex(content.to.trim().toLowerCase(), 'email-suppression') }, select: { reason: true } });
+      if (suppressed) return this.failed(n, `Recipient suppressed after a ${suppressed.reason.toLowerCase()}`, true);
+    }
     const errors: string[] = [];
     let permanent = false;
 

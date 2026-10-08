@@ -22,6 +22,7 @@ export const CONFIG_FIELDS: Record<'ses' | 'smtp' | 'sms21', FieldSpec[]> = {
     { key: 'reply_to', label: 'Reply-to', kind: 'text', optional: true },
     { key: 'configuration_set', label: 'Configuration set', kind: 'text', optional: true, hint: 'For bounce / complaint tracking.' },
     { key: 'use_instance_role', label: 'Use the server’s IAM role (no stored keys)', kind: 'bool' },
+    { key: 'sns_topic_arn', label: 'SNS topic ARN for delivery receipts', kind: 'text', optional: true, placeholder: 'arn:aws:sns:ap-south-1:123456789012:ses-events', hint: 'Delivery, bounce and complaint events; see “Recent messages” for the URL to subscribe.' },
   ],
   smtp: [
     { key: 'host', label: 'Host', kind: 'text', placeholder: 'email-smtp.ap-south-1.amazonaws.com' },
@@ -46,5 +47,8 @@ export const SECRET_FIELDS: Record<'ses' | 'smtp' | 'sms21', FieldSpec[]> = {
     { key: 'username', label: 'Username', kind: 'text' },
     { key: 'password', label: 'Password', kind: 'password' },
   ],
-  sms21: [{ key: 'api_key', label: 'API key', kind: 'password', placeholder: 'sms21_live_… or sms21_test_…' }],
+  sms21: [
+    { key: 'api_key', label: 'API key', kind: 'password', placeholder: 'sms21_live_… or sms21_test_…' },
+    { key: 'webhook_secret', label: 'Webhook signing secret (delivery receipts)', kind: 'password', placeholder: 'whsec_…', optional: true },
+  ],
 };
