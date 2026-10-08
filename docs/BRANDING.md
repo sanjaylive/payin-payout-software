@@ -65,8 +65,46 @@ Super admins (`system.settings.manage`, platform staff) set the brand under **Ad
 
 **Text rules:** text fields are plain text; `<`, `>` and control characters are rejected. Every change is audited as `brand.updated`, `brand.asset_uploaded` or `brand.asset_removed`.
 
-## 5. Not yet included
+## 5. Reseller white-label
 
-- **Per-reseller branding:** resellers and their merchants see the platform brand.
+A reseller or API partner can set its own brand (permission `brand.manage`, in the RESELLER and API_PARTNER roles). It is managed at **Branding** in the reseller and partner portals.
+
+**Who sees it:** the reseller's own users, the users of its merchants (signed in, through `GET /v1/brand/mine`), and its merchants' customers on hosted checkout, payment links and payment pages. Any field left empty falls back to the platform brand. Direct merchants and the public sign-in page see the platform brand unless they arrive on a verified custom domain.
+
+**Storage:** `ResellerBrand` has one row per organization. `ResellerBrandAsset` holds `LOGO`, `LOGO_DARK` and `ICON`, with the same image rules as §2. Assets are served at `GET /v1/brand/r/:orgId/assets/:kind`.
+
+### Custom domain
+
+1. The reseller adds a domain (`POST /v1/reseller/brand/domain`; requires step-up). The API returns a TXT record: `_pay2all-verify.<domain>` with value `pay2all-verify=<token>`.
+2. The reseller publishes the TXT record, then calls `POST /v1/reseller/brand/domain/verify`. The API looks the record up in DNS and, if it matches, sets `domainVerifiedAt`.
+3. Once verified:
+   - `GET /v1/brand?host=<domain>` returns the reseller's brand.
+   - Checkout, link and page URLs for its merchants use `https://<domain>`.
+   - The API's CORS policy allows `https://<domain>`.
+
+Rules:
+- A domain can belong to only one account.
+- The platform's own hosts, `localhost`, and the `.local`, `.test` and `.example` suffixes are refused.
+- Removing the domain (`POST …/domain/remove`; requires step-up) sends merchants' URLs back to the platform domain at once. Links already shared on the old domain stop resolving there.
+
+**Infrastructure (manual, per domain):**
+- **DNS:** the reseller creates a CNAME from its domain to the platform web host.
+- **TLS:** the platform team issues a certificate for the domain at the edge (load balancer or CDN) and adds it to the web tier's host routing. This is not automated yet.
+- **API on the same site:** the refresh-token cookie is `SameSite` and host-bound. For sign-in to work on the custom domain, reverse-proxy `/v1/*` on that domain to the API, or serve the API on an `api.<domain>` sub-host covered by the same certificate. Without this, sign-in only works on the platform domain, though checkout and public pages still work.
+
+**API:**
+
+| Route | Access |
+| --- | --- |
+| `GET`, `PUT /v1/reseller/brand` | `brand.manage` |
+| `POST /v1/reseller/brand/assets/:kind`, `…/assets/:kind/remove` | `brand.manage` |
+| `POST /v1/reseller/brand/domain`, `…/domain/verify`, `…/domain/remove` | `brand.manage`; step-up required to set or remove |
+
+Tenant context always comes from the session; an organization id in the request body is never used. Every change is audited (`reseller_brand.*`).
+
+## 6. Not yet included
+
+- **Emails under the reseller brand:** emails still use the platform brand and sender.
+- **Automatic TLS for custom domains.**
 - **Custom email HTML templates and domains:** emails are text with the brand name and signature, sent from the configured sender address.
 - **Custom fonts.**

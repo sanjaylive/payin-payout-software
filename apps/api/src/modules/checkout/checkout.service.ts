@@ -118,11 +118,8 @@ export class CheckoutService {
 
   // ---- Sessions (merchant API) ------------------------------------------------------------------
 
-  private url(s: CheckoutSession) {
-    return this.web(`/checkout/${s.token}`);
-  }
-
-  private presentSession(s: CheckoutSession, payment?: Payment | null) {
+  /** `base`: the merchant's customer-facing origin (its reseller's verified domain, or the platform's). */
+  private presentSession(s: CheckoutSession, payment: Payment | null | undefined, base: string) {
     return {
       id: s.id,
       object: 'checkout_session',
@@ -132,7 +129,7 @@ export class CheckoutService {
       currency: 'INR',
       description: s.description,
       status: this.effectiveStatus(s),
-      url: this.url(s),
+      url: `${base}/checkout/${s.token}`,
       return_url: s.returnUrl,
       customer: { name: s.customerName, email: s.customerEmail, mobile: s.customerMobile },
       payment_id: s.paymentId,
@@ -182,7 +179,7 @@ export class CheckoutService {
           await this.idempotency.attachResource(tx, recordId, id);
           return created;
         });
-        return { status: 201, data: this.presentSession(s), resourceId: id };
+        return { status: 201, data: this.presentSession(s, undefined, await this.brand.webBase(merchantId)), resourceId: id };
       } catch (err) {
         if (isUniqueViolation(err, 'merchant_order_id')) throw new AppError(ErrorCode.DUPLICATE_ORDER, 'A checkout already exists for this merchant_order_id');
         throw err;
@@ -195,7 +192,7 @@ export class CheckoutService {
     const s = await this.prisma.checkoutSession.findFirst({ where: { id, merchantId } });
     if (!s) throw new AppError(ErrorCode.NOT_FOUND, 'Checkout session not found');
     const payment = await this.latestPayment(s);
-    return this.presentSession(s, payment);
+    return this.presentSession(s, payment, await this.brand.webBase(merchantId));
   }
 
   async listSessions(actor: Actor, q: z.output<typeof listCheckoutSessionsQuerySchema>) {
@@ -205,7 +202,8 @@ export class CheckoutService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: q.limit + 1,
     });
-    return toPage(rows, q.limit, (s) => this.presentSession(s));
+    const base = await this.brand.webBase(merchantId);
+    return toPage(rows, q.limit, (s) => this.presentSession(s, undefined, base));
   }
 
   async cancelSession(actor: Actor, id: string) {
@@ -248,7 +246,7 @@ export class CheckoutService {
     const s = await this.byToken(token);
     const [merchant, brand, payment, page] = await Promise.all([
       this.prisma.merchant.findUniqueOrThrow({ where: { id: s.merchantId }, select: { organization: { select: { name: true } }, profile: { select: { displayName: true } } } }),
-      this.brand.get(),
+      this.brand.forOrganization(s.merchantId),
       this.latestPayment(s),
       s.pageId ? this.prisma.paymentPage.findUnique({ where: { id: s.pageId }, select: { slug: true, title: true, successMessage: true } }) : null,
     ]);
@@ -261,6 +259,8 @@ export class CheckoutService {
       embed_origin: s.returnUrl ? new URL(s.returnUrl).origin : null,
       merchant: { name: merchant.profile?.displayName ?? merchant.organization.name },
       platform: { name: brand.product_name },
+      // White-label: the reseller's brand for its merchants (logo path is relative to the API).
+      brand: { name: brand.product_name, primary_color: brand.primary_color, logo_url: brand.assets.logo?.url ?? null, support_email: brand.support_email },
       page: page ? { slug: page.slug, title: page.title, success_message: page.successMessage } : null,
       order: { id: s.merchantOrderId, amount: minorToMajorString(s.amountMinor), currency: 'INR', description: s.description },
       customer: { name: s.customerName, email: s.customerEmail, mobile: s.customerMobile },
@@ -344,14 +344,15 @@ export class CheckoutService {
 
   /** Where a gateway sends the customer back: confirm with the provider, then show the checkout page. */
   async handleReturn(paymentId: string): Promise<string> {
-    const p = await this.prisma.payment.findUnique({ where: { id: paymentId }, select: { id: true, checkoutSessionId: true } });
+    const p = await this.prisma.payment.findUnique({ where: { id: paymentId }, select: { id: true, checkoutSessionId: true, merchantId: true } });
     if (!p) return this.web('/checkout/unknown');
+    const base = await this.brand.webBase(p.merchantId);
     await this.jobs.checkNow(p.id);
     if (p.checkoutSessionId) {
       const s = await this.prisma.checkoutSession.findUnique({ where: { id: p.checkoutSessionId }, select: { token: true } });
-      if (s) return this.web(`/checkout/${s.token}?returned=1`);
+      if (s) return `${base}/checkout/${s.token}?returned=1`;
     }
-    return this.web(`/checkout/payment/${p.id}`);
+    return `${base}/checkout/payment/${p.id}`;
   }
 
   /** Minimal result for a gateway payment made outside checkout (API payment links). */

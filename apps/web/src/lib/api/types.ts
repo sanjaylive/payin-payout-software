@@ -1229,6 +1229,8 @@ export interface PublicCheckout {
   merchant: { name: string };
   platform: { name: string };
   page: { slug: string; title: string; success_message: string | null } | null;
+  /** The merchant's reseller's white-label brand (or the platform's). */
+  brand?: { name: string; primary_color: string | null; logo_url: string | null; support_email?: string | null };
   order: { id: string; amount: string; currency: 'INR'; description: string | null };
   customer: { name: string | null; email: string | null; mobile: string | null };
   status: 'OPEN' | 'PAID' | 'EXPIRED' | 'CANCELLED';
@@ -1300,6 +1302,7 @@ export interface PagePaymentRow {
 }
 
 export interface PublicPaymentPage {
+  brand?: { name: string; primary_color: string | null; logo_url: string | null };
   slug: string;
   title: string;
   description: string | null;

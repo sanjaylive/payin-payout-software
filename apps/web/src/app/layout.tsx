@@ -11,7 +11,7 @@ const mono = JetBrains_Mono({ subsets: ['latin'], variable: '--font-jetbrains-mo
 
 /** Title, description and favicon come from Settings → Brand. */
 export async function generateMetadata(): Promise<Metadata> {
-  const brand = await fetchBrand();
+  const brand = await fetchBrand((await headers()).get('host'));
   const icon = assetUrl(brand.assets.icon);
   return {
     title: { default: brand.product_name, template: `%s · ${brand.product_name}` },
@@ -24,8 +24,9 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Per-request CSP nonce from src/proxy.ts (forces dynamic rendering, which the dashboard needs anyway).
-  const nonce = (await headers()).get('x-nonce') ?? undefined;
-  const brand = await fetchBrand();
+  const h = await headers();
+  const nonce = h.get('x-nonce') ?? undefined;
+  const brand = await fetchBrand(h.get('host'));
   return (
     <html
       lang="en-IN"

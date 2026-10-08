@@ -64,3 +64,45 @@ export const saveBrandSchema = z.strictObject({
 });
 
 export const brandAssetReasonSchema = z.strictObject({ reason: z.string().trim().min(5, 'Give a reason (at least 5 characters)').max(300) });
+
+/** A reseller's own brand: names required; everything else falls back to the platform brand when empty. */
+export const saveResellerBrandSchema = z.strictObject({
+  product_name: text(2, 60),
+  short_name: text(2, 30),
+  primary_color: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^#[0-9a-f]{6}$/, 'Use a colour like #2563eb')
+    .nullable()
+    .or(z.literal('').transform(() => null))
+    .default(null),
+  support_email: z.email('Enter a valid email').max(254).nullable().or(z.literal('').transform(() => null)).default(null),
+  support_phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9 -]{6,20}$/, 'Digits, spaces, dashes and an optional leading +')
+    .nullable()
+    .or(z.literal('').transform(() => null))
+    .default(null),
+  website_url: z
+    .url({ protocol: /^https?$/, message: 'Enter a full http(s) URL' })
+    .max(300)
+    .nullable()
+    .or(z.literal('').transform(() => null))
+    .default(null),
+  login_headline: optional(120),
+  login_subtext: optional(300),
+  footer_text: optional(200),
+});
+
+/** A host name the reseller controls (no scheme, port or path), e.g. pay.example.com. */
+export const customDomainSchema = z.strictObject({
+  domain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .transform((v) => v.replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+    .refine((v) => /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(v) && v.length <= 253, 'Enter a domain like pay.yourcompany.com')
+    .refine((v) => !/(^|\.)(localhost|local|internal|test|example)$/.test(v), 'Use a public domain you own'),
+});

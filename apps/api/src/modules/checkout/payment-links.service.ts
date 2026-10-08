@@ -10,6 +10,7 @@ import { AppError } from '../../common/errors/app-error';
 import { IdempotencyService } from '../../common/idempotency/idempotency.service';
 import { decodeCursor, keysetAfter, toPage } from '../../common/http/paginated';
 import { ApiConfig } from '../../config/api-config';
+import { BrandService } from '../../infra/brand.service';
 import { NotificationsService } from '../../infra/notifications.service';
 import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
@@ -37,17 +38,19 @@ export class PaymentLinksService {
     private readonly notifications: NotificationsService,
     private readonly audit: AuditService,
     private readonly config: ApiConfig,
+    private readonly brand: BrandService,
   ) {}
 
-  url(token: string) {
-    return `${this.config.env.WEB_PUBLIC_URL.replace(/\/$/, '')}/checkout/${token}`;
+  /** The merchant's customer-facing origin: its reseller's verified domain, or the platform's. */
+  private base(merchantId: string) {
+    return this.brand.webBase(merchantId);
   }
 
   private status(s: CheckoutSession) {
     return s.status === 'OPEN' && s.expiresAt.getTime() < Date.now() ? 'EXPIRED' : s.status;
   }
 
-  present(s: CheckoutSession, payment?: Payment | null) {
+  present(s: CheckoutSession, payment: Payment | null | undefined, base: string) {
     return {
       id: s.id,
       object: 'payment_link',
@@ -56,7 +59,7 @@ export class PaymentLinksService {
       currency: 'INR',
       description: s.description,
       status: this.status(s),
-      url: this.url(s.token),
+      url: `${base}/checkout/${s.token}`,
       customer: { name: s.customerName, email: s.customerEmail, mobile: s.customerMobile },
       payment_id: s.paymentId,
       payment: payment ? { id: payment.id, status: payment.status, method: payment.method, utr: payment.utr } : null,
@@ -106,7 +109,7 @@ export class PaymentLinksService {
           await this.audit.record({ action: 'payment_link.created', resourceType: 'payment_link', resourceId: id, organizationId: merchantId, newValue: { reference, amount: minorToMajorString(input.amount) } }, tx);
           return created;
         });
-        return { status: 201, data: this.present(s), resourceId: id };
+        return { status: 201, data: this.present(s, undefined, await this.base(merchantId)), resourceId: id };
       } catch (err) {
         if (isUniqueViolation(err, 'merchant_order_id')) throw new AppError(ErrorCode.DUPLICATE_ORDER, 'A payment link already exists for this reference');
         throw err;
@@ -128,7 +131,7 @@ export class PaymentLinksService {
   async get(actor: Actor, id: string) {
     const s = await this.own(actor, id);
     const payment = s.paymentId ? await this.prisma.payment.findUnique({ where: { id: s.paymentId } }) : await this.prisma.payment.findFirst({ where: { checkoutSessionId: s.id }, orderBy: { createdAt: 'desc' } });
-    return this.present(s, payment);
+    return this.present(s, payment, await this.base(s.merchantId));
   }
 
   async list(actor: Actor, q: z.output<typeof listPaymentLinksQuerySchema>) {
@@ -141,7 +144,8 @@ export class PaymentLinksService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: q.limit + 1,
     });
-    return toPage(rows, q.limit, (s) => this.present(s));
+    const base = await this.base(merchantId);
+    return toPage(rows, q.limit, (s) => this.present(s, undefined, base));
   }
 
   /** Totals for the dashboard header (last 30 days). */
@@ -177,7 +181,7 @@ export class PaymentLinksService {
     const merchant = await this.prisma.merchant.findUniqueOrThrow({ where: { id: s.merchantId }, select: { organization: { select: { name: true } }, profile: { select: { displayName: true } } } });
     const name = merchant.profile?.displayName ?? merchant.organization.name;
     const amount = `₹${minorToMajorString(s.amountMinor)}`;
-    const url = this.url(s.token);
+    const url = `${await this.base(s.merchantId)}/checkout/${s.token}`;
     await this.prisma.$transaction(async (tx) => {
       if (via.email) {
         await this.notifications.queue(tx, {

@@ -11,6 +11,17 @@ html[data-brand-color] {
   --sidebar-primary: var(--brand-primary);
   --sidebar-primary-foreground: var(--brand-primary-fg);
 }
+/* A white-label scope inside a page (hosted checkout of a reseller's merchant). */
+[data-brand-scope][data-brand-color] {
+  --primary: var(--brand-primary);
+  --primary-foreground: var(--brand-primary-fg);
+  --ring: var(--brand-primary);
+}
+.dark [data-brand-scope][data-brand-color] {
+  --primary: var(--brand-primary-dark);
+  --primary-foreground: var(--brand-primary-dark-fg);
+  --ring: var(--brand-primary-dark);
+}
 html[data-brand-color].dark {
   --primary: var(--brand-primary-dark);
   --primary-foreground: var(--brand-primary-dark-fg);

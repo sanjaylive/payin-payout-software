@@ -107,7 +107,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Manages the reseller organization and its merchants',
     permissions: [
-      'organization.read', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read',
+      'organization.read', 'brand.manage', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read',
       'merchant.create', 'merchant.update', 'compliance.read', 'payin.read', 'payout.read',
       'ledger.read', 'settlement.read', 'pricing.read', 'pricing.manage', 'limit.read',
       'limit.manage', 'approval_policy.manage', 'reseller.read', 'webhook.read', 'api_key.read',
@@ -121,7 +121,7 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
     requiresMfa: true,
     description: 'Manages API partner integration, credentials and mapped merchants',
     permissions: [
-      'organization.read', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read', 'merchant.create',
+      'organization.read', 'brand.manage', 'user.read', 'user.manage', 'role.read', 'audit.read', 'merchant.read', 'merchant.create',
       'payin.read', 'payin.create', 'payin.refund', 'payout.read', 'payout.create',
       'payout.approve', 'beneficiary.read', 'beneficiary.manage', 'ledger.read', 'settlement.read',
       'pricing.read', 'limit.read', 'approval_policy.manage', 'webhook.read', 'webhook.manage',

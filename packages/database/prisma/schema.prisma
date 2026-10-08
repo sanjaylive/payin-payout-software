@@ -102,6 +102,7 @@ model Organization {
   roles            Role[]
   sessions         Session[]
   dashboardIpRules DashboardIpRule[]
+  resellerBrand    ResellerBrand?
 
   @@index([parentId])
   @@index([type, status, createdAt(sort: Desc)])
@@ -2759,6 +2760,52 @@ model BrandAsset {
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("brand_assets")
+}
+
+/// A reseller's / API partner's own brand (white-label, docs/BRANDING.md §5). Its users and its merchants'
+/// users see it in the dashboard; its merchants' customers see it on checkout, links and pages.
+/// Fields left null fall back to the platform brand.
+model ResellerBrand {
+  organizationId   String    @id @map("organization_id")
+  productName      String    @map("product_name") @db.VarChar(60)
+  shortName        String    @map("short_name") @db.VarChar(30)
+  primaryColor     String?   @map("primary_color") @db.Char(7)
+  supportEmail     String?   @map("support_email") @db.VarChar(254)
+  supportPhone     String?   @map("support_phone") @db.VarChar(20)
+  websiteUrl       String?   @map("website_url") @db.VarChar(300)
+  loginHeadline    String?   @map("login_headline") @db.VarChar(120)
+  loginSubtext     String?   @map("login_subtext") @db.VarChar(300)
+  footerText       String?   @map("footer_text") @db.VarChar(200)
+  /// Custom host (pay.reseller.com) once its DNS TXT record proves ownership.
+  customDomain     String?   @unique @map("custom_domain") @db.VarChar(253)
+  domainToken      String?   @map("domain_token") @db.VarChar(64)
+  domainVerifiedAt DateTime? @map("domain_verified_at") @db.Timestamptz(3)
+  version          Int       @default(1)
+  updatedById      String?   @map("updated_by_id")
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  assets       ResellerBrandAsset[]
+
+  @@map("reseller_brands")
+}
+
+model ResellerBrandAsset {
+  organizationId String         @map("organization_id")
+  kind           BrandAssetKind
+  contentType    String         @map("content_type") @db.VarChar(40)
+  bytes          Bytes
+  sizeBytes      Int            @map("size_bytes")
+  sha256         String         @db.Char(64)
+  width          Int?
+  height         Int?
+  updatedById    String?        @map("updated_by_id")
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  brand ResellerBrand @relation(fields: [organizationId], references: [organizationId], onDelete: Restrict)
+
+  @@id([organizationId, kind])
+  @@map("reseller_brand_assets")
 }
 
 enum CollectionAccountKind {

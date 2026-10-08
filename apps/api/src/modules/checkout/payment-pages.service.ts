@@ -36,16 +36,13 @@ export class PaymentPagesService {
     private readonly config: ApiConfig,
   ) {}
 
-  private web(path: string) {
-    return `${this.config.env.WEB_PUBLIC_URL.replace(/\/$/, '')}${path}`;
-  }
 
-  private present(p: PaymentPage, stats?: { count: number; amountMinor: bigint; last?: Date | null }) {
+  private present(p: PaymentPage, base: string, stats?: { count: number; amountMinor: bigint; last?: Date | null }) {
     return {
       id: p.id,
       object: 'payment_page',
       slug: p.slug,
-      url: this.web(`/p/${p.slug}`),
+      url: `${base}/p/${p.slug}`,
       title: p.title,
       description: p.description,
       amount:
@@ -85,7 +82,8 @@ export class PaymentPagesService {
     const merchantId = merchantOnly(actor);
     const pages = await this.prisma.paymentPage.findMany({ where: { merchantId }, orderBy: { createdAt: 'desc' }, take: MAX_PAGES });
     const stats = await this.stats(pages.map((p) => p.id));
-    return pages.map((p) => this.present(p, stats.get(p.id) ?? { count: 0, amountMinor: 0n, last: null }));
+    const base = await this.brand.webBase(merchantId);
+    return pages.map((p) => this.present(p, base, stats.get(p.id) ?? { count: 0, amountMinor: 0n, last: null }));
   }
 
   private async own(actor: Actor, id: string) {
@@ -97,7 +95,7 @@ export class PaymentPagesService {
 
   async get(actor: Actor, id: string) {
     const p = await this.own(actor, id);
-    return this.present(p, (await this.stats([p.id])).get(p.id) ?? { count: 0, amountMinor: 0n, last: null });
+    return this.present(p, await this.brand.webBase(p.merchantId), (await this.stats([p.id])).get(p.id) ?? { count: 0, amountMinor: 0n, last: null });
   }
 
   async create(actor: Actor, input: z.output<typeof savePaymentPageSchema>) {
@@ -109,7 +107,7 @@ export class PaymentPagesService {
         await this.audit.record({ action: 'payment_page.created', resourceType: 'payment_page', resourceId: created.id, organizationId: merchantId, newValue: { slug: created.slug, title: created.title } }, tx);
         return created;
       });
-      return this.present(p, { count: 0, amountMinor: 0n });
+      return this.present(p, await this.brand.webBase(merchantId), { count: 0, amountMinor: 0n });
     } catch (err) {
       if (isUniqueViolation(err, 'slug')) throw new AppError(ErrorCode.CONFLICT, 'This page address is taken — choose another', [{ path: 'slug', message: 'Already taken' }]);
       throw err;
@@ -172,9 +170,9 @@ export class PaymentPagesService {
   /** What /p/<slug> shows: nothing beyond the page itself and the merchant's public name. */
   async publicView(slug: string) {
     const { page, merchantName } = await this.active(slug);
-    const brand = await this.brand.get();
-    const v = this.present(page);
-    return { slug: v.slug, title: v.title, description: v.description, amount: v.amount, fields: v.fields, merchant: { name: merchantName }, platform: { name: brand.product_name } };
+    const brand = await this.brand.forOrganization(page.merchantId);
+    const v = this.present(page, await this.brand.webBase(page.merchantId));
+    return { slug: v.slug, title: v.title, description: v.description, amount: v.amount, fields: v.fields, merchant: { name: merchantName }, platform: { name: brand.product_name }, brand: { name: brand.product_name, primary_color: brand.primary_color, logo_url: brand.assets.logo?.url ?? null } };
   }
 
   /** A payer starts paying: validates amount and answers, then opens a 30-minute checkout. */
@@ -221,6 +219,6 @@ export class PaymentPagesService {
         expiresAt: new Date(Date.now() + SESSION_MINUTES * 60_000),
       },
     });
-    return { token: s.token, url: this.web(`/checkout/${s.token}`) };
+    return { token: s.token, url: `${await this.brand.webBase(page.merchantId)}/checkout/${s.token}` };
   }
 }

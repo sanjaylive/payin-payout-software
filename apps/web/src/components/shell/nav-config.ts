@@ -9,6 +9,7 @@ import {
   Gauge,
   Handshake,
   Landmark,
+  Palette,
   LayoutDashboard,
   type LucideIcon,
   Network,
@@ -122,6 +123,7 @@ export const RESELLER_NAV: NavItem[] = [
   { label: 'Earnings', href: '/reseller/earnings', icon: Landmark, phase: 9 },
   { label: 'Reports', href: '/reseller/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },
   { label: 'Team', href: '/team', icon: Users, phase: 1, permission: 'user.read' },
+  { label: 'Branding', href: '/reseller/branding', icon: Palette, phase: 9, permission: 'brand.manage' },
   { label: 'Settings', href: '/settings/security', icon: Settings, phase: 1 },
 ];
 
@@ -142,6 +144,7 @@ export const PARTNER_NAV: NavItem[] = [
     ],
   },
   { label: 'Team', href: '/team', icon: Users, phase: 1, permission: 'user.read' },
+  { label: 'Branding', href: '/partner/branding', icon: Palette, phase: 9, permission: 'brand.manage' },
   { label: 'Settings', href: '/settings/security', icon: Settings, phase: 1 },
 ];
 

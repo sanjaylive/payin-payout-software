@@ -10,6 +10,7 @@ import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/errors/all-exceptions.filter';
 import { ResponseEnvelopeInterceptor } from './common/http/response-envelope.interceptor';
 import type { ApiConfig } from './config/api-config';
+import { BrandService } from './infra/brand.service';
 
 const DOCS_PATH = 'docs';
 
@@ -66,8 +67,14 @@ export async function createApp(config: ApiConfig): Promise<NestExpressApplicati
   app.use(['/v1/webhooks/providers', '/v1/checkout/return'], gatewayForms);
   // Amazon SNS posts JSON with Content-Type text/plain; keep its bytes for the receipt endpoint only.
   app.use('/v1/webhooks/messaging/ses', text({ type: 'text/plain', limit: '256kb', verify: (req: Request & { rawBody?: Buffer }, _res, buf) => void (req.rawBody = buf) }));
+  // Configured origins, plus resellers' verified custom domains (white-label, docs/BRANDING.md §5).
+  const brand = app.get(BrandService);
+  const staticOrigins = new Set(config.env.CORS_ALLOWED_ORIGINS);
   app.enableCors({
-    origin: config.env.CORS_ALLOWED_ORIGINS,
+    origin: (origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) => {
+      if (!origin || staticOrigins.has(origin)) return cb(null, true);
+      brand.customOrigins().then((o) => cb(null, o.has(origin)), () => cb(null, false));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
     allowedHeaders: ['Authorization', 'Content-Type', 'Idempotency-Key', 'X-Request-Id', 'X-Pay2All-CSRF'],

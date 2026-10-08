@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { ApiError, apiRequest } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
 import type { PageField, PublicPaymentPage } from '@/lib/api/types';
+import { Shell } from './hosted-checkout';
 
 const inr = (v: string | number) => `₹${Number(v).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -63,6 +64,7 @@ export function PublicPaymentPageView({ slug }: { slug: string }) {
   }
   const p = q.data;
   const fixed = p.amount.amount_type === 'FIXED';
+  const brandName = p.brand?.name ?? p.platform.name;
   const payable = fixed ? Number(p.amount.amount_type === 'FIXED' ? p.amount.amount : 0) : Number(amount);
   const amountOk = fixed || (/^\d{1,9}(\.\d{1,2})?$/.test(amount) && p.amount.amount_type === 'CUSTOMER' && payable >= Number(p.amount.min_amount) && payable <= Number(p.amount.max_amount));
   const valid = amountOk && name.trim().length >= 2 && EMAIL.test(email.trim()) && /^[6-9]\d{9}$/.test(mobile10(phone)) && p.fields.every((f) => fieldOk(f, answers[f.key] ?? ''));
@@ -88,7 +90,7 @@ export function PublicPaymentPageView({ slug }: { slug: string }) {
   }
 
   return (
-    <Frame>
+    <Frame color={p.brand?.primary_color}>
       <div className="grid md:grid-cols-[340px_1fr]">
         <aside className="bg-primary text-primary-foreground relative flex flex-col gap-5 overflow-hidden p-6 md:p-8">
           <div className="absolute -right-16 -bottom-16 size-56 rounded-full bg-white/10" aria-hidden />
@@ -107,7 +109,7 @@ export function PublicPaymentPageView({ slug }: { slug: string }) {
             </p>
           </div>
           <p className="relative mt-auto flex items-center gap-1.5 text-[11px] opacity-80">
-            <Lock className="size-3" /> Secured by {p.platform.name}
+            <Lock className="size-3" /> Secured by {brandName}
           </p>
         </aside>
         <form
@@ -172,10 +174,10 @@ export function PublicPaymentPageView({ slug }: { slug: string }) {
   );
 }
 
-function Frame({ children }: { children: React.ReactNode }) {
+function Frame({ children, color }: { children: React.ReactNode; color?: string | null }) {
   return (
-    <div className="from-primary/10 via-background to-background flex min-h-dvh items-start justify-center bg-gradient-to-br px-4 py-8 md:items-center">
-      <div className="bg-card w-full max-w-4xl overflow-hidden rounded-2xl border shadow-xl">{children}</div>
-    </div>
+    <Shell color={color}>
+      {children}
+    </Shell>
   );
 }

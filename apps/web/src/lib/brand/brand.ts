@@ -8,6 +8,8 @@ export interface BrandAsset {
   size_bytes: number;
 }
 export interface Brand {
+  /** Set for a reseller's white-label brand. */
+  owner?: { organization_id: string; custom_domain: string | null };
   product_name: string;
   short_name: string;
   company_name: string;
@@ -30,11 +32,14 @@ const PUBLIC_API = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
 /** Absolute URL of a brand image (served by the API, cacheable forever thanks to ?v=). */
 export const assetUrl = (a: BrandAsset | null | undefined) => (a ? `${PUBLIC_API}${a.url}` : null);
 
-/** Server-side read for metadata and first paint. Never blocks a page on the API: defaults after 1.5 s. */
-export async function fetchBrand(): Promise<Brand> {
+/**
+ * Server-side read for metadata and first paint, for the request's host (a reseller's verified custom
+ * domain shows its white-label brand). Never blocks a page on the API: defaults after 1.5 s.
+ */
+export async function fetchBrand(host?: string | null): Promise<Brand> {
   const base = process.env.API_INTERNAL_URL || PUBLIC_API;
   try {
-    const res = await fetch(`${base}/v1/brand`, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
+    const res = await fetch(`${base}/v1/brand${host ? `?host=${encodeURIComponent(host)}` : ''}`, { cache: 'no-store', signal: AbortSignal.timeout(1500) });
     if (!res.ok) return DEFAULT_BRAND;
     const body = (await res.json()) as { data?: Brand };
     return body.data ?? DEFAULT_BRAND;

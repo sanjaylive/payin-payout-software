@@ -95,6 +95,7 @@ export const PERMISSIONS = {
 
   'reseller.read': { description: 'View resellers', scopes: ['PLATFORM', 'RESELLER'] },
   'reseller.manage': { description: 'Create and manage resellers', scopes: P },
+  'brand.manage': { description: 'Manage your own white-label brand and custom domain', scopes: ['RESELLER', 'API_PARTNER'] },
   'api_partner.read': { description: 'View API partners', scopes: ['PLATFORM', 'API_PARTNER'] },
   'api_partner.manage': { description: 'Create and manage API partners', scopes: P },
 

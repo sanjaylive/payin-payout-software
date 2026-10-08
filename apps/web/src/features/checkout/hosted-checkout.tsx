@@ -9,7 +9,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock3, CreditCard, Loader2, Lock, QrCode, ShieldCheck, Smartphone, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { PaymentQr } from '@/features/payin/payment-qr';
-import { ApiError, apiRequest } from '@/lib/api/client';
+import { API_URL, ApiError, apiRequest } from '@/lib/api/client';
+import { colorVars } from '@/lib/brand/brand';
 import { errorMessage } from '@/lib/api/errors';
 import type { PublicCheckout, PublicCheckoutPayment } from '@/lib/api/types';
 
@@ -128,7 +129,7 @@ export function HostedCheckout({ token, returned, embed = false }: { token: stri
   else body = <Choose d={d} token={token} embedded={embedded} failed={p && (p.status === 'FAILED' || p.status === 'EXPIRED') ? p : null} onStarted={() => { setChoosing(false); void refresh(); }} />;
 
   return (
-    <Shell>
+    <Shell color={d.brand?.primary_color}>
       <div className="grid md:grid-cols-[340px_1fr]">
         <Summary d={d} />
         <div className="min-h-[460px] p-6 md:p-8">{body}</div>
@@ -137,9 +138,14 @@ export function HostedCheckout({ token, returned, embed = false }: { token: stri
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+export function Shell({ children, color }: { children: React.ReactNode; color?: string | null }) {
   return (
-    <div className="from-primary/10 via-background to-background flex min-h-dvh items-start justify-center bg-gradient-to-br px-4 py-8 md:items-center">
+    <div
+      data-brand-scope=""
+      {...(color ? { 'data-brand-color': '' } : {})}
+      style={colorVars(color ?? null) as React.CSSProperties}
+      className="from-primary/10 via-background to-background flex min-h-dvh items-start justify-center bg-gradient-to-br px-4 py-8 md:items-center"
+    >
       <div className="bg-card w-full max-w-4xl overflow-hidden rounded-2xl border shadow-xl">{children}</div>
     </div>
   );
@@ -175,7 +181,13 @@ function Summary({ d }: { d: PublicCheckout }) {
         )}
       </dl>
       <p className="relative mt-auto flex items-center gap-1.5 text-[11px] opacity-80">
-        <Lock className="size-3" /> Secured by {d.platform.name}
+        <Lock className="size-3" /> Secured by{' '}
+        {d.brand?.logo_url ? (
+          // eslint-disable-next-line @next/next/no-img-element -- brand image served by the API
+          <img src={`${API_URL}${d.brand.logo_url}`} alt={d.brand.name} className="h-4 max-w-28 rounded-sm bg-white/90 object-contain px-1" />
+        ) : (
+          (d.brand?.name ?? d.platform.name)
+        )}
       </p>
     </aside>
   );

@@ -17,6 +17,32 @@ function platformOnly(actor: Actor) {
 
 const LABEL: Record<BrandAssetKind, string> = { LOGO: 'Logo', LOGO_DARK: 'Logo for dark backgrounds', ICON: 'Icon' };
 
+/** Validate an uploaded brand image (type by content, size, dimensions per kind). */
+export function checkBrandImage(kind: BrandAssetKind, file: { buffer: Buffer; size: number } | undefined) {
+    if (!file || file.size === 0) throw new AppError(ErrorCode.INVALID_REQUEST, 'Choose an image to upload');
+    if (file.size > BRAND_IMAGE_MAX_BYTES) throw new AppError(ErrorCode.INVALID_REQUEST, 'Images can be at most 1 MB');
+    let img;
+    try {
+      img = inspectImage(file.buffer);
+    } catch (err) {
+      if (err instanceof ImageRejected) throw new AppError(ErrorCode.INVALID_REQUEST, err.message, [{ path: 'file', message: err.message }]);
+      throw err;
+    }
+    const { width: w, height: h } = img;
+    if (w !== null && h !== null) {
+      if (w > 4096 || h > 4096) throw new AppError(ErrorCode.INVALID_REQUEST, 'Images can be at most 4096 × 4096 pixels');
+      const raster = img.type !== 'image/svg+xml';
+      if (kind === 'ICON') {
+        if (Math.max(w, h) / Math.min(w, h) > 1.25) throw new AppError(ErrorCode.INVALID_REQUEST, `The icon should be square (this one is ${w} × ${h})`);
+        if (raster && Math.min(w, h) < 32) throw new AppError(ErrorCode.INVALID_REQUEST, `The icon should be at least 32 × 32 pixels (this one is ${w} × ${h})`);
+      } else {
+        if (img.type === 'image/x-icon') throw new AppError(ErrorCode.INVALID_REQUEST, 'Use PNG, JPEG, WebP or SVG for logos');
+        if (raster && h < 24) throw new AppError(ErrorCode.INVALID_REQUEST, `The logo should be at least 24 pixels tall (this one is ${h})`);
+      }
+    }
+  return { img, file, sha256: createHash('sha256').update(file.buffer).digest('hex') };
+}
+
 /** Brand administration: settings, and logo / icon uploads (docs/BRANDING.md). */
 @Injectable()
 export class BrandSettingsService {
@@ -60,32 +86,12 @@ export class BrandSettingsService {
 
   async upload(actor: Actor, kind: BrandAssetKind, file: { buffer: Buffer; size: number } | undefined, reason: string) {
     platformOnly(actor);
-    if (!file || file.size === 0) throw new AppError(ErrorCode.INVALID_REQUEST, 'Choose an image to upload');
-    if (file.size > BRAND_IMAGE_MAX_BYTES) throw new AppError(ErrorCode.INVALID_REQUEST, 'Images can be at most 1 MB');
-    let img;
-    try {
-      img = inspectImage(file.buffer);
-    } catch (err) {
-      if (err instanceof ImageRejected) throw new AppError(ErrorCode.INVALID_REQUEST, err.message, [{ path: 'file', message: err.message }]);
-      throw err;
-    }
+    const { img, sha256, file: f } = checkBrandImage(kind, file);
     const { width: w, height: h } = img;
-    if (w !== null && h !== null) {
-      if (w > 4096 || h > 4096) throw new AppError(ErrorCode.INVALID_REQUEST, 'Images can be at most 4096 × 4096 pixels');
-      const raster = img.type !== 'image/svg+xml';
-      if (kind === 'ICON') {
-        if (Math.max(w, h) / Math.min(w, h) > 1.25) throw new AppError(ErrorCode.INVALID_REQUEST, `The icon should be square (this one is ${w} × ${h})`);
-        if (raster && Math.min(w, h) < 32) throw new AppError(ErrorCode.INVALID_REQUEST, `The icon should be at least 32 × 32 pixels (this one is ${w} × ${h})`);
-      } else {
-        if (img.type === 'image/x-icon') throw new AppError(ErrorCode.INVALID_REQUEST, 'Use PNG, JPEG, WebP or SVG for logos');
-        if (raster && h < 24) throw new AppError(ErrorCode.INVALID_REQUEST, `The logo should be at least 24 pixels tall (this one is ${h})`);
-      }
-    }
-    const sha256 = createHash('sha256').update(file.buffer).digest('hex');
-    const data = { contentType: img.type, bytes: new Uint8Array(file.buffer), sizeBytes: file.size, sha256, width: w, height: h, updatedById: actor.userId };
+    const data = { contentType: img.type, bytes: new Uint8Array(f.buffer), sizeBytes: f.size, sha256, width: w, height: h, updatedById: actor.userId };
     await this.prisma.$transaction(async (tx) => {
       await tx.brandAsset.upsert({ where: { kind }, create: { kind, ...data }, update: data });
-      await this.audit.record({ action: 'brand.asset_uploaded', resourceType: 'brand_asset', resourceId: kind, organizationId: null, newValue: { kind, content_type: img.type, size_bytes: file.size, width: w, height: h, sha256 }, metadata: { reason } }, tx);
+      await this.audit.record({ action: 'brand.asset_uploaded', resourceType: 'brand_asset', resourceId: kind, organizationId: null, newValue: { kind, content_type: img.type, size_bytes: f.size, width: w, height: h, sha256 }, metadata: { reason } }, tx);
     });
     this.brand.invalidate();
     return this.brand.get();
