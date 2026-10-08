@@ -94,7 +94,29 @@ Merchant pickers search as you type, by name, legal name, PAN or exact ID, throu
 | `POST /v1/funds/requests/:id/decision` | `fund.approve` | `{ decision: APPROVE, credited_amount?, note? }` or `{ decision: REJECT, note }` |
 | `GET /v1/funds/requests` · `GET /v1/funds/summary` | `fund.read` | Merchant: own requests. Platform: all, filtered by `status`, `merchant_id` or `q` (UTR or id) |
 
-## 7. Not yet included
+## 7. Bank statement matching
 
-- **Statement matching:** bank statements are not yet matched to fund requests automatically. Reconciliation is still a person comparing the UTR.
+Admin → Fund requests → **Bank statements** (`fund.approve`, with step-up):
+
+1. Choose the bank fund account and upload its statement as CSV (≤ 5 MB) with `POST /v1/funds/statements/:accountId`. The parser (`packages/validation/src/bank-statement.ts`) finds the header row below any summary rows. It reads common Indian bank column names (date / value date, narration, reference, deposit / credit, or one amount column with a CR/DR flag), takes exact paise amounts, and keeps credits only.
+2. **References:** for each credit, the reference column and the narration give UTR/RRN candidates (10–22 letters and digits with at least 6 digits; IFSC codes excluded).
+3. **Outcomes:**
+
+   | Status | When | What happens |
+   | --- | --- | --- |
+   | `MATCHED` | A **pending** request on the **same account** has one of the candidates as its UTR, for **exactly** the credited amount | The request is approved through the normal approval path (claim → FUND_LOAD journal → audit `funds.request.auto_approved` → merchant notified), under the uploader's name; the line records the request (same transaction) |
+   | `AMOUNT_MISMATCH` | The UTR matches but the amount differs | Nothing is credited; approve (with the corrected amount and a note) or reject by hand |
+   | `ALREADY_DECIDED` | The request was approved/rejected/cancelled before | Informational |
+   | `UNMATCHED` | No request with that UTR yet | Kept. When a merchant later submits that UTR for exactly that amount on that account, the request is approved immediately (decided by the system, audit `funds.request.auto_approved`) |
+
+4. **Never twice:**
+   - A file can't be imported twice for an account (SHA-256).
+   - A UTR can back at most one statement line per account (unique index), so overlapping statements report the repeat as a duplicate and credit nothing.
+   - A line can back at most one fund request.
+5. **Evidence:** statement lines are append-only (trigger). The only allowed change is `UNMATCHED → MATCHED` when a later request matches.
+
+`GET /v1/funds/statements` lists recent imports; `GET /v1/funds/statements/:id` shows every credit with its result and request.
+
+## 8. Not yet included
+
 - **Payment gateway top-ups:** instant top-ups through a payment gateway are not supported.

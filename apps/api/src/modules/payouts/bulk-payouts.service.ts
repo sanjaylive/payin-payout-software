@@ -5,6 +5,7 @@ import { type BulkPayoutRow, isUniqueViolation, type PrismaClient } from '@pay2a
 import { minorToMajorString } from '@pay2all/ledger';
 import { ErrorCode } from '@pay2all/types';
 import { BULK_CSV_COLUMNS, BULK_MAX_ROWS, bulkRowSchema, createPayoutSchema, parseCsv } from '@pay2all/validation';
+import { csvCell } from '../reports/report-writer';
 import { AppError } from '../../common/errors/app-error';
 import { PRISMA } from '../../infra/tokens';
 import { AuditService } from '../audit/audit.service';
@@ -124,6 +125,41 @@ export class BulkPayoutsService {
     const b = await this.requireBatch(actor, id);
     const rows = await this.prisma.bulkPayoutRow.findMany({ where: { batchId: id }, orderBy: { rowNo: 'asc' } });
     return presentBatch(b, rows);
+  }
+
+  /**
+   * Per-row results as CSV (row, reference, masked beneficiary, amount, row status and validation
+   * errors, then the payout's status, fee, UTR and failure reason). Audited; no full account numbers.
+   */
+  async resultsCsv(actor: Actor, id: string): Promise<{ filename: string; csv: string }> {
+    const b = await this.requireBatch(actor, id);
+    const rows = await this.prisma.bulkPayoutRow.findMany({ where: { batchId: id }, orderBy: { rowNo: 'asc' } });
+    const payouts = new Map(
+      (await this.prisma.payout.findMany({ where: { id: { in: rows.flatMap((r) => (r.payoutId ? [r.payoutId] : [])) } } })).map((p) => [p.id, p]),
+    );
+    const header = ['row', 'merchant_order_id', 'beneficiary', 'mode', 'amount', 'row_status', 'row_errors', 'payout_id', 'payout_status', 'fee', 'tax', 'utr', 'failure_reason', 'processed_at'];
+    const lines = rows.map((r) => {
+      const p = r.payoutId ? payouts.get(r.payoutId) : undefined;
+      const errors = Array.isArray(r.errors) ? (r.errors as { message?: string }[]).map((e) => e.message ?? '').join('; ') : '';
+      return [
+        r.rowNo,
+        r.merchantOrderId,
+        r.beneficiaryLabel,
+        r.mode,
+        r.amountMinor !== null ? minorToMajorString(r.amountMinor) : null,
+        r.status,
+        errors,
+        p?.id ?? null,
+        p?.status ?? null,
+        p ? minorToMajorString(p.feeMinor) : null,
+        p ? minorToMajorString(p.taxMinor) : null,
+        p?.utr ?? null,
+        p?.failureReason ?? null,
+        p?.processedAt ?? null,
+      ];
+    });
+    await this.audit.record({ action: 'payout.bulk.results_downloaded', resourceType: 'bulk_payout_batch', resourceId: id, organizationId: b.merchantId, metadata: { rows: rows.length } });
+    return { filename: `bulk-payout-${id}-results.csv`, csv: `\uFEFF${[header, ...lines].map((l) => l.map(csvCell).join(',')).join('\r\n')}\r\n` };
   }
 
   async list(actor: Actor) {

@@ -1299,3 +1299,35 @@ export interface StaticQrRow {
   closed_at: string | null;
   today?: { count: number; amount: string };
 }
+
+export interface StatementImportRow {
+  id: string;
+  account: string;
+  file_name: string;
+  credits: number;
+  matched: number;
+  mismatched: number;
+  unmatched: number;
+  already_decided: number;
+  duplicates: number;
+  created_at: string;
+}
+
+export interface StatementImportDetail {
+  id: string;
+  account: string;
+  file_name: string;
+  created_at: string;
+  summary: { credits: number; matched: number; mismatched: number; unmatched: number; already_decided: number; duplicates: number };
+  lines: {
+    id: string;
+    line_no: number;
+    value_date: string | null;
+    description: string;
+    amount: string;
+    utr: string | null;
+    status: 'MATCHED' | 'AMOUNT_MISMATCH' | 'ALREADY_DECIDED' | 'UNMATCHED';
+    fund_request: { id: string; merchant_name: string; amount: string; status: string } | null;
+    matched_at: string | null;
+  }[];
+}

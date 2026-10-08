@@ -230,6 +230,7 @@ A beneficiary bank can return funds days later (closed account, etc.).
 3. The user confirms (maker). Approval tiers apply to the **batch total** and to each row's amount, whichever is stricter. MFA is required.
 4. The worker creates payouts row by row through the **same** creation service, with idempotency key `bulk:<batchId>:<rowNo>` and the row's `merchant_order_id`. Re-running a half-processed batch is therefore safe. Each row reserves balance independently. Rows that hit `INSUFFICIENT_BALANCE` are marked failed, and processing continues or stops per the batch setting `stop_on_insufficient_balance`.
 5. Batch progress counters are shown in the dashboard. Each payout follows the normal lifecycle.
+6. `GET /v1/payouts/bulk/:id/results.csv` downloads one line per row: reference, masked beneficiary, mode, amount, row status and validation errors, then the payout's id, status, fee, tax, UTR, failure reason and processed time. Formula-injection-safe cells, UTF-8 with BOM, audited (`payout.bulk.results_downloaded`). For a batch that failed validation it is the error report.
 
 ## 10. Payout state machine
 

@@ -445,6 +445,17 @@ describe('bulk payouts', () => {
     await ctx.prisma.bulkPayoutBatch.update({ where: { id: batchId }, data: { status: 'CONFIRMED' } });
     await ctx.app.get(BulkPayoutsService).processConfirmed();
     expect(await ctx.prisma.payout.count({ where: { bulkBatchId: batchId } })).toBe(2);
+
+    // Per-row results file: payout ids and statuses, masked beneficiaries only.
+    const results = await ctx.http().get(`/v1/payouts/bulk/${batchId}/results.csv`).set(bearer(m.owner));
+    expect(results.status).toBe(200);
+    expect(results.headers['content-type']).toMatch(/text\/csv/);
+    const lines = (results.text as string).replace(/^\uFEFF/, '').trim().split('\r\n');
+    expect(lines[0]).toBe('row,merchant_order_id,beneficiary,mode,amount,row_status,row_errors,payout_id,payout_status,fee,tax,utr,failure_reason,processed_at');
+    expect(lines).toHaveLength(3);
+    expect(lines[1]).toMatch(/^1,B-\w+,.*,IMPS,5000\.00,CREATED,,pout_\w+,QUEUED,/);
+    expect(results.text).not.toMatch(/5010\d{11}/);
+    expect(await ctx.prisma.auditLog.count({ where: { action: 'payout.bulk.results_downloaded', resourceId: batchId } })).toBe(1);
   });
 
   it('applies the batch-total tier to every row, approvable in one action by another checker', async () => {

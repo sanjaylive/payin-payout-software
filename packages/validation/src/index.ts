@@ -23,3 +23,4 @@ export * from './brand';
 export * from './funds';
 export * from './checkout';
 export * from './payment-links';
+export * from './bank-statement';

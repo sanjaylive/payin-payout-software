@@ -11,7 +11,7 @@ import { Check, Download, FileUp, Loader2, Send, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { fmt } from '@/features/ledger/format';
-import { api, apiUpload } from '@/lib/api/client';
+import { api, apiDownload, apiUpload } from '@/lib/api/client';
 import { errorMessage, toTableError } from '@/lib/api/errors';
 import type { BulkBatch } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
@@ -85,6 +85,11 @@ function BatchDetail({ batchId, onClose }: { batchId: string; onClose: () => voi
               <Button disabled={busy !== null} onClick={() => void act('approve', 'Approved')}>{busy === 'approve' ? <Loader2 className="animate-spin" /> : <Check />} Approve all I can</Button>
               <Button variant="outline" disabled={busy !== null} onClick={() => setRejecting(true)}><X /> Reject all pending</Button>
             </>
+          )}
+          {b.status !== 'VALIDATED' && (
+            <Button variant="outline" onClick={() => void apiDownload(`/v1/payouts/bulk/${b.batch_id}/results.csv`, `bulk-payout-${b.batch_id}-results.csv`).catch((e: unknown) => toast.error(errorMessage(e)))}>
+              <Download /> {created ? 'Download results' : 'Download report'}
+            </Button>
           )}
           <Button variant="ghost" onClick={onClose}>Back to batches</Button>
         </div>

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, Post, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
@@ -14,6 +14,7 @@ import {
   resolvePayoutReviewSchema,
 } from '@pay2all/validation';
 import { memoryStorage } from 'multer';
+import type { Response } from 'express';
 import { z } from 'zod';
 import { ApiZodBody, ApiZodQuery } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
@@ -100,6 +101,17 @@ export class PayoutsController {
   @RequirePermissions('payout.create')
   cancelBatch(@CurrentActor() actor: Actor, @Param('id', batchIdPipe) id: string) {
     return this.bulk.cancel(actor, id);
+  }
+
+  @Get('payouts/bulk/:id/results.csv')
+  @RequirePermissions('payout.read')
+  @ApiOperation({ summary: 'Download the batch’s per-row results (payout status, UTR, failures) as CSV' })
+  async batchResults(@CurrentActor() actor: Actor, @Param('id', batchIdPipe) id: string, @Res() res: Response) {
+    const file = await this.bulk.resultsCsv(actor, id);
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${file.filename}"`);
+    res.setHeader('Cache-Control', 'no-store');
+    res.send(file.csv);
   }
 
   @Post('payouts/bulk/:id/approve')

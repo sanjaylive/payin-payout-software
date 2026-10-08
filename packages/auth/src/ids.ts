@@ -47,6 +47,8 @@ export const ID_PREFIXES = {
   checkoutSession: 'cs',
   paymentPage: 'pg',
   staticQr: 'sqr',
+  statementImport: 'sti',
+  statementLine: 'stln',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

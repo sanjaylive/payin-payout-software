@@ -2744,7 +2744,8 @@ model CollectionAccount {
   createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt              DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  requests FundRequest[]
+  requests         FundRequest[]
+  statementImports StatementImport[]
 
   @@index([isActive, sortOrder])
   @@map("collection_accounts")
@@ -2790,6 +2791,67 @@ model FundRequest {
   @@index([status, createdAt(sort: Desc)])
   @@index([merchantId, createdAt(sort: Desc)])
   @@map("fund_requests")
+}
+
+enum StatementLineStatus {
+  /// Matched to a pending fund request with the same UTR and amount; the request was approved.
+  MATCHED
+  /// A fund request with this UTR exists but the amount differs: approve or reject by hand.
+  AMOUNT_MISMATCH
+  /// The fund request for this UTR was already decided before the statement arrived.
+  ALREADY_DECIDED
+  /// No fund request yet; a later request with this UTR and amount is approved automatically.
+  UNMATCHED
+}
+
+/// One uploaded bank statement for a collection account (docs/FUND_REQUESTS.md §6).
+model StatementImport {
+  id                  String   @id
+  collectionAccountId String   @map("collection_account_id")
+  fileName            String   @map("file_name") @db.VarChar(160)
+  /// SHA-256 of the file: the same file can't be imported twice for an account.
+  fileSha256          String   @map("file_sha256") @db.Char(64)
+  credits             Int
+  matched             Int
+  mismatched          Int
+  unmatched           Int
+  alreadyDecided      Int      @map("already_decided")
+  duplicates          Int
+  uploadedById        String   @map("uploaded_by_id")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  collectionAccount CollectionAccount @relation(fields: [collectionAccountId], references: [id], onDelete: Restrict)
+  lines             StatementLine[]
+
+  @@unique([collectionAccountId, fileSha256])
+  @@index([createdAt(sort: Desc)])
+  @@map("statement_imports")
+}
+
+/// A credit on a bank statement. A UTR is used once per account across all imports.
+model StatementLine {
+  id                  String              @id
+  importId            String              @map("import_id")
+  collectionAccountId String              @map("collection_account_id")
+  lineNo              Int                 @map("line_no")
+  valueDate           DateTime?           @map("value_date") @db.Timestamptz(3)
+  description         String              @db.VarChar(300)
+  amountMinor         BigInt              @map("amount_minor")
+  /// The reference this line was matched or recorded under (null: no usable reference).
+  utr                 String?             @db.VarChar(30)
+  /// Every reference candidate read from the line (reference column and narration).
+  references          String[]            @default([])
+  status              StatementLineStatus
+  fundRequestId       String?             @unique @map("fund_request_id")
+  matchedAt           DateTime?           @map("matched_at") @db.Timestamptz(3)
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  import StatementImport @relation(fields: [importId], references: [id], onDelete: Restrict)
+
+  @@unique([collectionAccountId, utr])
+  @@index([importId, lineNo])
+  @@index([collectionAccountId, status])
+  @@map("statement_lines")
 }
 
 enum WebsiteStatus {

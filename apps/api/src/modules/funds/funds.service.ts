@@ -231,6 +231,7 @@ export class FundsService {
         }
         return r;
       });
+      if (await this.matchImportedCredit(created)) return this.presentRequest(await this.prisma.fundRequest.findUniqueOrThrow({ where: { id }, include: { collectionAccount: true } }));
       return this.presentRequest(created);
     } catch (err) {
       if (isUniqueViolation(err)) throw this.duplicateUtr(input.utr, null);
@@ -330,6 +331,59 @@ export class FundsService {
     return this.get(actor, id);
   }
 
+  /**
+   * Credit a pending request: claim it (a concurrent approve/reject loses), post FUND_LOAD, record and
+   * notify — in one ledger transaction. `statementLineId` marks the bank statement line that proved
+   * the money arrived (same transaction, so a line can back exactly one request).
+   */
+  async approve(r: RequestRow, credited: bigint, by: { userId: string | null; note: string | null; statementLineId?: string }) {
+    await this.ledger.run(async (tx) => {
+      const merchant = await tx.merchant.findUnique({ where: { id: r.merchantId }, select: { status: true } });
+      if (!merchant || !['APPROVED', 'SUSPENDED'].includes(merchant.status)) throw new AppError(ErrorCode.MERCHANT_INACTIVE, 'Funds can be loaded only for approved (or suspended) merchants');
+      const n = await tx.fundRequest.updateMany({ where: { id: r.id, status: 'PENDING', version: r.version }, data: { version: { increment: 1 } } });
+      if (n.count !== 1) throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'The request changed; reload and try again');
+      const posted = await this.ledger.post(tx, {
+        type: 'FUND_LOAD',
+        idempotencyKey: `fund_request:${r.id}:load`,
+        source: { type: 'FUND_REQUEST', id: r.id },
+        description: `Wallet top-up ${r.utr}`,
+        metadata: { utr: r.utr, mode: r.mode, collection_account_id: r.collectionAccountId, approved_by: by.userId ?? 'statement_match', ...(by.statementLineId ? { statement_line_id: by.statementLineId } : {}) },
+        lines: [
+          { accountCode: collectionLedgerCode(r.collectionAccountId), direction: 'DEBIT', amountMinor: credited, currency: 'INR' },
+          { accountCode: Accounts.merchant(r.merchantId, 'AVAILABLE'), direction: 'CREDIT', amountMinor: credited, currency: 'INR' },
+        ],
+      });
+      await tx.fundRequest.update({ where: { id: r.id }, data: { status: 'APPROVED', creditedAmountMinor: credited, journalId: posted.journalId, decidedAt: new Date(), decidedById: by.userId, decisionNote: by.note } });
+      if (by.statementLineId) {
+        await tx.statementLine.update({ where: { id: by.statementLineId }, data: { status: 'MATCHED', fundRequestId: r.id, matchedAt: new Date() } });
+      }
+      await this.audit.record(
+        {
+          action: by.statementLineId ? 'funds.request.auto_approved' : 'funds.request.approved',
+          resourceType: 'fund_request',
+          resourceId: r.id,
+          organizationId: r.merchantId,
+          ...(by.userId ? {} : { actor: { type: 'SYSTEM' as const, id: null } }),
+          newValue: { credited: minorToMajorString(credited), journal_id: posted.journalId },
+          metadata: { note: by.note, severity: 'HIGH', ...(by.statementLineId ? { statement_line_id: by.statementLineId } : {}) },
+        },
+        tx,
+      );
+      await notifyInbox(tx, { organizationId: r.merchantId, audience: { permission: 'fund.read' }, category: 'WALLET', severity: 'SUCCESS', title: `${rupees(credited)} added to your wallet`, body: `Fund request UTR ${r.utr} was approved${credited !== r.amountMinor ? ` for ${rupees(credited)} (requested ${rupees(r.amountMinor)})` : ''}.`, link: '/accounts/add-funds', resourceType: 'fund_request', resourceId: r.id, dedupeKey: `fund_request:${r.id}:decided` });
+    });
+  }
+
+  /**
+   * A new request whose UTR and amount match a bank-statement credit already imported for the same
+   * account is approved straight away (docs/FUND_REQUESTS.md §6). Never fails the request itself.
+   */
+  private async matchImportedCredit(r: RequestRow): Promise<boolean> {
+    const line = await this.prisma.statementLine.findUnique({ where: { collectionAccountId_utr: { collectionAccountId: r.collectionAccountId, utr: r.utr } } });
+    if (!line || line.status !== 'UNMATCHED' || line.amountMinor !== r.amountMinor) return false;
+    await this.approve(r, r.amountMinor, { userId: null, note: `Matched to bank statement credit (line ${line.lineNo})`, statementLineId: line.id }).catch(() => undefined);
+    return true;
+  }
+
   async decide(actor: Actor, id: string, input: z.output<typeof decideFundRequestSchema>) {
     platformOnly(actor);
     const r = await this.load(actor, id);
@@ -351,27 +405,7 @@ export class FundsService {
     // The UTR can never be resubmitted, so a wrong amount on the claim is corrected here, up or down,
     // to what the statement shows, with a note.
     if (credited !== r.amountMinor && !input.note?.trim()) throw new AppError(ErrorCode.INVALID_REQUEST, 'Explain why the credited amount differs from the request', [{ path: 'note', message: 'Required when the amount changes' }]);
-    await this.ledger.run(async (tx) => {
-      const merchant = await tx.merchant.findUnique({ where: { id: r.merchantId }, select: { status: true } });
-      if (!merchant || !['APPROVED', 'SUSPENDED'].includes(merchant.status)) throw new AppError(ErrorCode.MERCHANT_INACTIVE, 'Funds can be loaded only for approved (or suspended) merchants');
-      // Claim the request first: a concurrent approve or reject loses here, before any posting.
-      const n = await tx.fundRequest.updateMany({ where: { id, status: 'PENDING', version: r.version }, data: { version: { increment: 1 } } });
-      if (n.count !== 1) throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'The request changed; reload and try again');
-      const posted = await this.ledger.post(tx, {
-        type: 'FUND_LOAD',
-        idempotencyKey: `fund_request:${id}:load`,
-        source: { type: 'FUND_REQUEST', id },
-        description: `Wallet top-up ${r.utr}`,
-        metadata: { utr: r.utr, mode: r.mode, collection_account_id: r.collectionAccountId, approved_by: actor.userId },
-        lines: [
-          { accountCode: collectionLedgerCode(r.collectionAccountId), direction: 'DEBIT', amountMinor: credited, currency: 'INR' },
-          { accountCode: Accounts.merchant(r.merchantId, 'AVAILABLE'), direction: 'CREDIT', amountMinor: credited, currency: 'INR' },
-        ],
-      });
-      await tx.fundRequest.update({ where: { id }, data: { status: 'APPROVED', creditedAmountMinor: credited, journalId: posted.journalId, decidedAt: new Date(), decidedById: actor.userId, decisionNote: input.note ?? null } });
-      await this.audit.record({ action: 'funds.request.approved', resourceType: 'fund_request', resourceId: id, organizationId: r.merchantId, newValue: { credited: minorToMajorString(credited), journal_id: posted.journalId }, metadata: { note: input.note, severity: 'HIGH' } }, tx);
-      await notify(tx, `${rupees(credited)} added to your wallet`, `Fund request UTR ${r.utr} was approved${credited !== r.amountMinor ? ` for ${rupees(credited)} (requested ${rupees(r.amountMinor)})` : ''}.`, 'SUCCESS');
-    });
+    await this.approve(r, credited, { userId: actor.userId, note: input.note ?? null });
     return this.get(actor, id);
   }
 }

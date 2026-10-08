@@ -10,6 +10,7 @@ import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
 import { CurrentActor, RequirePermissions, RequireStepUp } from '../access/decorators';
 import type { Actor } from '../auth/actor';
 import { FundsService } from './funds.service';
+import { StatementsService } from './statements.service';
 
 const accountId = new ZodValidationPipe(idSchema('cac'));
 const requestId = new ZodValidationPipe(idSchema('fnd'));
@@ -119,5 +120,37 @@ export class FundsController {
   @ApiZodBody(decideFundRequestSchema)
   decide(@CurrentActor() actor: Actor, @Param('id', requestId) id: string, @Body(new ZodValidationPipe(decideFundRequestSchema)) body: z.output<typeof decideFundRequestSchema>) {
     return this.funds.decide(actor, id, body);
+  }
+}
+
+/** Bank statement import and automatic matching (docs/FUND_REQUESTS.md §6). Platform approvers only. */
+@ApiTags('Wallet funds')
+@ApiBearerAuth()
+@Controller('v1/funds/statements')
+export class StatementsController {
+  constructor(private readonly statements: StatementsService) {}
+
+  @Post(':accountId')
+  @RequireStepUp()
+  @RequirePermissions('fund.approve')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Import a collection account’s bank statement (CSV); matching credits approve their fund requests' })
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 + 1, files: 1, fields: 0 } }))
+  import(@CurrentActor() actor: Actor, @Param('accountId', accountId) id: string, @UploadedFile() file?: Express.Multer.File) {
+    return this.statements.import(actor, id, file);
+  }
+
+  @Get()
+  @RequirePermissions('fund.approve')
+  @ApiOperation({ summary: 'Recent statement imports' })
+  list(@CurrentActor() actor: Actor) {
+    return this.statements.list(actor);
+  }
+
+  @Get(':importId')
+  @RequirePermissions('fund.approve')
+  @ApiOperation({ summary: 'One import with every credit and how it was matched' })
+  get(@CurrentActor() actor: Actor, @Param('importId', new ZodValidationPipe(idSchema('sti'))) id: string) {
+    return this.statements.get(actor, id);
   }
 }
