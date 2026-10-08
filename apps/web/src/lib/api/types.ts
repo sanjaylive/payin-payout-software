@@ -1364,3 +1364,37 @@ export interface DisputeSummary {
   won: number;
   lost: number;
 }
+
+export interface TaxProfile {
+  legal_name: string;
+  gstin: string;
+  pan: string;
+  address: string;
+  state_code: string;
+  state: string | null;
+  sac: string;
+  invoice_prefix: string;
+  footer_note: string | null;
+  updated_at: string;
+}
+
+export interface InvoiceDoc {
+  id: string;
+  number: string;
+  merchant_id: string;
+  financial_year: string;
+  period: { start: string; end: string; label: string };
+  issue_date: string;
+  seller: { legal_name: string; gstin: string; pan: string; address: string; state_code: string; state: string | null; footer_note: string | null };
+  buyer: { merchant_id: string; name: string; trade_name: string; gstin: string | null; address: string | null; state_code: string | null; state: string | null };
+  place_of_supply: { code: string; state: string | null } | null;
+  inter_state: boolean;
+  lines: { code: string; description: string; sac: string; count: number; taxable: string; tax: string }[];
+  taxable: string;
+  cgst: string;
+  sgst: string;
+  igst: string;
+  total: string;
+  commission_credited: string;
+  created_at: string;
+}

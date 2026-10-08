@@ -5,6 +5,7 @@ export const SETTINGS_TABS: { label: string; href: string; permission?: string }
   { label: 'File Storage', href: '/admin/settings/storage', permission: 'system.settings.manage' },
   { label: 'Payment Gateways', href: '/admin/settings/gateways', permission: 'provider.read' },
   { label: 'Fund Accounts', href: '/admin/settings/fund-accounts', permission: 'fund.read' },
+  { label: 'Tax & Invoices', href: '/admin/settings/tax', permission: 'system.settings.manage' },
   { label: 'Pricing Providers', href: '/admin/settings/pricing-providers', permission: 'pricing.read' },
   { label: 'API Vendors', href: '/admin/settings/vendors', permission: 'provider.read' },
   { label: 'Routing', href: '/admin/settings/routing', permission: 'provider.read' },

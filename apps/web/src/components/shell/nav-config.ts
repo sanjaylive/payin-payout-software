@@ -13,6 +13,7 @@ import {
   type LucideIcon,
   Network,
   Receipt,
+  ReceiptIndianRupee,
   Scale,
   Settings,
   ShieldAlert,
@@ -78,6 +79,7 @@ export const MERCHANT_NAV: NavItem[] = [
       { label: 'Add Funds', href: '/accounts/add-funds', phase: 3, permission: 'fund.read' },
       { label: 'Ledger', href: '/accounts/ledger', phase: 3, permission: 'ledger.read' },
       { label: 'Fees', href: '/accounts/fees', phase: 8, permission: 'ledger.read' },
+      { label: 'Tax Invoices', href: '/accounts/invoices', phase: 8, permission: 'report.read' },
     ],
   },
   { label: 'Reports', href: '/reports', icon: ChartColumn, phase: 10, permission: 'report.read' },
@@ -170,6 +172,7 @@ export const ADMIN_NAV: NavItem[] = [
     ],
   },
   { label: 'Settlements', href: '/admin/settlements', icon: Landmark, phase: 8, permission: 'settlement.read' },
+  { label: 'Tax Invoices', href: '/admin/invoices', icon: ReceiptIndianRupee, phase: 8, permission: 'report.read', matchPrefix: true },
   {
     label: 'Ledger',
     icon: Scale,

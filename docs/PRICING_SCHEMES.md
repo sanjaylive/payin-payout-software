@@ -134,4 +134,4 @@ Payment and payout responses now include `commission` alongside `fee` and `tax`.
 
 - **Scheduled changes:** a scheme edit applies at once; there is no "effective from" date. Use a new scheme and assign it when needed.
 - **Reseller-owned schemes:** resellers keep using rate cards for their merchants.
-- **Commission on reports:** commission is not yet shown separately in settlement statements and the merchant monthly summary. It is in the ledger, payment and payout records, and pricing snapshots.
+- **Commission on reports:** each monthly tax invoice shows the commission credited that month (docs/INVOICES.md); settlement statements don't break it out yet. It is in the ledger, payment and payout records, and pricing snapshots.

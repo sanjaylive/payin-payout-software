@@ -13,6 +13,7 @@ import { RiskModule } from '../modules/risk/risk.module';
 import { ReportsModule } from '../modules/reports/reports.module';
 import { StaticQrModule } from '../modules/static-qr/static-qr.module';
 import { DisputesModule } from '../modules/disputes/disputes.module';
+import { InvoicesModule } from '../modules/invoices/invoices.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -39,6 +40,7 @@ export class JobsModule {
         ReportsModule,
         StaticQrModule,
         DisputesModule,
+        InvoicesModule,
       ],
       providers: [JobsRunner],
     };

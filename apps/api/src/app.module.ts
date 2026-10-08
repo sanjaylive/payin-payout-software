@@ -14,6 +14,7 @@ import { AuthGuard } from './modules/auth/auth.guard';
 import { StepUpGuard } from './modules/auth/step-up.guard';
 import { StaticQrModule } from './modules/static-qr/static-qr.module';
 import { DisputesModule } from './modules/disputes/disputes.module';
+import { InvoicesModule } from './modules/invoices/invoices.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthController } from './modules/health/health.controller';
 import { IamModule } from './modules/iam/iam.module';
@@ -107,6 +108,7 @@ export class AppModule implements NestModule {
         CheckoutModule,
         StaticQrModule,
         DisputesModule,
+        InvoicesModule,
       ],
       controllers: [HealthController],
       providers: [

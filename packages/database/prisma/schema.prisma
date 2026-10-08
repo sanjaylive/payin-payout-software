@@ -2926,6 +2926,63 @@ model DisputeEvidence {
   @@map("dispute_evidence")
 }
 
+/// The platform's GST registration, printed on every tax invoice (single row, id "default").
+model TaxProfile {
+  id            String   @id @default("default")
+  legalName     String   @map("legal_name") @db.VarChar(200)
+  gstin         String   @db.Char(15)
+  pan           String   @db.Char(10)
+  address       String   @db.VarChar(400)
+  stateCode     String   @map("state_code") @db.Char(2)
+  sac           String   @db.VarChar(8)
+  invoicePrefix String   @map("invoice_prefix") @db.VarChar(5)
+  footerNote    String?  @map("footer_note") @db.VarChar(500)
+  updatedById   String?  @map("updated_by_id")
+  version       Int      @default(1)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("tax_profile")
+}
+
+/// Gapless invoice serials per financial year (GST rule 46: consecutive, unique per FY).
+model InvoiceSequence {
+  financialYear String @id @map("financial_year") @db.VarChar(7)
+  lastSerial    Int    @default(0) @map("last_serial")
+
+  @@map("invoice_sequences")
+}
+
+/// A monthly GST tax invoice to a merchant for platform fees (docs/INVOICES.md). Immutable once issued.
+model Invoice {
+  id              String   @id
+  merchantId      String   @map("merchant_id")
+  number          String   @unique @db.VarChar(16)
+  financialYear   String   @map("financial_year") @db.VarChar(7)
+  /// The invoiced month (IST): [periodStart, periodEnd).
+  periodStart     DateTime @map("period_start") @db.Timestamptz(3)
+  periodEnd       DateTime @map("period_end") @db.Timestamptz(3)
+  issueDate       DateTime @map("issue_date") @db.Timestamptz(3)
+  /// Supplier (platform) and recipient (merchant) as they were at issue.
+  seller          Json
+  buyer           Json
+  placeOfSupply   String?  @map("place_of_supply") @db.Char(2)
+  interState      Boolean  @map("inter_state")
+  /// [{ code, description, sac, count, taxable_minor, tax_minor }] as strings.
+  lines           Json
+  taxableMinor    BigInt   @map("taxable_minor")
+  cgstMinor       BigInt   @map("cgst_minor")
+  sgstMinor       BigInt   @map("sgst_minor")
+  igstMinor       BigInt   @map("igst_minor")
+  totalMinor      BigInt   @map("total_minor")
+  /// For the merchant's reference: scheme commission credited in the month (not part of the invoice).
+  commissionMinor BigInt   @map("commission_minor")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([merchantId, periodStart])
+  @@index([periodStart, merchantId])
+  @@map("invoices")
+}
+
 enum WebsiteStatus {
   PENDING
   APPROVED
