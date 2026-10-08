@@ -20,6 +20,7 @@ import {
   Tags,
   Users,
   Webhook,
+  Wallet,
 } from 'lucide-react';
 
 /** Highest delivered phase — nav entries above it render roadmap placeholders. */
@@ -71,6 +72,7 @@ export const MERCHANT_NAV: NavItem[] = [
     icon: Scale,
     children: [
       { label: 'Balance', href: '/accounts/balance', phase: 3, permission: 'ledger.read' },
+      { label: 'Add Funds', href: '/accounts/add-funds', phase: 3, permission: 'fund.read' },
       { label: 'Ledger', href: '/accounts/ledger', phase: 3, permission: 'ledger.read' },
       { label: 'Fees', href: '/accounts/fees', phase: 8, permission: 'ledger.read' },
     ],
@@ -171,6 +173,7 @@ export const ADMIN_NAV: NavItem[] = [
       { label: 'Adjustments', href: '/admin/ledger/adjustments', phase: 3, permission: 'ledger.adjust.approve' },
     ],
   },
+  { label: 'Fund Requests', href: '/admin/funds', icon: Wallet, phase: 3, permission: 'fund.read' },
   { label: 'Pricing', href: '/admin/pricing', icon: Tags, phase: 5, permission: 'pricing.read', matchPrefix: true },
   {
     label: 'Risk',

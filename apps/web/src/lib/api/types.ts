@@ -951,7 +951,7 @@ export interface LoginSummary {
 
 // ---- Bell notifications -------------------------------------------------------------------------------
 
-export type InboxCategory = 'PAYMENT' | 'PAYOUT' | 'SETTLEMENT' | 'RISK' | 'SECURITY' | 'COMPLIANCE' | 'WEBHOOK' | 'REPORT' | 'SYSTEM';
+export type InboxCategory = 'PAYMENT' | 'PAYOUT' | 'SETTLEMENT' | 'RISK' | 'SECURITY' | 'COMPLIANCE' | 'WEBHOOK' | 'REPORT' | 'SYSTEM' | 'WALLET';
 export type InboxSeverity = 'INFO' | 'SUCCESS' | 'WARNING' | 'CRITICAL';
 
 export interface InboxItem {
@@ -1055,4 +1055,56 @@ export interface MerchantPricing {
   assigned: { id: string; name: string } | null;
   effective: { source: PricingSource; id: string | null; name: string | null };
   scheme: Scheme | null;
+}
+
+// ---- Wallet funds (docs/FUND_REQUESTS.md) ---------------------------------------------------------
+export interface CollectionAccount {
+  id: string;
+  kind: 'BANK' | 'UPI';
+  label: string;
+  account_holder: string | null;
+  /** Only in the merchant view (to pay into). */
+  account_number?: string;
+  account_number_masked: string | null;
+  ifsc: string | null;
+  bank_name: string | null;
+  branch: string | null;
+  account_type: 'CURRENT' | 'SAVINGS' | null;
+  upi_id: string | null;
+  payee_name: string | null;
+  min_amount: string | null;
+  max_amount: string | null;
+  instructions: string | null;
+  is_active: boolean;
+  sort_order: number;
+  version: number;
+  pending_requests?: number;
+  approved_total?: string;
+  updated_at: string;
+}
+export type FundRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export interface FundRequest {
+  id: string;
+  merchant_id: string;
+  merchant_name?: string;
+  amount: string;
+  credited_amount: string | null;
+  mode: 'UPI' | 'IMPS' | 'NEFT' | 'RTGS' | 'CASH_DEPOSIT' | 'OTHER';
+  utr: string;
+  paid_at: string;
+  remarks: string | null;
+  has_proof: boolean;
+  proof_name: string | null;
+  status: FundRequestStatus;
+  decision_note: string | null;
+  decided_at: string | null;
+  journal_id: string | null;
+  account: { id: string; kind: 'BANK' | 'UPI'; label: string; upi_id: string | null; account_number_masked: string | null };
+  created_at: string;
+}
+export interface FundSummary {
+  pending_count: number;
+  pending_amount: string;
+  approved_today_count: number;
+  approved_today_amount: string;
 }

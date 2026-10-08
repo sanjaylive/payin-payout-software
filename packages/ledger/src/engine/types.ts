@@ -30,10 +30,11 @@ export const JOURNAL_TYPES = [
   'COMMISSION_PAYOUT',
   'PROVIDER_CHARGE',
   'REVERSAL',
+  'FUND_LOAD',
 ] as const;
 export type JournalType = (typeof JOURNAL_TYPES)[number];
 
-export type SourceType = 'PAYMENT' | 'PAYOUT' | 'REFUND' | 'SETTLEMENT' | 'CHARGEBACK' | 'ADJUSTMENT' | 'PROVIDER' | 'RISK' | 'JOURNAL' | 'SYSTEM';
+export type SourceType = 'PAYMENT' | 'PAYOUT' | 'REFUND' | 'SETTLEMENT' | 'CHARGEBACK' | 'ADJUSTMENT' | 'PROVIDER' | 'RISK' | 'JOURNAL' | 'SYSTEM' | 'FUND_REQUEST';
 
 export interface AccountSpec {
   code: string;

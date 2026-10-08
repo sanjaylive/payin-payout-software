@@ -35,6 +35,7 @@ import { InboxModule } from './modules/inbox/inbox.module';
 import { StorageSettingsModule } from './modules/storage/storage-settings.module';
 import { SchemesModule } from './modules/schemes/schemes.module';
 import { BrandModule } from './modules/brand/brand.module';
+import { FundsModule } from './modules/funds/funds.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { SalesModule } from './modules/sales/sales.module';
 
@@ -96,6 +97,7 @@ export class AppModule implements NestModule {
         StorageSettingsModule,
         SchemesModule,
         BrandModule,
+        FundsModule,
       ],
       controllers: [HealthController],
       providers: [

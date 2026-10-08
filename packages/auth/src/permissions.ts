@@ -54,6 +54,10 @@ export const PERMISSIONS = {
   'ledger.adjust': { description: 'Create manual adjustment requests (maker)', scopes: P },
   'ledger.adjust.approve': { description: 'Approve manual adjustments (checker)', scopes: P },
 
+  'fund.read': { description: 'View wallet fund requests', scopes: ['PLATFORM', 'MERCHANT'] },
+  'fund.request': { description: 'Request a wallet top-up (pay, then submit the UTR)', scopes: ['MERCHANT'] },
+  'fund.approve': { description: 'Approve or reject wallet fund requests', scopes: P },
+
   'settlement.read': { description: 'View settlements', scopes: ALL },
   'settlement.process': { description: 'Generate and process settlements', scopes: P },
   'settlement.hold': { description: 'Place and release settlement holds', scopes: P },

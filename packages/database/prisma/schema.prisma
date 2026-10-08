@@ -802,6 +802,8 @@ enum JournalType {
   COMMISSION_ACCRUAL
   PROVIDER_CHARGE
   REVERSAL
+  /// Merchant wallet top-up approved from a fund request.
+  FUND_LOAD
 }
 
 enum JournalSourceType {
@@ -815,6 +817,7 @@ enum JournalSourceType {
   RISK
   JOURNAL
   SYSTEM
+  FUND_REQUEST
 }
 
 enum AdjustmentDirection {
@@ -2527,6 +2530,7 @@ enum InboxCategory {
   WEBHOOK
   REPORT
   SYSTEM
+  WALLET
 }
 
 enum InboxSeverity {
@@ -2663,4 +2667,82 @@ model BrandAsset {
   updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@map("brand_assets")
+}
+
+enum CollectionAccountKind {
+  BANK
+  UPI
+}
+
+/// Where merchants send money to load their wallet (docs/FUND_REQUESTS.md). Managed by super admins.
+model CollectionAccount {
+  id                     String                @id
+  kind                   CollectionAccountKind
+  label                  String                @db.VarChar(80)
+  accountHolder          String?               @map("account_holder") @db.VarChar(120)
+  /// AES-256-GCM, AAD = collection-account:<id>. Shown in full only to merchants loading funds.
+  accountNumberEncrypted String?               @map("account_number_encrypted")
+  accountNumberLast4     String?               @map("account_number_last4") @db.Char(4)
+  ifsc                   String?               @db.Char(11)
+  bankName               String?               @map("bank_name") @db.VarChar(80)
+  branch                 String?               @db.VarChar(120)
+  accountType            String?               @map("account_type") @db.VarChar(10)
+  upiId                  String?               @map("upi_id") @db.VarChar(100)
+  payeeName              String?               @map("payee_name") @db.VarChar(100)
+  minAmountMinor         BigInt?               @map("min_amount_minor")
+  maxAmountMinor         BigInt?               @map("max_amount_minor")
+  instructions           String?               @db.VarChar(300)
+  isActive               Boolean               @default(true) @map("is_active")
+  sortOrder              Int                   @default(100) @map("sort_order")
+  version                Int                   @default(1)
+  createdById            String?               @map("created_by_id")
+  createdAt              DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  requests FundRequest[]
+
+  @@index([isActive, sortOrder])
+  @@map("collection_accounts")
+}
+
+enum FundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// A merchant's claim that it paid into a collection account; approval credits its AVAILABLE balance.
+model FundRequest {
+  id                  String            @id
+  merchantId          String            @map("merchant_id")
+  collectionAccountId String            @map("collection_account_id")
+  amountMinor         BigInt            @map("amount_minor")
+  /// UPI / IMPS / NEFT / RTGS / CASH_DEPOSIT / OTHER
+  mode                String            @db.VarChar(20)
+  /// Bank or UPI reference, upper-cased; unique among pending and approved requests.
+  utr                 String            @db.VarChar(30)
+  paidAt              DateTime          @map("paid_at") @db.Timestamptz(3)
+  remarks             String?           @db.VarChar(300)
+  /// Optional payment screenshot in file storage (encrypted like every stored file).
+  proofKey            String?           @map("proof_key") @db.VarChar(300)
+  proofName           String?           @map("proof_name") @db.VarChar(160)
+  proofType           String?           @map("proof_type") @db.VarChar(40)
+  status              FundRequestStatus @default(PENDING)
+  /// What was actually credited (an approver may correct it to the amount the bank shows).
+  creditedAmountMinor BigInt?           @map("credited_amount_minor")
+  decidedById         String?           @map("decided_by_id")
+  decidedAt           DateTime?         @map("decided_at") @db.Timestamptz(3)
+  decisionNote        String?           @map("decision_note") @db.VarChar(300)
+  journalId           String?           @unique @map("journal_id")
+  createdById         String            @map("created_by_id")
+  version             Int               @default(1)
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  collectionAccount CollectionAccount @relation(fields: [collectionAccountId], references: [id], onDelete: Restrict)
+
+  @@index([status, createdAt(sort: Desc)])
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@map("fund_requests")
 }

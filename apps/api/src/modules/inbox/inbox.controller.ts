@@ -12,7 +12,7 @@ import { InboxService } from './inbox.service';
 
 const listSchema = paginationQuerySchema.extend({
   unread: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
-  category: z.enum(['PAYMENT', 'PAYOUT', 'SETTLEMENT', 'RISK', 'SECURITY', 'COMPLIANCE', 'WEBHOOK', 'REPORT', 'SYSTEM']).optional(),
+  category: z.enum(['PAYMENT', 'PAYOUT', 'SETTLEMENT', 'RISK', 'SECURITY', 'COMPLIANCE', 'WEBHOOK', 'REPORT', 'SYSTEM', 'WALLET']).optional(),
 });
 const notificationId = new ZodValidationPipe(idSchema('inb'));
 

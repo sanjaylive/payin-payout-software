@@ -41,6 +41,8 @@ export const ID_PREFIXES = {
   pricingSnapshot: 'tps',
   scheme: 'sch',
   schemeRate: 'scr',
+  collectionAccount: 'cac',
+  fundRequest: 'fnd',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

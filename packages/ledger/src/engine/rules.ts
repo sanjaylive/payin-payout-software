@@ -34,6 +34,8 @@ const RULES: Partial<Record<JournalType, Rule>> = {
   PAYOUT_REVERSAL: { allowedMerchantLegs: [C('AVAILABLE')], allowedPlatform: ['platform:provider:', 'platform:FEE_REVENUE', 'platform:GST_PAYABLE', 'platform:MERCHANT_COMMISSION'] },
   LIEN_PLACE: { allowedMerchantLegs: [D('AVAILABLE'), D('UNSETTLED'), C('LIEN')], allowedPlatform: [] },
   LIEN_RELEASE: { exactMerchantLegs: [D('LIEN'), C('AVAILABLE')], allowedPlatform: [] },
+  // Wallet top-up: money received in a platform collection account, credited to the merchant.
+  FUND_LOAD: { exactMerchantLegs: [C('AVAILABLE')], allowedPlatform: ['platform:bank:'] },
   ADJUSTMENT_CREDIT: { exactMerchantLegs: [C('AVAILABLE')], allowedPlatform: ['platform:ADJUSTMENT_SUSPENSE'] },
   ADJUSTMENT_DEBIT: { exactMerchantLegs: [D('AVAILABLE')], allowedPlatform: ['platform:ADJUSTMENT_SUSPENSE'] },
   // A refund also takes back the payment's share of scheme commission.

@@ -115,6 +115,7 @@ Each account has a `normal_balance`. **ASSET** and **EXPENSE** accounts are DEBI
 | --- | --- | --- | --- | --- |
 | `platform:provider:<prv>:CLEARING` | CLEARING | DR | No (aggregated) | What a provider owes us (payins) or we have pre-funded with it (payouts). One per provider. |
 | `platform:bank:<bank_acct_id>` | ASSET | DR | No | Settlement and escrow bank account. **Configurable:** this may be a partner bank's nodal/escrow account held for merchants rather than a Pay2All-owned account. The account's `metadata.legal_holder` records which. |
+| `platform:bank:<collection account id>` | ASSET | DR | No | Fund accounts merchants pay into to load their wallet; debited by `FUND_LOAD` (docs/FUND_REQUESTS.md). |
 | `platform:FEE_REVENUE` | REVENUE | CR | No | Merchant fees earned. |
 | `platform:GST_PAYABLE` | LIABILITY | CR | No | Output GST collected on fees. |
 | `platform:PROVIDER_COST` | EXPENSE | DR | No | Provider MDR and payout charges. |

@@ -21,6 +21,7 @@ import {
   type LucideIcon,
   ShieldAlert,
   ShieldCheck,
+  Wallet,
   Webhook,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
@@ -42,6 +43,7 @@ const ICONS: Record<InboxCategory, LucideIcon> = {
   WEBHOOK: Webhook,
   REPORT: FileSpreadsheet,
   SYSTEM: Info,
+  WALLET: Wallet,
 };
 
 const TONE: Record<InboxSeverity, string> = {
