@@ -1,4 +1,5 @@
 import {
+  Activity,
   ArrowDownToLine,
   ArrowUpFromLine,
   Building2,
@@ -46,6 +47,7 @@ export interface NavItem extends Partial<NavLeaf> {
 
 export const MERCHANT_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, phase: 1 },
+  { label: 'Analytics', href: '/analytics', icon: Activity, phase: 10, permission: 'report.read' },
   {
     label: 'Payin',
     icon: ArrowDownToLine,
@@ -114,6 +116,7 @@ export const MERCHANT_NAV: NavItem[] = [
 
 export const RESELLER_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/reseller', icon: LayoutDashboard, phase: 1 },
+  { label: 'Analytics', href: '/reseller/analytics', icon: Activity, phase: 10, permission: 'report.read' },
   { label: 'Merchants', href: '/reseller/merchants', icon: Building2, phase: 1, permission: 'merchant.read' },
   { label: 'Payin', href: '/reseller/payin', icon: ArrowDownToLine, phase: 5, permission: 'payin.read' },
   { label: 'Payout', href: '/reseller/payout', icon: ArrowUpFromLine, phase: 6, permission: 'payout.read' },
@@ -150,6 +153,7 @@ export const PARTNER_NAV: NavItem[] = [
 
 export const ADMIN_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard, phase: 1 },
+  { label: 'Analytics', href: '/admin/analytics', icon: Activity, phase: 10, permission: 'report.read' },
   {
     label: 'Merchants',
     icon: Building2,
