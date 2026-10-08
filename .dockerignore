@@ -1,0 +1,20 @@
+# Build context for infra/deploy/Dockerfile: source only, never secrets or local state.
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/generated
+.git
+.env
+.env.*
+!.env.example
+**/*.log
+.storage
+load/k6/results
+load/k6/.loadtest.env
+apps/web/public/downloads
+deploy.env
+.idea
+.vscode

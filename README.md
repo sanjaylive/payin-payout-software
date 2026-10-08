@@ -39,10 +39,11 @@ Platform and reseller users must enroll TOTP on first sign-in (`AUTH_ENFORCE_MFA
 | `pnpm test:integration` | API integration tests (uses `pay2all_test` DB + Redis DB 1, rebuilt per run) |
 | `pnpm prisma:validate` / `pnpm prisma:migrate` | Schema validation / dev migrations |
 | `pnpm build` | Production builds |
+| `npm run deploy` | Deploy `main` to the server in `deploy.env` (https://py.2all.co.in), see [Deployment](docs/DEPLOYMENT.md) |
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [Ledger](docs/LEDGER.md) · [Payin flow](docs/PAYIN_FLOW.md) · [Payout flow](docs/PAYOUT_FLOW.md) · [Roadmap](docs/ROADMAP.md)
+[Architecture](docs/ARCHITECTURE.md) · [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [Ledger](docs/LEDGER.md) · [Payin flow](docs/PAYIN_FLOW.md) · [Payout flow](docs/PAYOUT_FLOW.md) · [Deployment](docs/DEPLOYMENT.md) · [Roadmap](docs/ROADMAP.md)
 
 ## Regulatory note
 

@@ -26,7 +26,8 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:status": "prisma migrate status",
     "db:seed": "tsx prisma/seed.ts",
-    "db:sync-rbac": "tsx prisma/sync-rbac.ts"
+    "db:sync-rbac": "tsx prisma/sync-rbac.ts",
+    "db:bootstrap": "tsx prisma/bootstrap.ts"
   },
   "dependencies": {
     "@pay2all/auth": "workspace:*",

@@ -23,3 +23,6 @@ load/k6/results/
 
 # Plugin zips are build output (apps/web/scripts/build-plugins.mjs).
 apps/web/public/downloads/
+
+# Deployment target (scripts/deploy.sh); never commit server details or secrets.
+deploy.env
