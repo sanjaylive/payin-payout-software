@@ -98,7 +98,8 @@ describe('messaging services', () => {
     const n = await ctx.prisma.notification.findUniqueOrThrow({ where: { id: res.body.data.notification_id } });
     expect(n).toMatchObject({ channel: 'EMAIL', template: 'test', targetServiceId: ses.service_id, recipientMasked: 'o***@pay2all.in', status: 'QUEUED' });
     const content = JSON.parse(ctx.app.get(FieldEncryptor).decrypt(n.contentEncrypted!, notificationAad(n.id))) as { to: string; subject: string };
-    expect(content).toMatchObject({ to: 'ops@pay2all.in', subject: 'Pay2All test message' });
+    // brand.e2e-spec may rename the platform brand meanwhile, so don't pin the product name.
+    expect(content).toMatchObject({ to: 'ops@pay2all.in', subject: expect.stringMatching(/ test message$/) });
   });
 
   it('SMS test sends need an international mobile number and are masked in the log', async () => {

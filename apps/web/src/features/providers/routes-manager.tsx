@@ -20,6 +20,7 @@ import { api, ApiError } from '@/lib/api/client';
 import { errorMessage, toTableError } from '@/lib/api/errors';
 import type { ProviderRoute, ProviderRow, RoutingSimulation } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
+import { RoutingStrategy } from './routing-strategy';
 
 const METHODS = { PAYIN: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK', 'UPI_STATIC_QR'], PAYOUT: ['IMPS', 'NEFT', 'RTGS', 'UPI'] } as const;
 const ANY = '__any__';
@@ -149,8 +150,8 @@ function Simulator({ service }: { service: 'PAYIN' | 'PAYOUT' }) {
         {result && (
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="font-medium">Attempt order:</span>
-              {result.candidates.length === 0 ? <StatusBadge status="NO PROVIDER AVAILABLE" tone="danger" /> : result.candidates.map((c) => <StatusBadge key={c.provider_code} status={`${c.order}. ${c.provider_code}${c.degraded ? ' (degraded)' : ''}`} tone={c.order === 1 ? 'success' : 'neutral'} />)}
+              <span className="font-medium">Attempt order{result.strategy === 'SCORE' ? ' (by score)' : ''}:</span>
+              {result.candidates.length === 0 ? <StatusBadge status="NO PROVIDER AVAILABLE" tone="danger" /> : result.candidates.map((c) => <StatusBadge key={c.provider_code} status={`${c.order}. ${c.provider_code}${c.score !== null ? ` · ${(c.score * 100).toFixed(1)}%` : ''}${c.explored ? ' (exploring)' : ''}${c.degraded ? ' (degraded)' : ''}`} tone={c.order === 1 ? 'success' : 'neutral'} />)}
             </div>
             <ul className="divide-y rounded-lg border">
               {result.evaluations.map((e) => (
@@ -201,6 +202,7 @@ export function RoutesManager() {
           { id: 'a', header: '', align: 'right', cell: (r) => (can('routing.manage') ? <Button variant="ghost" size="icon" aria-label="Edit route" onClick={() => setEditing(r)}><Pencil /></Button> : null) },
         ]}
       />
+      <RoutingStrategy key={service} service={service} methods={METHODS[service]} />
       <Simulator key={service} service={service} />
       {editing && <RouteDialog key={editing === 'new' ? 'new' : editing.id} service={service} route={editing === 'new' ? null : editing} open onOpenChange={(o) => !o && setEditing(null)} />}
     </div>

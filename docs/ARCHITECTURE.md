@@ -245,6 +245,7 @@ interface PayoutProvider { createPayout; getPayoutStatus; verifyBeneficiary; get
 - **Rule criteria:** merchant, reseller, payin method or payout mode, amount slab, risk category, and an IST time window (which may cross midnight).
 - **Exclusions:** providers in DOWN, MAINTENANCE or DISABLED; providers that don't support the method; amounts outside the provider's limits; and providers of the wrong kind.
 - **Ordering:** tier (PRIMARY → SECONDARY → FALLBACK), then healthy before DEGRADED, then specificity (merchant > reseller > global), then priority. Ties break on success rate, then cost, then p95 latency.
+- **SCORE strategy (optional, per service):** PRIMARY and SECONDARY are ranked together by smoothed recent conversion × API health, with a small exploration share. See docs/ROUTING.md.
 - **One candidate per provider.**
 - **Explanations:** every rule records why it matched or was skipped. `POST /v1/routing/simulate` exposes this to operators.
 

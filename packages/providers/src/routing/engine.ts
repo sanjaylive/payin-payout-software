@@ -52,6 +52,26 @@ export interface Candidate {
   tier: RouteTier;
   priority: number;
   degraded: boolean;
+  /** SCORE strategy: smoothed conversion × API success rate, 0–1. */
+  score?: number;
+  /** SCORE strategy: moved to the front by exploration to keep its statistics fresh. */
+  explored?: boolean;
+}
+
+/**
+ * PRIORITY: tiers in order, then rule priority (success rate only breaks ties).
+ * SCORE: PRIMARY and SECONDARY form one pool ranked by score; FALLBACK stays last resort and a
+ * merchant- or reseller-specific rule still beats a generic one (docs/ROUTING.md).
+ */
+export type RoutingStrategy = 'PRIORITY' | 'SCORE';
+
+export interface RoutingOptions {
+  strategy?: RoutingStrategy;
+  /** Smoothed recent conversion per provider id (0–1); missing = no opinion (1). */
+  conversion?: ReadonlyMap<string, number>;
+  /** Share of decisions (0–1) that try the runner-up first. */
+  explore?: number;
+  random?: () => number;
 }
 
 export interface RouteEvaluation {
@@ -96,10 +116,11 @@ export function inTimeWindow(window: RouteRule['timeWindow'], at: Date): boolean
 const specificity = (r: RouteRule) => (r.merchantId ? 2 : r.resellerId ? 1 : 0);
 const num = (v: string | number | undefined) => (v === undefined ? undefined : BigInt(v));
 
-export function decideRoute(rules: RouteRule[], providers: ProviderInfo[], req: RoutingRequest): RoutingDecision {
+export function decideRoute(rules: RouteRule[], providers: ProviderInfo[], req: RoutingRequest, opts: RoutingOptions = {}): RoutingDecision {
+  const scored = opts.strategy === 'SCORE';
   const byId = new Map(providers.map((p) => [p.id, p]));
   const evaluations: RouteEvaluation[] = [];
-  const eligible: (Candidate & { specificity: number; successRate: number; cost: bigint; p95: number })[] = [];
+  const eligible: (Candidate & { specificity: number; successRate: number; cost: bigint; p95: number; score: number })[] = [];
 
   for (const rule of rules) {
     const provider = byId.get(rule.providerId);
@@ -143,6 +164,7 @@ export function decideRoute(rules: RouteRule[], providers: ProviderInfo[], req: 
         successRate: provider.health?.successRate ?? 1,
         cost: num(req.service === 'PAYIN' ? provider.costs.payin_rate_micros : provider.costs.payout_flat_minor) ?? 0n,
         p95: provider.health?.p95LatencyMs ?? 0,
+        score: (opts.conversion?.get(provider.id) ?? 1) * (provider.health?.successRate ?? 1),
       });
       evaluations.push({ routeId: rule.id, routeName: rule.name, providerCode: provider.code, tier: rule.tier, selected: true, reasons });
     } else {
@@ -150,24 +172,60 @@ export function decideRoute(rules: RouteRule[], providers: ProviderInfo[], req: 
     }
   }
 
-  eligible.sort(
-    (a, b) =>
-      TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
+  const pool = (t: RouteTier) => (t === 'FALLBACK' ? 1 : 0);
+  eligible.sort((a, b) =>
+    scored
+      ? pool(a.tier) - pool(b.tier) ||
+        Number(a.degraded) - Number(b.degraded) ||
+        b.specificity - a.specificity ||
+        b.score - a.score ||
+        a.priority - b.priority ||
+        (a.cost < b.cost ? -1 : a.cost > b.cost ? 1 : 0)
+      : TIER_ORDER[a.tier] - TIER_ORDER[b.tier] ||
       Number(a.degraded) - Number(b.degraded) ||
       b.specificity - a.specificity ||
       a.priority - b.priority ||
       b.successRate - a.successRate ||
       (a.cost < b.cost ? -1 : a.cost > b.cost ? 1 : 0) ||
-      a.p95 - b.p95,
+        a.p95 - b.p95,
   );
 
   // One candidate per provider (the best-ranked rule wins).
   const seen = new Set<string>();
-  const candidates: Candidate[] = [];
+  const ranked: typeof eligible = [];
   for (const c of eligible) {
     if (seen.has(c.providerId)) continue;
     seen.add(c.providerId);
-    candidates.push({ routeId: c.routeId, routeName: c.routeName, providerId: c.providerId, providerCode: c.providerCode, tier: c.tier, priority: c.priority, degraded: c.degraded });
+    ranked.push(c);
   }
+
+  // Exploration: occasionally try the runner-up first, but only between true peers (same pool,
+  // both healthy, same specificity), so a pinned or fallback provider is never promoted.
+  let explored = false;
+  const [first, second] = ranked;
+  if (scored && first && second && (opts.explore ?? 0) > 0 && pool(first.tier) === pool(second.tier) && !first.degraded && !second.degraded && first.specificity === second.specificity && (opts.random ?? Math.random)() < opts.explore!) {
+    ranked[0] = second;
+    ranked[1] = first;
+    explored = true;
+  }
+
+  const candidates: Candidate[] = ranked.map((c, i) => ({
+    routeId: c.routeId,
+    routeName: c.routeName,
+    providerId: c.providerId,
+    providerCode: c.providerCode,
+    tier: c.tier,
+    priority: c.priority,
+    degraded: c.degraded,
+    ...(scored ? { score: Math.round(c.score * 10_000) / 10_000, ...(explored && i === 0 ? { explored: true } : {}) } : {}),
+  }));
   return { candidates, evaluations };
+}
+
+/**
+ * Recent conversion shrunk towards a prior: (success + weight·prior) / (completed + weight). With few
+ * completed transactions the score stays near the prior, so a gateway is never judged on a handful.
+ */
+export function smoothedConversion(success: number, failed: number, prior: number, weight: number): number {
+  return (success + weight * prior) / (success + failed + weight);
 }

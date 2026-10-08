@@ -7,6 +7,8 @@ import {
   providerCredentialsSchema,
   providerStatusSchema,
   routeSchema,
+  routingPolicySchema,
+  routingScoresQuerySchema,
   simulateRouteSchema,
   updateProviderSchema,
 } from '@pay2all/validation';
@@ -110,6 +112,28 @@ export class ProvidersController {
   @ApiZodBody(routeSchema)
   updateRoute(@CurrentActor() actor: Actor, @Param('id', routeIdPipe) id: string, @Body(new ZodValidationPipe(routeSchema)) body: z.output<typeof routeSchema>) {
     return this.routing.update(actor, id, body);
+  }
+
+  @Get('routing/policies')
+  @RequirePermissions('provider.read')
+  policies() {
+    return this.routing.listPolicies();
+  }
+
+  @Put('routing/policies/:service')
+  @RequirePermissions('routing.manage')
+  @RequireStepUp()
+  @ApiOperation({ summary: 'Set the routing strategy (PRIORITY or SCORE) for payins or payouts' })
+  @ApiZodBody(routingPolicySchema)
+  savePolicy(@CurrentActor() actor: Actor, @Param('service', new ZodValidationPipe(z.enum(['PAYIN', 'PAYOUT']))) service: 'PAYIN' | 'PAYOUT', @Body(new ZodValidationPipe(routingPolicySchema)) body: z.output<typeof routingPolicySchema>) {
+    return this.routing.savePolicy(actor, service, body);
+  }
+
+  @Get('routing/scores')
+  @RequirePermissions('provider.read')
+  @ApiZodQuery(routingScoresQuerySchema)
+  scores(@Query(new ZodValidationPipe(routingScoresQuerySchema)) q: z.output<typeof routingScoresQuerySchema>) {
+    return this.routing.scores(q);
   }
 
   @Post('routing/simulate')

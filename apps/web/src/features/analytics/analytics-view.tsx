@@ -36,7 +36,8 @@ interface Analytics {
 
 const LIVE_REFRESH_MS = 30_000;
 const METHOD_LABELS: Record<string, string> = { UPI_QR: 'UPI QR', UPI_INTENT: 'UPI intent', UPI_STATIC_QR: 'Static QR', PAYMENT_LINK: 'Payment link', VIRTUAL_ACCOUNT: 'Virtual account', CARD: 'Card', NETBANKING: 'Netbanking' };
-const pct = (r: number | null) => (r === null ? '—' : `${(r * 100).toFixed(1)}%`);
+/** Two decimals near the top so 99.997% never reads as a perfect 100.0%. */
+const pct = (r: number | null) => (r === null ? '—' : r === 1 ? '100%' : `${(Math.floor(r * (r >= 0.99 ? 10_000 : 1_000)) / (r >= 0.99 ? 100 : 10)).toFixed(r >= 0.99 ? 2 : 1)}%`);
 const hourLabel = (h: number) => `${String(h).padStart(2, '0')}:00`;
 
 /** Analytics (docs/ANALYTICS.md): success rate by method and gateway, failure reasons, peak hours. */

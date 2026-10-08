@@ -392,7 +392,8 @@ export interface ProviderRoute {
 }
 
 export interface RoutingSimulation {
-  candidates: { order: number; provider_code: string; route_name: string; tier: string; degraded: boolean }[];
+  strategy: 'PRIORITY' | 'SCORE';
+  candidates: { order: number; provider_code: string; route_name: string; tier: string; degraded: boolean; score: number | null; explored: boolean }[];
   evaluations: { route_id: string; route_name: string; provider_code: string; tier: string; selected: boolean; reasons: string[] }[];
 }
 

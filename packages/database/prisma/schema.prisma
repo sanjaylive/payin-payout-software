@@ -1158,6 +1158,28 @@ model ProviderRoute {
 }
 
 /// Periodic health snapshot (the live window lives in Redis).
+enum RoutingStrategy {
+  PRIORITY
+  SCORE
+}
+
+/// How candidates are ordered per service (docs/ROUTING.md). No row = PRIORITY.
+model RoutingPolicy {
+  service        ServiceType     @id
+  strategy       RoutingStrategy @default(PRIORITY)
+  /// Look-back for conversion, minutes (5–1440).
+  windowMinutes  Int             @default(60) @map("window_minutes")
+  /// Prior weight: completed transactions needed before a gateway's own rate dominates (1–1000).
+  minSamples     Int             @default(20) @map("min_samples")
+  /// Share of decisions that try the runner-up first, percent (0–20).
+  explorePercent Int             @default(5) @map("explore_percent")
+  version        Int             @default(1)
+  updatedById    String?         @map("updated_by_id")
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("routing_policies")
+}
+
 model ProviderHealthSnapshot {
   id            String         @id
   providerId    String         @map("provider_id")
@@ -1357,6 +1379,7 @@ model Payment {
   @@index([resellerId, createdAt(sort: Desc)])
   @@index([status, createdAt])
   @@index([providerId, createdAt])
+  @@index([providerId, method, createdAt])
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("payments")
 }
@@ -1753,6 +1776,7 @@ model Payout {
   @@index([beneficiaryId, createdAt])
   @@index([bulkBatchId])
   @@index([resellerId, createdAt(sort: Desc)])
+  @@index([providerId, mode, createdAt])
   @@index([createdAt(sort: Desc), id(sort: Desc)])
   @@map("payouts")
 }

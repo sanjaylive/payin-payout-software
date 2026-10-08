@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ProviderError } from '../interfaces/errors';
-import { type Candidate, decideRoute, inTimeWindow, type ProviderInfo, type RouteRule, type RoutingRequest } from './engine';
+import { type Candidate, decideRoute, inTimeWindow, type ProviderInfo, type RouteRule, type RoutingRequest, smoothedConversion } from './engine';
 import { executeWithFailover, FailoverStoppedError, NoProviderAvailableError } from './failover';
 
 const p = (id: string, over: Partial<ProviderInfo> = {}): ProviderInfo => ({ id, code: id, kind: 'BOTH', status: 'ACTIVE', capabilities: {}, costs: {}, ...over });
@@ -134,5 +134,42 @@ describe('failover executor', () => {
     };
     await expect(executeWithFailover(cands, refuse)).rejects.toBeInstanceOf(NoProviderAvailableError);
     await expect(executeWithFailover([], refuse)).rejects.toThrow(/No eligible provider/);
+  });
+});
+
+describe('routing engine: SCORE strategy', () => {
+  const rules = [rule('a', 'p1', { priority: 1 }), rule('b', 'p2', { tier: 'SECONDARY', priority: 1 }), rule('c', 'p3', { priority: 50 }), rule('f', 'p4', { tier: 'FALLBACK' })];
+  const providers = [p('p1'), p('p2'), p('p3'), p('p4')];
+  const conversion = new Map([['p1', 0.7], ['p2', 0.95], ['p3', 0.9], ['p4', 0.99]]);
+
+  it('ranks PRIMARY and SECONDARY together by score; FALLBACK stays last whatever its score', () => {
+    expect(codes(decideRoute(rules, providers, req()).candidates)).toEqual(['p1', 'p3', 'p2', 'p4']);
+    const d = decideRoute(rules, providers, req(), { strategy: 'SCORE', conversion });
+    expect(codes(d.candidates)).toEqual(['p2', 'p3', 'p1', 'p4']);
+    expect(d.candidates.map((c) => c.score)).toEqual([0.95, 0.9, 0.7, 0.99]);
+  });
+
+  it('multiplies conversion by API health, keeps degraded providers behind healthy ones and pinned rules first', () => {
+    const health = [p('p1'), p('p2', { health: { successRate: 0.5, p95LatencyMs: null } }), p('p3'), p('p4')];
+    expect(codes(decideRoute(rules, health, req(), { strategy: 'SCORE', conversion }).candidates)).toEqual(['p3', 'p1', 'p2', 'p4']);
+    const degraded = [p('p1'), p('p2', { status: 'DEGRADED' }), p('p3'), p('p4')];
+    expect(codes(decideRoute(rules, degraded, req(), { strategy: 'SCORE', conversion }).candidates)).toEqual(['p3', 'p1', 'p2', 'p4']);
+    const pinned = [...rules, rule('m', 'p1', { merchantId: 'mA' })];
+    expect(codes(decideRoute(pinned, providers, req(), { strategy: 'SCORE', conversion }).candidates)[0]).toBe('p1');
+  });
+
+  it('explores: swaps the top two peers for a share of decisions, never promoting a fallback', () => {
+    const d = decideRoute(rules, providers, req(), { strategy: 'SCORE', conversion, explore: 0.05, random: () => 0.01 });
+    expect(codes(d.candidates)).toEqual(['p3', 'p2', 'p1', 'p4']);
+    expect(d.candidates[0]).toMatchObject({ explored: true });
+    expect(codes(decideRoute(rules, providers, req(), { strategy: 'SCORE', conversion, explore: 0.05, random: () => 0.5 }).candidates)[0]).toBe('p2');
+    const onePlusFallback = [rule('a', 'p1'), rule('f', 'p4', { tier: 'FALLBACK' })];
+    expect(codes(decideRoute(onePlusFallback, providers, req(), { strategy: 'SCORE', conversion, explore: 1, random: () => 0 }).candidates)).toEqual(['p1', 'p4']);
+  });
+
+  it('smooths conversion towards the prior when there is little data', () => {
+    expect(smoothedConversion(1, 0, 0.8, 20)).toBeCloseTo(0.8095, 4);
+    expect(smoothedConversion(900, 100, 0.8, 20)).toBeCloseTo(0.8980, 4);
+    expect(smoothedConversion(0, 0, 0.8, 20)).toBe(0.8);
   });
 });

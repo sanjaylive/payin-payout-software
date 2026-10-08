@@ -100,3 +100,17 @@ export const saveGatewaySchema = z.strictObject({
 });
 export const gatewayToggleSchema = z.strictObject({ enabled: z.boolean(), reason: z.string().trim().min(5).max(300) });
 export const gatewayRemoveCredentialsSchema = z.strictObject({ environment: z.enum(['TEST', 'LIVE']), reason: z.string().trim().min(5).max(300) });
+
+/** Smart routing policy for one service (docs/ROUTING.md). */
+export const routingPolicySchema = z.strictObject({
+  strategy: z.enum(['PRIORITY', 'SCORE']),
+  window_minutes: z.int().min(5).max(1440).default(60),
+  min_samples: z.int().min(1).max(1000).default(20),
+  explore_percent: z.int().min(0).max(20).default(5),
+  reason: z.string().trim().min(5).max(300),
+});
+
+export const routingScoresQuerySchema = z.strictObject({
+  service: z.enum(['PAYIN', 'PAYOUT']),
+  method: z.string().regex(/^[A-Z_]{3,30}$/),
+});
