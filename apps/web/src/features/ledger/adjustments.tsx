@@ -14,17 +14,17 @@ import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-quer
 import { Check, Loader2, Plus, X } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MerchantCombobox } from '@/components/common/merchant-combobox';
 import { FormField } from '@/components/common/form-field';
 import { api, ApiError } from '@/lib/api/client';
 import { errorMessage, toTableError } from '@/lib/api/errors';
-import type { LedgerAdjustment, MerchantSummary } from '@/lib/api/types';
+import type { LedgerAdjustment } from '@/lib/api/types';
 import { useCan, useMe } from '@/lib/auth/use-me';
 import { useCursorPagination } from '@/lib/hooks/use-cursor-pagination';
 import { fmt } from './format';
 
 function NewAdjustmentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
-  const merchants = useQuery({ queryKey: ['merchants', 'approved-options'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { status: 'APPROVED,SUSPENDED', limit: 100 }), enabled: open });
   const [form, setForm] = useState({ merchant_id: '', direction: 'CREDIT', amount: '', reason: '', reference: '', supporting_note: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -57,10 +57,7 @@ function NewAdjustmentDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5 sm:col-span-2">
             <Label>Merchant</Label>
-            <Select value={form.merchant_id} onValueChange={set('merchant_id')}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select merchant" /></SelectTrigger>
-              <SelectContent>{merchants.data?.data.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-            </Select>
+            <MerchantCombobox value={form.merchant_id || null} onChange={(m) => set('merchant_id')(m?.id ?? '')} status="APPROVED,SUSPENDED" />
           </div>
           <div className="space-y-1.5">
             <Label>Direction</Label>

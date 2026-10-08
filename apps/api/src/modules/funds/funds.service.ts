@@ -202,6 +202,10 @@ export class FundsService {
     if ((await this.prisma.fundRequest.count({ where: { merchantId, status: 'PENDING' } })) >= MAX_OPEN_PER_MERCHANT) {
       throw new AppError(ErrorCode.RATE_LIMITED, `You have ${MAX_OPEN_PER_MERCHANT} requests waiting; wait for them to be reviewed`);
     }
+    // A UTR is claimable once, for ever (unique index). Say so before inserting; tell a merchant about
+    // its own earlier claim, but reveal nothing about another merchant's.
+    const earlier = await this.prisma.fundRequest.findUnique({ where: { utr: input.utr }, select: { merchantId: true, status: true, createdAt: true } });
+    if (earlier) throw this.duplicateUtr(input.utr, earlier.merchantId === merchantId ? earlier : null);
     const id = newId('fundRequest');
     try {
       const created = await this.prisma.$transaction(async (tx) => {
@@ -229,9 +233,14 @@ export class FundsService {
       });
       return this.presentRequest(created);
     } catch (err) {
-      if (isUniqueViolation(err)) throw new AppError(ErrorCode.CONFLICT, 'This UTR has already been submitted', [{ path: 'utr', message: 'Already submitted' }]);
+      if (isUniqueViolation(err)) throw this.duplicateUtr(input.utr, null);
       throw err;
     }
+  }
+
+  private duplicateUtr(utr: string, own: { status: string; createdAt: Date } | null) {
+    const when = own ? ` on ${own.createdAt.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })} (${own.status.toLowerCase()})` : '';
+    return new AppError(ErrorCode.CONFLICT, `UTR ${utr} has already been submitted${when}. Each UTR can be used only once.`, [{ path: 'utr', message: 'Already used' }]);
   }
 
   private async load(actor: Actor, id: string): Promise<RequestRow> {
@@ -339,8 +348,9 @@ export class FundsService {
     }
 
     const credited = input.credited_amount ?? r.amountMinor;
+    // The UTR can never be resubmitted, so a wrong amount on the claim is corrected here, up or down,
+    // to what the statement shows, with a note.
     if (credited !== r.amountMinor && !input.note?.trim()) throw new AppError(ErrorCode.INVALID_REQUEST, 'Explain why the credited amount differs from the request', [{ path: 'note', message: 'Required when the amount changes' }]);
-    if (credited > r.amountMinor) throw new AppError(ErrorCode.INVALID_REQUEST, 'You can’t credit more than the merchant requested', [{ path: 'credited_amount', message: 'Too large' }]);
     await this.ledger.run(async (tx) => {
       const merchant = await tx.merchant.findUnique({ where: { id: r.merchantId }, select: { status: true } });
       if (!merchant || !['APPROVED', 'SUSPENDED'].includes(merchant.status)) throw new AppError(ErrorCode.MERCHANT_INACTIVE, 'Funds can be loaded only for approved (or suspended) merchants');

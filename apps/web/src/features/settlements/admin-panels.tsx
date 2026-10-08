@@ -2,7 +2,6 @@
 
 import { ConfirmDialog } from '@pay2all/ui/components/confirm-dialog';
 import { DataTable } from '@pay2all/ui/components/data-table';
-import { MerchantSelector } from '@pay2all/ui/components/merchant-selector';
 import { Button } from '@pay2all/ui/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@pay2all/ui/components/ui/card';
 import { Input } from '@pay2all/ui/components/ui/input';
@@ -13,17 +12,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Download, Loader2, Lock, Play, Unlock } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MerchantCombobox } from '@/components/common/merchant-combobox';
 import { fmt } from '@/features/ledger/format';
 import { api, apiDownload } from '@/lib/api/client';
 import { errorMessage, toTableError } from '@/lib/api/errors';
-import type { MerchantSummary, ProviderRow } from '@/lib/api/types';
+import type { ProviderRow } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 import { SettlementConfigEditor } from './settlement-config';
-
-export function useMerchantOptions() {
-  const q = useQuery({ queryKey: ['merchants', 'options'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { status: 'APPROVED', limit: 100 }) });
-  return (q.data?.data ?? []).map((m) => ({ id: m.id, name: m.name }));
-}
 
 export function SettlementActions() {
   const can = useCan();
@@ -62,11 +57,10 @@ export function SettlementActions() {
 }
 
 export function SchedulesPanel() {
-  const merchants = useMerchantOptions();
   const [merchantId, setMerchantId] = useState<string | null>(null);
   return (
     <div className="space-y-4">
-      <MerchantSelector merchants={merchants} value={merchantId} onChange={setMerchantId} allowAll={false} className="w-72" />
+      <MerchantCombobox value={merchantId} onChange={(m) => setMerchantId(m?.id ?? null)} status="APPROVED" className="w-72" />
       {merchantId ? <SettlementConfigEditor merchantId={merchantId} /> : <p className="text-muted-foreground text-sm">Choose a merchant to view or change its settlement schedule.</p>}
     </div>
   );
@@ -84,7 +78,6 @@ interface HoldRow {
 export function HoldsPanel() {
   const can = useCan();
   const qc = useQueryClient();
-  const merchants = useMerchantOptions();
   const holds = useQuery({ queryKey: ['settlement-holds'], queryFn: () => api.get<HoldRow[]>('/v1/settlements/holds') });
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [reason, setReason] = useState('');
@@ -123,7 +116,7 @@ export function HoldsPanel() {
         <Card className="shadow-none">
           <CardHeader><CardTitle className="text-base">Place a hold</CardTitle><CardDescription>Stops new settlements for the merchant until released. Payments keep accruing in unsettled.</CardDescription></CardHeader>
           <CardContent className="flex flex-wrap items-end gap-2">
-            <MerchantSelector merchants={merchants} value={merchantId} onChange={setMerchantId} allowAll={false} className="w-64" />
+            <MerchantCombobox value={merchantId} onChange={(m) => setMerchantId(m?.id ?? null)} status="APPROVED" className="w-64" />
             <Input className="min-w-64 flex-1" placeholder="Reason (e.g. chargeback investigation)" value={reason} onChange={(e) => setReason(e.target.value)} />
             <Button disabled={!merchantId || reason.trim().length < 5 || busy} onClick={() => void place()}><Lock /> Hold settlements</Button>
           </CardContent>

@@ -1,6 +1,5 @@
 'use client';
 
-import { MerchantSelector } from '@pay2all/ui/components/merchant-selector';
 import { ErrorState } from '@pay2all/ui/components/states';
 import { Button } from '@pay2all/ui/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@pay2all/ui/components/ui/dialog';
@@ -17,10 +16,11 @@ import { ArrowDownLeft, CheckCircle2, Clock3, FileText, ImageIcon, Inbox, Landma
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useDeferredValue, useState } from 'react';
 import { toast } from 'sonner';
+import { MerchantCombobox } from '@/components/common/merchant-combobox';
 import { useBalances } from '@/features/ledger/balance-cards';
 import { api, apiRequest } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
-import type { FundRequest, FundRequestStatus, MerchantSummary } from '@/lib/api/types';
+import type { FundRequest, FundRequestStatus } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 import { CopyButton, FUND_REQUESTS_KEY, FUND_SUMMARY_KEY, FundStatus, inr, MODE_LABEL, useAuthedBlob, useFundSummary } from './shared';
 
@@ -53,10 +53,11 @@ export function FundRequestsAdmin() {
   const [search, setSearch] = useState('');
   const q = useDeferredValue(search.trim());
   const [adjusting, setAdjusting] = useState(false);
+  const [merchantFilter, setMerchantFilter] = useState<string | null>(null);
 
   const list = useInfiniteQuery({
-    queryKey: [...FUND_REQUESTS_KEY, 'admin', tab, q],
-    queryFn: ({ pageParam }) => apiRequest<FundRequest[]>('/v1/funds/requests', { query: { status: tab === 'ALL' ? undefined : tab, q: q || undefined, limit: 25, cursor: pageParam } }),
+    queryKey: [...FUND_REQUESTS_KEY, 'admin', tab, q, merchantFilter],
+    queryFn: ({ pageParam }) => apiRequest<FundRequest[]>('/v1/funds/requests', { query: { status: tab === 'ALL' ? undefined : tab, q: q || undefined, merchant_id: merchantFilter ?? undefined, limit: 25, cursor: pageParam } }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => (last.meta?.has_more ? (last.meta.next_cursor ?? undefined) : undefined),
     placeholderData: keepPreviousData,
@@ -97,9 +98,12 @@ export function FundRequestsAdmin() {
               <TabsTrigger value="ALL">All</TabsTrigger>
             </TabsList>
           </Tabs>
-          <div className="relative w-full sm:w-64">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+          <MerchantCombobox value={merchantFilter} onChange={(m) => setMerchantFilter(m?.id ?? null)} anyLabel="All merchants" className="sm:w-60" ariaLabel="Filter by merchant" />
+          <div className="relative w-full sm:w-56">
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
             <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search UTR or request ID" className="pl-9" aria-label="Search fund requests" />
+          </div>
           </div>
         </div>
         {list.isError ? (
@@ -276,7 +280,11 @@ function Review({ id, canDecide, onDone }: { id: string; canDecide: boolean; onD
                     <span className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm">₹</span>
                     <Input id="fr-credit" value={credited} onChange={(e) => setCredited(e.target.value)} placeholder={r.amount} inputMode="decimal" className="pl-7 tabular-nums" />
                   </div>
-                  <p className="text-muted-foreground text-[11px]">Leave as is to credit the full amount. You can credit less (with a note) if the statement shows less.</p>
+                  {amountChanged && Number(credited) > Number(r.amount) ? (
+                    <p className="rounded-md bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300">More than the merchant asked for — credit it only if the statement shows this amount.</p>
+                  ) : (
+                    <p className="text-muted-foreground text-[11px]">Leave as is to credit the full amount. If the statement shows a different amount, enter it with a note — the UTR can’t be submitted again.</p>
+                  )}
                 </div>
               )}
               <div className="space-y-1.5">
@@ -315,7 +323,6 @@ function Review({ id, canDecide, onDone }: { id: string; canDecide: boolean; onD
 
 /** Direct credit / debit, through the ledger adjustment flow (maker-checker above the policy limit). */
 function AdjustDialog({ onClose, onDone }: { onClose: () => void; onDone: () => Promise<unknown> }) {
-  const merchants = useQuery({ queryKey: ['merchants', 'approved-for-wallet'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { status: 'APPROVED', limit: 100 }) });
   const [merchantId, setMerchantId] = useState<string | null>(null);
   const [direction, setDirection] = useState<'CREDIT' | 'DEBIT'>('CREDIT');
   const [amount, setAmount] = useState('');
@@ -323,9 +330,6 @@ function AdjustDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   const bal = useBalances(merchantId ?? undefined);
-  // Display names can repeat; the ID's tail tells them apart when they do.
-  const list = merchants.data?.data ?? [];
-  const options = list.map((m) => ({ id: m.id, name: list.filter((x) => x.name === m.name).length > 1 ? `${m.name} · …${m.id.slice(-6)}` : m.name }));
 
   async function submit() {
     setBusy(true);
@@ -353,7 +357,7 @@ function AdjustDialog({ onClose, onDone }: { onClose: () => void; onDone: () => 
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Merchant</Label>
-            <MerchantSelector merchants={options} value={merchantId} onChange={setMerchantId} allowAll={false} className="w-full" />
+            <MerchantCombobox value={merchantId} onChange={(m) => setMerchantId(m?.id ?? null)} status="APPROVED,SUSPENDED" placeholder="Search by name, PAN or ID" />
             {merchantId && <p className="text-muted-foreground text-xs">Available now: {bal.data ? <span className="text-foreground font-medium tabular-nums">{inr(bal.data.available)}</span> : '…'}</p>}
           </div>
           <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Direction">

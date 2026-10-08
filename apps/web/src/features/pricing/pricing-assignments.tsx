@@ -9,27 +9,27 @@ import { useQuery } from '@tanstack/react-query';
 import { Calculator, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MerchantCombobox } from '@/components/common/merchant-combobox';
 import { fmt } from '@/features/ledger/format';
 import { api } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
-import type { MerchantSummary, Organization, PricingQuote } from '@/lib/api/types';
+import type { Organization, PricingQuote } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 import { usePricingPlans } from './pricing-plans';
 
 function useSubjects() {
-  const merchants = useQuery({ queryKey: ['merchants', 'approved-for-pricing'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { limit: 100 }) });
   const resellers = useQuery({ queryKey: ['organizations', 'RESELLER', 'pricing'], queryFn: () => api.list<Organization>('/v1/organizations', { type: 'RESELLER', status: 'ACTIVE', limit: 100 }) });
-  return { merchants: merchants.data?.data ?? [], resellers: resellers.data?.data ?? [] };
+  return { resellers: resellers.data?.data ?? [] };
 }
 
 function AssignCard() {
   const plans = usePricingPlans();
-  const { merchants, resellers } = useSubjects();
+  const { resellers } = useSubjects();
   const [planId, setPlanId] = useState('');
   const [subjectId, setSubjectId] = useState('');
   const [busy, setBusy] = useState(false);
   const plan = plans.data?.find((p) => p.id === planId);
-  const subjects = plan?.kind === 'WHOLESALE' ? resellers.map((r) => ({ id: r.id, name: r.name })) : merchants.map((m) => ({ id: m.id, name: m.name }));
+  const subjects = resellers.map((r) => ({ id: r.id, name: r.name }));
 
   async function assign() {
     if (!plan) return;
@@ -61,10 +61,14 @@ function AssignCard() {
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="assign-subject">{plan?.kind === 'WHOLESALE' ? 'Reseller' : 'Merchant'}</Label>
-          <Select value={subjectId} onValueChange={setSubjectId} disabled={!plan}>
-            <SelectTrigger id="assign-subject" className="w-full"><SelectValue placeholder="Choose…" /></SelectTrigger>
-            <SelectContent>{subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-          </Select>
+          {plan?.kind === 'WHOLESALE' ? (
+            <Select value={subjectId} onValueChange={setSubjectId}>
+              <SelectTrigger id="assign-subject" className="w-full"><SelectValue placeholder="Choose…" /></SelectTrigger>
+              <SelectContent>{subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : (
+            <MerchantCombobox value={subjectId || null} onChange={(m) => setSubjectId(m?.id ?? '')} disabled={!plan} />
+          )}
         </div>
         <Button disabled={!plan || !subjectId || busy} onClick={() => void assign()}>{busy && <Loader2 className="animate-spin" />} Assign plan</Button>
       </CardContent>
@@ -73,7 +77,6 @@ function AssignCard() {
 }
 
 function QuoteCard() {
-  const { merchants } = useSubjects();
   const [merchantId, setMerchantId] = useState('');
   const [service, setService] = useState<'PAYIN' | 'PAYOUT'>('PAYIN');
   const [amount, setAmount] = useState('1000.00');
@@ -104,10 +107,7 @@ function QuoteCard() {
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid gap-3 sm:grid-cols-3">
-          <Select value={merchantId} onValueChange={setMerchantId}>
-            <SelectTrigger className="w-full" aria-label="Merchant"><SelectValue placeholder="Merchant" /></SelectTrigger>
-            <SelectContent>{merchants.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-          </Select>
+          <MerchantCombobox value={merchantId || null} onChange={(m) => setMerchantId(m?.id ?? '')} />
           <Select value={service} onValueChange={(v) => setService(v as 'PAYIN' | 'PAYOUT')}>
             <SelectTrigger className="w-full" aria-label="Service"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="PAYIN">Payin (UPI)</SelectItem><SelectItem value="PAYOUT">Payout (IMPS)</SelectItem></SelectContent>

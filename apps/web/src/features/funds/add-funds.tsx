@@ -299,7 +299,7 @@ export function AddFunds() {
                     <div className="space-y-1.5 sm:col-span-2">
                       <Label htmlFor="af-utr">UTR / reference number</Label>
                       <Input id="af-utr" value={utr} onChange={(e) => setUtr(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} maxLength={30} placeholder={account.kind === 'UPI' ? '12-digit UPI reference, e.g. 412345678901' : 'e.g. HDFCR52026100812345678'} className="font-mono tracking-wide" />
-                      <p className="text-muted-foreground text-[11px]">Find it in your UPI app’s transaction details or your bank statement.</p>
+                      <p className="text-muted-foreground text-[11px]">Find it in your UPI app’s transaction details or your bank statement. Each UTR can be submitted only once — check it before you submit.</p>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Paid by</Label>
@@ -365,6 +365,7 @@ export function AddFunds() {
 
 function MyRequests() {
   const qc = useQueryClient();
+  const [confirming, setConfirming] = useState<string | null>(null);
   const can = useCan();
   const list = useInfiniteQuery({
     queryKey: [...FUND_REQUESTS_KEY, 'mine'],
@@ -415,11 +416,22 @@ function MyRequests() {
                 </div>
                 {r.credited_amount && r.credited_amount !== r.amount && <p className="text-xs text-amber-700 dark:text-amber-300">Requested {inr(r.amount)}; credited {inr(r.credited_amount)}</p>}
                 {r.decision_note && <p className="text-muted-foreground text-xs">“{r.decision_note}”</p>}
-                {r.status === 'PENDING' && can('fund.request') && (
-                  <button type="button" onClick={() => void cancel(r.id)} className="text-muted-foreground hover:text-destructive text-xs font-medium">
-                    Cancel request
-                  </button>
-                )}
+                {r.status === 'PENDING' && can('fund.request') &&
+                  (confirming === r.id ? (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-rose-500/10 px-2 py-1.5 text-xs text-rose-700 dark:text-rose-300">
+                      <span>Cancel? This UTR can’t be submitted again.</span>
+                      <button type="button" onClick={() => void cancel(r.id)} className="font-semibold underline">
+                        Yes, cancel
+                      </button>
+                      <button type="button" onClick={() => setConfirming(null)} className="font-medium">
+                        Keep
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setConfirming(r.id)} className="text-muted-foreground hover:text-destructive text-xs font-medium">
+                      Cancel request
+                    </button>
+                  ))}
               </li>
             ))}
           </ul>

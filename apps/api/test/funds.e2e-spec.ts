@@ -111,23 +111,61 @@ describe('fund requests', () => {
     expect(await ctx.prisma.ledgerJournal.count({ where: { idempotencyKey: `fund_request:${id}:load` } })).toBe(1);
   });
 
-  it('approver can credit less with a note (never more); reject needs a reason and frees the UTR', async () => {
+  it('approver corrects the amount (up or down) only with a note; reject needs a reason', async () => {
     const m = await createApprovedMerchant(ctx);
-    const u = utr();
-    const id = (await ctx.http().post('/v1/funds/requests').set(bearer(m.owner)).send({ collection_account_id: bankId, amount: '1000.00', mode: 'NEFT', utr: `N${u}`, paid_at: now() })).body.data.id as string;
-    expect((await ctx.http().post(`/v1/funds/requests/${id}/decision`).set(bearer(finance)).send({ decision: 'APPROVE', credited_amount: '1500.00', note: 'x' })).status).toBe(400);
+    const id = (await ctx.http().post('/v1/funds/requests').set(bearer(m.owner)).send({ collection_account_id: bankId, amount: '1000.00', mode: 'NEFT', utr: `N${utr()}`, paid_at: now() })).body.data.id as string;
     expect((await ctx.http().post(`/v1/funds/requests/${id}/decision`).set(bearer(finance)).send({ decision: 'APPROVE', credited_amount: '900.00' })).status).toBe(400);
     const less = await ctx.http().post(`/v1/funds/requests/${id}/decision`).set(bearer(finance)).send({ decision: 'APPROVE', credited_amount: '900.00', note: 'Bank statement shows ₹900' });
     expect(less.body.data).toMatchObject({ status: 'APPROVED', amount: '1000.00', credited_amount: '900.00' });
     expect(await balance(m.id)).toBe(90_000n);
 
-    const r2 = (await ctx.http().post('/v1/funds/requests').set(bearer(m.owner)).send({ collection_account_id: bankId, amount: '700.00', mode: 'IMPS', utr: u, paid_at: now() })).body.data.id as string;
-    expect((await ctx.http().post(`/v1/funds/requests/${r2}/decision`).set(bearer(finance)).send({ decision: 'REJECT', note: '' })).status).toBe(400);
-    const rej = await ctx.http().post(`/v1/funds/requests/${r2}/decision`).set(bearer(finance)).send({ decision: 'REJECT', note: 'No such credit on the statement' });
+    // The merchant typed less than it paid; the UTR can't be resubmitted, so the approver credits more.
+    const id2 = (await ctx.http().post('/v1/funds/requests').set(bearer(m.owner)).send({ collection_account_id: bankId, amount: '100.00', mode: 'IMPS', utr: utr(), paid_at: now() })).body.data.id as string;
+    const more = await ctx.http().post(`/v1/funds/requests/${id2}/decision`).set(bearer(finance)).send({ decision: 'APPROVE', credited_amount: '1000.00', note: 'Statement shows ₹1,000; merchant typed ₹100' });
+    expect(more.body.data.credited_amount).toBe('1000.00');
+    expect(await balance(m.id)).toBe(190_000n);
+
+    const r3 = (await ctx.http().post('/v1/funds/requests').set(bearer(m.owner)).send({ collection_account_id: bankId, amount: '700.00', mode: 'IMPS', utr: utr(), paid_at: now() })).body.data.id as string;
+    expect((await ctx.http().post(`/v1/funds/requests/${r3}/decision`).set(bearer(finance)).send({ decision: 'REJECT', note: '' })).status).toBe(400);
+    const rej = await ctx.http().post(`/v1/funds/requests/${r3}/decision`).set(bearer(finance)).send({ decision: 'REJECT', note: 'No such credit on the statement' });
     expect(rej.body.data.status).toBe('REJECTED');
-    expect(await balance(m.id)).toBe(90_000n);
-    // The UTR can be submitted again (e.g. corrected amount).
-    expect((await ctx.http().post('/v1/funds/requests').set(bearer(m.owner)).send({ collection_account_id: bankId, amount: '700.00', mode: 'IMPS', utr: u, paid_at: now() })).status).toBe(201);
+    expect(await balance(m.id)).toBe(190_000n);
+  });
+
+  it('a UTR is accepted once, for ever: after approval, rejection or cancellation, by anyone, in any format', async () => {
+    const a = await createApprovedMerchant(ctx);
+    const b = await createApprovedMerchant(ctx);
+    const send = (token: string, u: string) => ctx.http().post('/v1/funds/requests').set(bearer(token)).send({ collection_account_id: bankId, amount: '500.00', mode: 'IMPS', utr: u, paid_at: now() });
+
+    const rejectedUtr = `HDFC${utr()}`;
+    const r = (await send(a.owner, rejectedUtr)).body.data.id as string;
+    await ctx.http().post(`/v1/funds/requests/${r}/decision`).set(bearer(finance)).send({ decision: 'REJECT', note: 'Not on the statement' }).expect(200);
+    const again = await send(a.owner, rejectedUtr);
+    expect(again.status).toBe(409);
+    expect(again.body.error.message).toMatch(/already been submitted on .* \(rejected\)\. Each UTR can be used only once/);
+    // Another merchant learns nothing about whose claim it was.
+    const other = await send(b.owner, rejectedUtr);
+    expect(other.status).toBe(409);
+    expect(other.body.error.message).not.toMatch(/rejected|approved|pending/);
+
+    const cancelledUtr = utr();
+    const c = (await send(a.owner, cancelledUtr)).body.data.id as string;
+    await ctx.http().post(`/v1/funds/requests/${c}/cancel`).set(bearer(a.owner)).expect(200);
+    expect((await send(a.owner, cancelledUtr)).status).toBe(409);
+
+    // Spaces, dashes and case don't make a new UTR.
+    const fmt = `abcd${utr()}`;
+    expect((await send(a.owner, fmt)).status).toBe(201);
+    expect((await send(b.owner, ` ${fmt.slice(0, 4)}-${fmt.slice(4, 9)} ${fmt.slice(9).toUpperCase()} `)).status).toBe(409);
+  });
+
+  it('the same UTR submitted many times at once creates one request (no double credit)', async () => {
+    const merchants = await Promise.all([createApprovedMerchant(ctx), createApprovedMerchant(ctx)]);
+    const u = utr();
+    const results = await Promise.all(Array.from({ length: 10 }, (_, i) => ctx.http().post('/v1/funds/requests').set(bearer(merchants[i % 2]!.owner)).send({ collection_account_id: bankId, amount: '800.00', mode: 'IMPS', utr: u, paid_at: now() })));
+    expect(results.filter((r) => r.status === 201)).toHaveLength(1);
+    expect(results.filter((r) => r.status === 409)).toHaveLength(9);
+    expect(await ctx.prisma.fundRequest.count({ where: { utr: u } })).toBe(1);
   });
 
   it('validates the claim: account limits, UPI mode, dates, JSON numbers, merchant status', async () => {

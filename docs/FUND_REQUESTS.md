@@ -38,7 +38,11 @@ Merchants load their **AVAILABLE** balance, which is used for payouts, by paying
    - an optional **screenshot or PDF** (PNG, JPEG, WebP or PDF, up to 5 MB, identified by its bytes and stored encrypted).
 
 **Rules:**
-- **UTR uniqueness:** a UTR can be claimed by **one pending or approved request** across all merchants, enforced by a partial unique index. A rejected or cancelled claim frees it again.
+- **UTR uniqueness:** a UTR can be submitted **once, for ever**, across all merchants, enforced by a unique index on `fund_requests.utr`.
+  - **No reuse:** rejecting or cancelling a request does not free its UTR, so a UTR can never be credited twice.
+  - **Normalisation:** UTRs are upper-cased and spaces and dashes are removed before the check, so `hdfc-1234 5678` and `HDFC12345678` are the same UTR.
+  - **Messages:** a merchant re-entering its own UTR is told when it was submitted and what happened to it. Another merchant learns only that the UTR has been used.
+  - **Concurrency:** concurrent submissions of one UTR create exactly one request.
 - **Who can request:** only approved merchants can request.
 - **Pending cap:** at most 20 requests can be pending per merchant.
 - **Cancelling:** merchants can cancel their own pending requests.
@@ -53,7 +57,7 @@ Merchants load their **AVAILABLE** balance, which is used for payouts, by paying
 - **Approve:**
   1. The request is claimed with an optimistic version check, so concurrent approvals credit **exactly once**.
   2. A `FUND_LOAD` journal is posted with idempotency key `fund_request:<id>:load`: **Dr** `platform:bank:<account>`, **Cr** `merchant:<id>:AVAILABLE`.
-  3. The approver may credit **less** than requested, with a note (for example when the statement shows less), but never more.
+  3. The approver may credit a **different amount** than requested, with a required note: less when the statement shows less, or more when the merchant typed too little. A UTR can't be submitted again, so a wrong claim is corrected here. Crediting more than requested shows a warning first.
 - **Reject:** needs a reason, which the merchant sees.
 - **Audit:** every step is audited (`funds.*`); approvals are marked HIGH severity.
 
@@ -65,7 +69,18 @@ Merchants load their **AVAILABLE** balance, which is used for payouts, by paying
 - **Approval:** amounts within the **ADJUSTMENT approval policy's** no-approval tier are posted at once. Larger amounts wait for an independent approver under **Ledger → Adjustments**, and the dialog says which happened.
 - **Overdraw protection:** a deduction can never overdraw the balance; the ledger refuses it.
 
-## 5. API
+## 5. Choosing a merchant
+
+Merchant pickers search as you type, by name, legal name, PAN or exact ID, through `GET /v1/merchants?search=`, 20 results at a time. They work for any number of merchants. This applies to:
+- add / deduct balance;
+- the fund request merchant filter;
+- ledger adjustments;
+- settlement schedules and holds;
+- routing rules and the routing simulator;
+- pricing rate-card assignment and the fee calculator;
+- reseller rate cards.
+
+## 6. API
 
 | Route | Permission | |
 | --- | --- | --- |
@@ -79,7 +94,7 @@ Merchants load their **AVAILABLE** balance, which is used for payouts, by paying
 | `POST /v1/funds/requests/:id/decision` | `fund.approve` | `{ decision: APPROVE, credited_amount?, note? }` or `{ decision: REJECT, note }` |
 | `GET /v1/funds/requests` · `GET /v1/funds/summary` | `fund.read` | Merchant: own requests. Platform: all, filtered by `status`, `merchant_id` or `q` (UTR or id) |
 
-## 6. Not yet included
+## 7. Not yet included
 
 - **Statement matching:** bank statements are not yet matched to fund requests automatically. Reconciliation is still a person comparing the UTR.
 - **Payment gateway top-ups:** instant top-ups through a payment gateway are not supported.

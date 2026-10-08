@@ -2720,8 +2720,8 @@ model FundRequest {
   amountMinor         BigInt            @map("amount_minor")
   /// UPI / IMPS / NEFT / RTGS / CASH_DEPOSIT / OTHER
   mode                String            @db.VarChar(20)
-  /// Bank or UPI reference, upper-cased; unique among pending and approved requests.
-  utr                 String            @db.VarChar(30)
+  /// Bank or UPI reference, upper-cased. Unique for ever: one UTR can be claimed once, whatever happens to the claim.
+  utr                 String            @unique @db.VarChar(30)
   paidAt              DateTime          @map("paid_at") @db.Timestamptz(3)
   remarks             String?           @db.VarChar(300)
   /// Optional payment screenshot in file storage (encrypted like every stored file).

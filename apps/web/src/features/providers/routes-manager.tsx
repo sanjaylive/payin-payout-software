@@ -15,9 +15,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { CircleCheck, CircleX, Loader2, Pencil, Plus, Route as RouteIcon } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MerchantCombobox } from '@/components/common/merchant-combobox';
 import { api, ApiError } from '@/lib/api/client';
 import { errorMessage, toTableError } from '@/lib/api/errors';
-import type { MerchantSummary, ProviderRoute, ProviderRow, RoutingSimulation } from '@/lib/api/types';
+import type { ProviderRoute, ProviderRow, RoutingSimulation } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 
 const METHODS = { PAYIN: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK'], PAYOUT: ['IMPS', 'NEFT', 'RTGS', 'UPI'] } as const;
@@ -28,7 +29,6 @@ type Form = { name: string; tier: string; priority: string; provider_id: string;
 function RouteDialog({ service, route, open, onOpenChange }: { service: 'PAYIN' | 'PAYOUT'; route: ProviderRoute | null; open: boolean; onOpenChange: (o: boolean) => void }) {
   const qc = useQueryClient();
   const providers = useQuery({ queryKey: ['providers', service], queryFn: () => api.get<ProviderRow[]>('/v1/providers', { kind: service }), enabled: open });
-  const merchants = useQuery({ queryKey: ['merchants', 'approved-options'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { status: 'APPROVED,SUSPENDED', limit: 100 }), enabled: open });
   const [f, setF] = useState<Form>(() => ({
     name: route?.name ?? '',
     tier: route?.tier ?? 'PRIMARY',
@@ -86,10 +86,7 @@ function RouteDialog({ service, route, open, onOpenChange }: { service: 'PAYIN' 
           <div className="space-y-1.5"><Label>Priority (lower first)</Label><Input inputMode="numeric" value={f.priority} onChange={(e) => set('priority')(e.target.value)} /></div>
           <div className="space-y-1.5">
             <Label>Merchant</Label>
-            <Select value={f.merchant_id} onValueChange={set('merchant_id')}>
-              <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-              <SelectContent><SelectItem value={ANY}>Any merchant</SelectItem>{merchants.data?.data.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-            </Select>
+            <MerchantCombobox value={f.merchant_id === ANY ? null : f.merchant_id} onChange={(m) => set('merchant_id')(m?.id ?? ANY)} status="APPROVED,SUSPENDED" anyLabel="Any merchant" />
           </div>
           <div className="space-y-1.5">
             <Label>{service === 'PAYIN' ? 'Method' : 'Mode'}</Label>
@@ -112,7 +109,6 @@ function RouteDialog({ service, route, open, onOpenChange }: { service: 'PAYIN' 
 }
 
 function Simulator({ service }: { service: 'PAYIN' | 'PAYOUT' }) {
-  const merchants = useQuery({ queryKey: ['merchants', 'approved-options'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { status: 'APPROVED,SUSPENDED,DRAFT,UNDER_REVIEW', limit: 100 }) });
   const [merchant, setMerchant] = useState('');
   const [amount, setAmount] = useState('1000.00');
   const [method, setMethod] = useState<string>(METHODS[service][0]);
@@ -138,10 +134,7 @@ function Simulator({ service }: { service: 'PAYIN' | 'PAYOUT' }) {
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-56 flex-1 space-y-1.5">
             <Label>Merchant</Label>
-            <Select value={merchant} onValueChange={setMerchant}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Select merchant" /></SelectTrigger>
-              <SelectContent>{merchants.data?.data.map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-            </Select>
+            <MerchantCombobox value={merchant || null} onChange={(m) => setMerchant(m?.id ?? '')} status="APPROVED,SUSPENDED,DRAFT,UNDER_REVIEW" />
           </div>
           <div className="w-36 space-y-1.5"><Label>Amount (₹)</Label><Input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} /></div>
           <div className="w-40 space-y-1.5">

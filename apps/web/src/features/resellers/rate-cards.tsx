@@ -10,17 +10,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
+import { MerchantCombobox } from '@/components/common/merchant-combobox';
 import { describeRule } from '@/features/pricing/pricing-plans';
 import { api } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
-import type { MerchantSummary, PricingPlanRow } from '@/lib/api/types';
+import type { PricingPlanRow } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 
 export function RateCards() {
   const can = useCan();
   const qc = useQueryClient();
   const plans = useQuery({ queryKey: ['pricing-plans'], queryFn: () => api.get<PricingPlanRow[]>('/v1/pricing/plans') });
-  const merchants = useQuery({ queryKey: ['merchants', 'reseller-options'], queryFn: () => api.list<MerchantSummary>('/v1/merchants', { limit: 100 }) });
   const wholesale = plans.data?.find((p) => p.kind === 'WHOLESALE');
   const cards = (plans.data ?? []).filter((p) => p.kind === 'MERCHANT');
   const [form, setForm] = useState({ name: '', payin: '0.20', payout: '6.00', isDefault: false });
@@ -88,10 +88,7 @@ export function RateCards() {
               <SelectTrigger className="w-56" aria-label="Rate card"><SelectValue placeholder="Rate card" /></SelectTrigger>
               <SelectContent>{cards.filter((p) => p.status === 'ACTIVE').map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}</SelectContent>
             </Select>
-            <Select value={assign.merchant} onValueChange={(v) => setAssign({ ...assign, merchant: v })}>
-              <SelectTrigger className="w-56" aria-label="Merchant"><SelectValue placeholder="Merchant" /></SelectTrigger>
-              <SelectContent>{(merchants.data?.data ?? []).map((m) => <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>)}</SelectContent>
-            </Select>
+            <MerchantCombobox value={assign.merchant || null} onChange={(m) => setAssign({ ...assign, merchant: m?.id ?? '' })} className="w-56" />
             <Button disabled={!assign.plan || !assign.merchant || busy} onClick={() => void doAssign()}>Assign</Button>
           </CardContent>
         </Card>
