@@ -1052,6 +1052,7 @@ model Provider {
   routes      ProviderRoute[]
   snapshots   ProviderHealthSnapshot[]
   webhooks    ProviderWebhookEvent[]
+  staticQrs   StaticQr[]
 
   @@index([kind, status])
   @@index([vendorId])
@@ -1167,6 +1168,8 @@ enum LateSuccessPolicy {
 enum PayinMethod {
   UPI_QR
   UPI_INTENT
+  /// Credit to a merchant's static (printed) UPI QR — any amount, recorded when the provider reports it.
+  UPI_STATIC_QR
   PAYMENT_LINK
   VIRTUAL_ACCOUNT
   IMPS
@@ -1246,6 +1249,8 @@ model Payment {
   merchantOrderId       String        @map("merchant_order_id") @db.VarChar(64)
   /// Hosted checkout this payment is an attempt of (merchant_order_id is then "<order>#<n>").
   checkoutSessionId     String?       @map("checkout_session_id")
+  /// UPI_STATIC_QR payments: the merchant QR that was credited.
+  staticQrId            String?       @map("static_qr_id")
   /// How to send the customer to a hosted gateway (redirect / form post / Atom script).
   checkoutAction        Json?         @map("checkout_action")
   method                PayinMethod
@@ -1296,9 +1301,11 @@ model Payment {
 
   attempts PaymentAttempt[]
   refunds  Refund[]
+  staticQr StaticQr?        @relation(fields: [staticQrId], references: [id], onDelete: Restrict)
 
   @@unique([merchantId, merchantOrderId])
   @@index([checkoutSessionId])
+  @@index([staticQrId, createdAt(sort: Desc)])
   @@index([merchantId, createdAt(sort: Desc), id(sort: Desc)])
   @@index([resellerId, createdAt(sort: Desc)])
   @@index([status, createdAt])
@@ -2821,9 +2828,20 @@ enum CheckoutSessionStatus {
 }
 
 /// A hosted checkout page for one order. Payments are attempts of it.
+/// What a checkout session was created for (docs/PAYMENT_LINKS.md).
+enum CheckoutKind {
+  /// API checkout for an order on the merchant's website (returns to return_url).
+  CHECKOUT
+  /// One-off payment link shared by the merchant (no website; ends on a receipt).
+  LINK
+  /// A payment made through a reusable payment page.
+  PAGE
+}
+
 model CheckoutSession {
   id              String                @id
   merchantId      String                @map("merchant_id")
+  kind            CheckoutKind          @default(CHECKOUT)
   /// Unguessable public handle used in the checkout URL (never the id).
   token           String                @unique @db.VarChar(64)
   merchantOrderId String                @map("merchant_order_id") @db.VarChar(60)
@@ -2832,23 +2850,102 @@ model CheckoutSession {
   customerName    String?               @map("customer_name") @db.VarChar(120)
   customerEmail   String?               @map("customer_email") @db.VarChar(254)
   customerMobile  String?               @map("customer_mobile") @db.VarChar(15)
-  returnUrl       String                @map("return_url") @db.VarChar(500)
-  websiteId       String                @map("website_id")
+  /// CHECKOUT only: where the customer returns (on an approved website).
+  returnUrl       String?               @map("return_url") @db.VarChar(500)
+  websiteId       String?               @map("website_id")
+  /// PAGE only: the payment page it was paid through.
+  pageId          String?               @map("page_id")
   status          CheckoutSessionStatus @default(OPEN)
   /// The successful payment.
   paymentId       String?               @unique @map("payment_id")
   attempts        Int                   @default(0)
   metadata        Json                  @default("{}")
+  /// LINK: last time the link was sent to the customer (email/SMS).
+  notifiedAt      DateTime?             @map("notified_at") @db.Timestamptz(3)
   expiresAt       DateTime              @map("expires_at") @db.Timestamptz(3)
   paidAt          DateTime?             @map("paid_at") @db.Timestamptz(3)
   createdById     String?               @map("created_by_id")
   createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  website MerchantWebsite @relation(fields: [websiteId], references: [id], onDelete: Restrict)
+  website MerchantWebsite? @relation(fields: [websiteId], references: [id], onDelete: Restrict)
+  page    PaymentPage?     @relation(fields: [pageId], references: [id], onDelete: Restrict)
 
   @@unique([merchantId, merchantOrderId])
   @@index([merchantId, createdAt(sort: Desc)])
+  @@index([merchantId, kind, createdAt(sort: Desc)])
+  @@index([pageId, createdAt(sort: Desc)])
   @@index([status, expiresAt])
   @@map("checkout_sessions")
+}
+
+enum PaymentPageStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum PaymentPageAmountType {
+  /// Every customer pays `amountMinor`.
+  FIXED
+  /// The customer enters an amount between min and max.
+  CUSTOMER
+}
+
+/// A reusable public page (/p/<slug>) where many customers pay: fees, donations, events, products.
+model PaymentPage {
+  id             String                @id
+  merchantId     String                @map("merchant_id")
+  slug           String                @unique @db.VarChar(60)
+  title          String                @db.VarChar(120)
+  description    String?               @db.VarChar(1000)
+  amountType     PaymentPageAmountType @map("amount_type")
+  amountMinor    BigInt?               @map("amount_minor")
+  minAmountMinor BigInt?               @map("min_amount_minor")
+  maxAmountMinor BigInt?               @map("max_amount_minor")
+  /// Up to 5 extra fields shown to the payer: [{ key, label, type: text|number|email|phone, required }].
+  fields         Json                  @default("[]")
+  successMessage String?               @map("success_message") @db.VarChar(300)
+  status         PaymentPageStatus     @default(ACTIVE)
+  createdById    String?               @map("created_by_id")
+  createdAt      DateTime              @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime              @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  sessions CheckoutSession[]
+
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@map("payment_pages")
+}
+
+enum StaticQrStatus {
+  ACTIVE
+  CLOSED
+}
+
+/// A merchant's static (printable) UPI QR issued by a provider. Customers pay any amount; each credit
+/// the provider reports becomes a captured payment (docs/STATIC_QR.md).
+model StaticQr {
+  id           String         @id
+  merchantId   String         @map("merchant_id")
+  providerId   String         @map("provider_id")
+  providerQrId String         @map("provider_qr_id") @db.VarChar(120)
+  label        String         @db.VarChar(80)
+  /// The UPI string encoded in the QR (upi://pay?pa=…), without an amount, when the provider gives it.
+  upiPayload   String?        @map("upi_payload") @db.VarChar(1000)
+  /// The provider's hosted QR image, when it gives an image instead of (or as well as) the string.
+  imageUrl     String?        @map("image_url") @db.VarChar(500)
+  status       StaticQrStatus @default(ACTIVE)
+  lastCreditAt DateTime?      @map("last_credit_at") @db.Timestamptz(3)
+  /// Reconciliation poll watermark (credits missed by webhooks are picked up by the poller).
+  lastPolledAt DateTime?      @map("last_polled_at") @db.Timestamptz(3)
+  createdById  String?        @map("created_by_id")
+  createdAt    DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  closedAt     DateTime?      @map("closed_at") @db.Timestamptz(3)
+
+  provider Provider  @relation(fields: [providerId], references: [id], onDelete: Restrict)
+  payments Payment[]
+
+  @@unique([providerId, providerQrId])
+  @@index([merchantId, createdAt(sort: Desc)])
+  @@index([status, lastPolledAt])
+  @@map("static_qrs")
 }

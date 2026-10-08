@@ -21,7 +21,7 @@ import { errorMessage, toTableError } from '@/lib/api/errors';
 import type { ProviderRoute, ProviderRow, RoutingSimulation } from '@/lib/api/types';
 import { useCan } from '@/lib/auth/use-me';
 
-const METHODS = { PAYIN: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK'], PAYOUT: ['IMPS', 'NEFT', 'RTGS', 'UPI'] } as const;
+const METHODS = { PAYIN: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK', 'UPI_STATIC_QR'], PAYOUT: ['IMPS', 'NEFT', 'RTGS', 'UPI'] } as const;
 const ANY = '__any__';
 
 type Form = { name: string; tier: string; priority: string; provider_id: string; merchant_id: string; method: string; min_amount: string; max_amount: string; is_active: boolean };

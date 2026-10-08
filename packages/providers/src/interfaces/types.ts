@@ -150,7 +150,7 @@ export interface ProviderBalance {
 
 export interface NormalizedWebhookEvent {
   externalEventId: string;
-  type: 'payment.status' | 'refund.status' | 'payout.status';
+  type: 'payment.status' | 'refund.status' | 'payout.status' | 'static_qr.credit';
   reference?: string;
   providerOrderId?: string;
   providerReference?: string;
@@ -162,6 +162,10 @@ export interface NormalizedWebhookEvent {
   failureReason?: string;
   /** The callback can't be trusted for the outcome (e.g. unauthenticated encryption): check the status API now. */
   confirmByStatusApi?: boolean;
+  /** static_qr.credit: the provider's QR id (providerReference = the provider's payment id). */
+  providerQrId?: string;
+  /** static_qr.credit: when the customer paid (ISO). */
+  paidAt?: string;
 }
 
 export interface WebhookVerification {
@@ -174,6 +178,45 @@ export interface HealthCheckResult {
   ok: boolean;
   latencyMs: number;
   detail?: string;
+}
+
+// ---- Static QR ----------------------------------------------------------------------------------
+
+export interface CreateStaticQrRequest {
+  /** Our static QR id (sqr_…), echoed in provider notes for reconciliation. */
+  reference: string;
+  /** Payee name shown in the customer's UPI app (the merchant's display name). */
+  name: string;
+  description?: string;
+}
+
+export interface StaticQrResult {
+  providerQrId: string;
+  /** upi://pay?… without an amount (the customer types it). At least one of upiPayload / imageUrl. */
+  upiPayload?: string;
+  imageUrl?: string;
+}
+
+/** One payment into a static QR, as the provider reports it. Amounts only ever come from here. */
+export interface StaticQrCredit {
+  providerPaymentId: string;
+  amountMinor: bigint;
+  utr?: string;
+  rrn?: string;
+  payerVpa?: string;
+  paidAt?: Date;
+}
+
+/** Optional capability of a payin adapter: multi-use, any-amount UPI QR codes. */
+export interface StaticQrProvider {
+  createStaticQr(req: CreateStaticQrRequest): Promise<StaticQrResult>;
+  closeStaticQr(providerQrId: string): Promise<void>;
+  /** Captured credits since `since` (reconciliation for missed webhooks). */
+  listStaticQrCredits(providerQrId: string, since: Date): Promise<StaticQrCredit[]>;
+}
+
+export function supportsStaticQr(p: unknown): p is StaticQrProvider {
+  return typeof (p as Partial<StaticQrProvider> | null)?.createStaticQr === 'function';
 }
 
 // ---- Interfaces ---------------------------------------------------------------------------------

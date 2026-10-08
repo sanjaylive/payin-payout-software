@@ -1,7 +1,7 @@
 import { ApiError } from '@/lib/api/client';
 import type { PayinMethod, PaymentStatus } from '@/lib/api/types';
 
-export const METHOD_LABELS: Record<PayinMethod, string> = { UPI_QR: 'UPI QR', UPI_INTENT: 'UPI intent', PAYMENT_LINK: 'Payment link' };
+export const METHOD_LABELS: Record<PayinMethod, string> = { UPI_QR: 'UPI QR', UPI_INTENT: 'UPI intent', PAYMENT_LINK: 'Payment link', UPI_STATIC_QR: 'Static QR' };
 
 export const PAYMENT_STATUSES: PaymentStatus[] = ['CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'EXPIRED', 'REFUND_PENDING', 'PARTIALLY_REFUNDED', 'REFUNDED', 'SETTLED'];
 

@@ -71,6 +71,8 @@ export function verifyMockWebhook(ctx: ProviderContext, rawBody: Buffer, headers
     rrn: d.rrn,
     payerVpa: d.payer_vpa,
     failureReason: d.failure_reason,
+    providerQrId: d.qr_id,
+    paidAt: d.paid_at,
   };
   return { valid: true, event };
 }

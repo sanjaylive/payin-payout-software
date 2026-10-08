@@ -53,6 +53,7 @@ export const MERCHANT_NAV: NavItem[] = [
       { label: 'QR Codes', href: '/payin/qr-codes', phase: 5, permission: 'payin.read' },
       { label: 'Checkout', href: '/payin/checkout', phase: 5, permission: 'payin.read' },
       { label: 'Payment Links', href: '/payin/payment-links', phase: 5, permission: 'payin.read' },
+      { label: 'Payment Pages', href: '/payin/payment-pages', phase: 5, permission: 'payin.read' },
       { label: 'Refunds', href: '/payin/refunds', phase: 5, permission: 'payin.read' },
     ],
   },

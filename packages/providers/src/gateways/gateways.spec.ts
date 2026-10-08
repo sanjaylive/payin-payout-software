@@ -71,6 +71,23 @@ describe('Razorpay', () => {
     expect(a.verifyWebhook(body, { 'x-razorpay-signature': sig, 'x-razorpay-event-id': 'evt_1' }).event).toMatchObject({ status: 'SUCCESS', providerOrderId: 'plink_1', reference: req.reference, amountMinor: 123450n, rrn: '123', externalEventId: 'evt_1' });
     expect(a.verifyWebhook(body, { 'x-razorpay-signature': sig.replace(/^./, '0') }).valid).toBe(false);
   });
+  it('creates a multi-use, any-amount UPI QR and lists its captured credits', async () => {
+    handlers['POST /v1/payments/qr_codes'] = () => ({ body: { id: 'qr_1', image_url: 'https://rzp.io/i/qr', image_content: 'upi://pay?pa=rpy.qr@icici&pn=Shop' } });
+    handlers['GET /v1/payments/qr_codes/qr_1/payments'] = () => ({ body: { items: [{ id: 'pay_a', amount: 25000, status: 'captured', vpa: 'c@okaxis', acquirer_data: { rrn: '998877' }, created_at: 1767225600 }, { id: 'pay_b', amount: 100, status: 'failed' }] } });
+    const a = payinAdapter('razorpay', ctx('razorpay', creds)) as unknown as import('../interfaces/types').StaticQrProvider;
+    const qr = await a.createStaticQr({ reference: 'sqr_1', name: 'Sharma Electronics' });
+    expect(qr).toEqual({ providerQrId: 'qr_1', upiPayload: 'upi://pay?pa=rpy.qr@icici&pn=Shop', imageUrl: 'https://rzp.io/i/qr' });
+    expect(JSON.parse(seen[0]!.body)).toMatchObject({ type: 'upi_qr', usage: 'multiple_use', fixed_amount: false, notes: { reference: 'sqr_1' } });
+    const credits = await a.listStaticQrCredits('qr_1', new Date(1767225000_000));
+    expect(credits).toEqual([{ providerPaymentId: 'pay_a', amountMinor: 25000n, rrn: '998877', utr: '998877', payerVpa: 'c@okaxis', paidAt: new Date(1767225600_000) }]);
+    expect(seen[1]!.method).toBe('GET');
+  });
+  it('maps a signed qr_code.credited webhook to a static QR credit', () => {
+    const a = payinAdapter('razorpay', ctx('razorpay', creds));
+    const body = Buffer.from(JSON.stringify({ event: 'qr_code.credited', payload: { qr_code: { entity: { id: 'qr_1' } }, payment: { entity: { id: 'pay_a', amount: 25000, status: 'captured', vpa: 'c@okaxis', acquirer_data: { rrn: '998877' } } } } }));
+    const sig = createHmac('sha256', 'whsec').update(body).digest('hex');
+    expect(a.verifyWebhook(body, { 'x-razorpay-signature': sig, 'x-razorpay-event-id': 'evt_q' }).event).toMatchObject({ type: 'static_qr.credit', providerQrId: 'qr_1', providerReference: 'pay_a', status: 'SUCCESS', amountMinor: 25000n, payerVpa: 'c@okaxis' });
+  });
 });
 
 describe('Cashfree', () => {

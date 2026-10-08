@@ -54,6 +54,29 @@ export class SandboxService {
     return this.inbound.receive(provider.code, body, { 'x-mock-signature': signature });
   }
 
+  /** A customer scans a sandbox static QR and pays `amountMinor` — a signed credit callback. */
+  async payStaticQr(actor: Actor, qrId: string, amountMinor: bigint, payerVpa?: string) {
+    if (this.config.isProduction) throw new AppError(ErrorCode.NOT_FOUND);
+    const ids = await this.scope.accessibleOrganizationIds(actor);
+    const q = await this.prisma.staticQr.findFirst({ where: { id: qrId, ...(ids ? { merchantId: { in: ids } } : {}) } });
+    if (!q) throw new AppError(ErrorCode.NOT_FOUND, 'QR code not found');
+    if (q.status !== 'ACTIVE') throw new AppError(ErrorCode.INVALID_STATE_TRANSITION, 'This QR code is closed');
+    const provider = await this.prisma.provider.findUniqueOrThrow({ where: { id: q.providerId } });
+    if (provider.adapter !== 'mock' || provider.environment !== 'TEST') throw new AppError(ErrorCode.FORBIDDEN, 'Simulation is only available for sandbox providers');
+    const secret = (await this.registry.context(provider)).credentials.webhook_secret;
+    if (!secret) throw new AppError(ErrorCode.INVALID_REQUEST, 'Sandbox provider has no webhook secret');
+    const digits = () => String(Math.floor(1e11 + Math.random() * 9e11));
+    const body = Buffer.from(
+      JSON.stringify({
+        event_id: `sbx_${randomUUID()}`,
+        type: 'static_qr.credit',
+        data: { qr_id: q.providerQrId, provider_reference: `mockpay_${randomUUID().replace(/-/g, '').slice(0, 20)}`, status: 'SUCCESS', amount_minor: amountMinor.toString(), utr: digits(), rrn: digits(), payer_vpa: payerVpa ?? 'sandbox.customer@okmock', paid_at: new Date().toISOString() },
+      }),
+    );
+    const signature = createHmac('sha256', secret).update(body).digest('hex');
+    return this.inbound.receive(provider.code, body, { 'x-mock-signature': signature });
+  }
+
   /** Simulate the bank's answer for a sent payout (success, failure, or a later bank return). */
   async completePayout(actor: Actor, payoutId: string, outcome: 'SUCCESS' | 'FAILED' | 'REVERSED') {
     if (this.config.isProduction) throw new AppError(ErrorCode.NOT_FOUND);

@@ -188,6 +188,8 @@ function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
 const NAV: { group: string; items: { id: string; label: string; method?: string }[] }[] = [
   { group: 'Get started', items: [{ id: 'introduction', label: 'Introduction' }, { id: 'quickstart', label: 'Quickstart' }, { id: 'authentication', label: 'Authentication' }, { id: 'idempotency', label: 'Idempotency' }, { id: 'errors', label: 'Errors' }, { id: 'pagination', label: 'Pagination' }, { id: 'rate-limits', label: 'Rate limits' }, { id: 'testing', label: 'Testing' }] },
   { group: 'Checkout', items: [{ id: 'checkout', label: 'How checkout works' }, { id: 'checkout-create', label: 'Create a session', method: 'POST' }, { id: 'checkout-retrieve', label: 'Retrieve a session', method: 'GET' }, { id: 'checkout-list', label: 'List sessions', method: 'GET' }, { id: 'checkout-cancel', label: 'Cancel a session', method: 'POST' }, { id: 'checkout-return', label: 'After payment' }] },
+  { group: 'Payment links', items: [{ id: 'links', label: 'How links work' }, { id: 'links-create', label: 'Create a link', method: 'POST' }, { id: 'links-retrieve', label: 'Retrieve a link', method: 'GET' }, { id: 'links-list', label: 'List links', method: 'GET' }, { id: 'links-notify', label: 'Send a link', method: 'POST' }, { id: 'links-cancel', label: 'Cancel a link', method: 'POST' }] },
+  { group: 'Static QR', items: [{ id: 'static-qr', label: 'Static QR codes', method: 'GET' }, { id: 'static-qr-payments', label: 'QR payments', method: 'GET' }] },
   { group: 'Payments', items: [{ id: 'payments-create', label: 'Create a payment', method: 'POST' }, { id: 'payments-retrieve', label: 'Retrieve a payment', method: 'GET' }, { id: 'payments-list', label: 'List payments', method: 'GET' }, { id: 'refunds-create', label: 'Refund a payment', method: 'POST' }, { id: 'refunds-list', label: 'List refunds', method: 'GET' }] },
   { group: 'Payouts', items: [{ id: 'payouts-create', label: 'Create a payout', method: 'POST' }, { id: 'payouts-retrieve', label: 'Retrieve a payout', method: 'GET' }, { id: 'payouts-list', label: 'List payouts', method: 'GET' }, { id: 'beneficiaries', label: 'Beneficiaries', method: 'POST' }] },
   { group: 'Account', items: [{ id: 'balances', label: 'Balances', method: 'GET' }, { id: 'settlements', label: 'Settlements', method: 'GET' }] },
@@ -253,6 +255,24 @@ function Sidebar({ active }: { active: string }) {
 }
 
 // ---- Example objects ------------------------------------------------------------------------------
+
+const LINK = {
+  id: 'cs_01JC8ZJ4K5M6N7P8Q9R0S1T2V3',
+  object: 'payment_link',
+  reference: 'INV-204',
+  amount: '1499.00',
+  currency: 'INR',
+  description: 'Invoice INV-204',
+  status: 'OPEN',
+  url: 'https://pay.example.com/checkout/Xk2…',
+  customer: { name: 'Asha Rao', email: 'asha@example.com', mobile: '9876543210' },
+  payment_id: null,
+  payment: null,
+  notified_at: '2026-10-08T11:00:02.000Z',
+  expires_at: '2026-10-15T11:00:00.000Z',
+  paid_at: null,
+  created_at: '2026-10-08T11:00:00.000Z',
+};
 
 const PAYMENT = {
   payment_id: 'pay_01JC8Z5XG7Q2H4K6M8P0R2T4V6',
@@ -554,6 +574,80 @@ export function ApiReference() {
               </p>
             </Callout>
           </Section>
+
+          <Section id="links" title="Payment links" aside={<Json title="Payment link" value={{ success: true, data: LINK }} />}>
+            <p>
+              A payment link asks a customer for money without a website: send it by WhatsApp, SMS or email, or show its QR. The customer pays by UPI or card on a secure hosted page and gets a receipt there. Each link is paid at most once.
+            </p>
+            <ul className="list-disc space-y-1 pl-5">
+              <li>
+                Statuses: <code>OPEN</code> → <code>PAID</code>, or <code>EXPIRED</code> / <code>CANCELLED</code>. A paid link has a <code>payment</code> with the UTR.
+              </li>
+              <li>
+                You get the usual <code>payment.success</code> webhook; its <code>checkout_session_id</code> is the link&apos;s <code>id</code>.
+              </li>
+              <li>
+                Links you create from the dashboard (Payin → Payment links) and from the API are the same object.
+              </li>
+            </ul>
+          </Section>
+
+          <Endpoint
+            id="links-create"
+            method="POST"
+            path="/v1/payment-links"
+            title="Create a payment link"
+            body={{ amount: '1499.00', description: 'Invoice INV-204', reference: 'INV-204', customer: { name: 'Asha Rao', email: 'asha@example.com', mobile: '9876543210' }, expires_in_days: 7, notify: { email: true, sms: false } }}
+            response={{ success: true, data: LINK }}
+            params={[
+              { name: 'amount', type: 'string', required: true, desc: 'Rupees, e.g. "1499.00" (minimum ₹1.00).' },
+              { name: 'description', type: 'string', required: true, desc: 'What the customer is paying for (2–200 characters). Shown on the page and in messages.' },
+              { name: 'reference', type: 'string', desc: 'Your reference, e.g. an invoice number: 1–60 of A–Z a–z 0–9 _ - / . :, unique per account. Generated (PL-…) when omitted.' },
+              { name: 'customer', type: 'object', desc: 'name, email, mobile. Needed for the channels you notify on.' },
+              { name: 'expires_in_days', type: 'integer', desc: '1–90; default 7.' },
+              { name: 'notify', type: 'object', desc: '{ email, sms } — send the link right away. Off by default.' },
+              { name: 'metadata', type: 'object', desc: 'Up to 20 string key/values.' },
+            ]}
+          >
+            <p>
+              Requires the <code>Idempotency-Key</code> header. A retried request returns the same link and never sends a second message.
+            </p>
+          </Endpoint>
+
+          <Endpoint id="links-retrieve" method="GET" path="/v1/payment-links/:id" title="Retrieve a link" response={{ success: true, data: { ...LINK, status: 'PAID', payment_id: 'pay_01JC8ZE…', payment: { id: 'pay_01JC8ZE…', status: 'SUCCESS', method: 'UPI_QR', utr: '412345678901' }, paid_at: '2026-10-08T11:20:41.000Z' } }}>
+            <p>The source of truth for whether a link is paid.</p>
+          </Endpoint>
+
+          <Endpoint
+            id="links-list"
+            method="GET"
+            path="/v1/payment-links"
+            title="List links"
+            response={{ success: true, data: [LINK], meta: { limit: 25, has_more: false, next_cursor: null } }}
+            query={[
+              { name: 'status', type: 'enum', desc: 'OPEN, PAID, EXPIRED or CANCELLED' },
+              { name: 'reference', type: 'string', desc: 'References starting with this text' },
+              { name: 'limit / cursor', type: 'pagination', desc: 'See Pagination' },
+            ]}
+          />
+
+          <Endpoint id="links-notify" method="POST" path="/v1/payment-links/:id/notify" title="Send a link" body={{ email: true, sms: true }} response={{ success: true, data: { ...LINK, notified_at: '2026-10-08T11:02:00.000Z' } }}>
+            <p>Emails and/or texts an open link to the customer on file. At most once a minute per link. SMS in India uses your DLT-approved template.</p>
+          </Endpoint>
+
+          <Endpoint id="links-cancel" method="POST" path="/v1/payment-links/:id/cancel" title="Cancel a link" response={{ success: true, data: { ...LINK, status: 'CANCELLED' } }}>
+            <p>Stops an unpaid link from accepting payments.</p>
+          </Endpoint>
+
+          <Endpoint id="static-qr" method="GET" path="/v1/static-qrs" title="Static QR codes" response={{ success: true, data: [{ id: 'sqr_01JC8ZH…', object: 'static_qr', label: 'Counter 1', status: 'ACTIVE', upi_payload: 'upi://pay?pa=…&pn=Sharma%20Electronics&cu=INR', image_url: null, last_credit_at: '2026-10-08T12:40:00.000Z', today: { count: 18, amount: '7420.00' } }] }}>
+            <p>
+              Static QR codes are printed once and accept any amount, from any UPI app. Create and close them in the dashboard (Payin → QR codes). Every payment received becomes a normal payment with <code>method: &quot;UPI_STATIC_QR&quot;</code> and <code>static_qr_id</code>, and triggers <code>payment.created</code> and <code>payment.success</code> webhooks.
+            </p>
+          </Endpoint>
+
+          <Endpoint id="static-qr-payments" method="GET" path="/v1/static-qrs/:id/payments" title="QR payments" response={{ success: true, data: [{ ...PAYMENT, merchant_order_id: 'SQR-pay_NsK1a2b3', method: 'UPI_STATIC_QR', static_qr_id: 'sqr_01JC8ZH…', amount: '250.00', status: 'SUCCESS', utr: '412398765432' }] }}>
+            <p>The latest payments received on one QR code, newest first.</p>
+          </Endpoint>
 
           <Endpoint
             id="payments-create"

@@ -39,7 +39,7 @@ const csvEnum = <T extends string>(values: readonly [T, ...T[]]) =>
 
 export const listPaymentsQuerySchema = paginationQuerySchema.extend({
   status: csvEnum(['CREATED', 'PENDING', 'SUCCESS', 'FAILED', 'EXPIRED', 'CANCELLED', 'SETTLEMENT_PENDING', 'SETTLED', 'REFUND_PENDING', 'PARTIALLY_REFUNDED', 'REFUNDED', 'DISPUTED', 'CHARGEBACK']),
-  method: csvEnum(['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK']),
+  method: csvEnum(['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK', 'UPI_STATIC_QR']),
   payment_id: idSchema('pay').optional(),
   merchant_order_id: orderId.optional(),
   utr: z.string().trim().max(40).optional(),

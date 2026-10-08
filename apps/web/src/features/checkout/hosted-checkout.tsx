@@ -71,8 +71,16 @@ export function HostedCheckout({ token, returned }: { token: string; returned: b
       <Center
         icon={<Clock3 className="text-muted-foreground size-10" />}
         title={d.status === 'EXPIRED' ? 'This payment link has expired' : 'This payment was cancelled'}
-        text="No money was taken. Go back to the merchant to start again."
-        action={d.return_url && <Button onClick={() => window.location.assign(d.return_url!)}>Return to {d.merchant.name}</Button>}
+        text={d.kind === 'LINK' ? `No money was taken. Ask ${d.merchant.name} for a new payment link.` : d.kind === 'PAGE' ? 'No money was taken. You can start again.' : 'No money was taken. Go back to the merchant to start again.'}
+        action={
+          d.return_url ? (
+            <Button onClick={() => window.location.assign(d.return_url!)}>Return to {d.merchant.name}</Button>
+          ) : d.page ? (
+            <Button asChild>
+              <a href={`/p/${d.page.slug}`}>Start again</a>
+            </Button>
+          ) : null
+        }
       />
     );
   } else if (p && OPEN.includes(p.status) && p.method === 'UPI_QR' && !choosing) body = <UpiWait p={p} onBack={() => setChoosing(true)} />;
@@ -116,7 +124,7 @@ function Summary({ d }: { d: PublicCheckout }) {
       </div>
       <dl className="relative space-y-1 text-xs">
         <div className="flex justify-between gap-2">
-          <dt className="opacity-75">Order</dt>
+          <dt className="opacity-75">{d.kind === 'CHECKOUT' ? 'Order' : 'Reference'}</dt>
           <dd className="truncate font-mono">{d.order.id}</dd>
         </div>
         {t && (
@@ -219,9 +227,11 @@ function Choose({ d, token, failed, onStarted }: { d: PublicCheckout; token: str
         <span className="inline-flex items-center gap-1">
           <ShieldCheck className="size-3.5" /> Your card details are entered only on the bank’s secure page.
         </span>
-        <a href={d.cancel_url} onClick={(e) => { e.preventDefault(); void apiRequest(`/v1/public/checkout/${token}/cancel`, { method: 'POST', auth: false, body: {} }).finally(() => window.location.assign(d.cancel_url)); }} className="hover:text-foreground shrink-0 underline-offset-2 hover:underline">
-          Cancel
-        </a>
+        {d.cancel_url && (
+          <a href={d.cancel_url} onClick={(e) => { e.preventDefault(); void apiRequest(`/v1/public/checkout/${token}/cancel`, { method: 'POST', auth: false, body: {} }).finally(() => window.location.assign(d.cancel_url!)); }} className="hover:text-foreground shrink-0 underline-offset-2 hover:underline">
+            Cancel
+          </a>
+        )}
       </div>
     </div>
   );
@@ -290,16 +300,48 @@ function Paid({ d }: { d: PublicCheckout }) {
     const id = setTimeout(() => window.location.assign(d.return_url!), Math.max(0, deadline - Date.now()));
     return () => clearTimeout(id);
   }, [d.return_url, deadline]);
+  const icon = (
+    <span className="flex size-16 items-center justify-center rounded-full bg-emerald-500/10">
+      <CheckCircle2 className="size-10 text-emerald-600" />
+    </span>
+  );
+  if (d.return_url) {
+    return (
+      <Center
+        icon={icon}
+        title="Payment successful"
+        text={`${inr(d.order.amount)} paid to ${d.merchant.name}${d.payment?.utr ? ` · Ref ${d.payment.utr}` : ''}. Taking you back to the merchant…`}
+        action={<Button onClick={() => window.location.assign(d.return_url!)}>Return to {d.merchant.name}</Button>}
+      />
+    );
+  }
+  // Payment links and pages end here: a receipt the customer can print or save.
+  const rows: [string, string][] = [
+    ['Paid to', d.merchant.name],
+    ['Amount', inr(d.order.amount)],
+    ['For', d.order.description ?? '—'],
+    ['Reference', d.order.id],
+    ...(d.payment?.utr ? ([['Bank reference (UTR)', d.payment.utr]] as [string, string][]) : []),
+    ['Date', new Date().toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })],
+  ];
   return (
-    <Center
-      icon={
-        <span className="flex size-16 items-center justify-center rounded-full bg-emerald-500/10">
-          <CheckCircle2 className="size-10 text-emerald-600" />
-        </span>
-      }
-      title="Payment successful"
-      text={`${inr(d.order.amount)} paid to ${d.merchant.name}${d.payment?.utr ? ` · Ref ${d.payment.utr}` : ''}. Taking you back to the merchant…`}
-      action={d.return_url && <Button onClick={() => window.location.assign(d.return_url!)}>Return to {d.merchant.name}</Button>}
-    />
+    <div className="flex h-full flex-col items-center justify-center gap-4 py-6 text-center">
+      {icon}
+      <div>
+        <h1 className="text-xl font-semibold">Payment successful</h1>
+        <p className="text-muted-foreground mt-1 max-w-sm text-sm">{d.page?.success_message ?? 'Thank you. Keep this receipt for your records — you can close this page.'}</p>
+      </div>
+      <dl className="w-full max-w-sm divide-y rounded-xl border text-left text-sm">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex justify-between gap-4 px-4 py-2.5">
+            <dt className="text-muted-foreground">{k}</dt>
+            <dd className="text-right font-medium break-all">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <Button variant="outline" className="print:hidden" onClick={() => window.print()}>
+        Print receipt
+      </Button>
+    </div>
   );
 }

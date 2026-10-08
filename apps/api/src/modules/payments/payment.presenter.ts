@@ -42,6 +42,7 @@ export function presentPayment(p: Payment, opts: PresentOptions = {}) {
     merchant_id: p.merchantId,
     merchant_order_id: p.merchantOrderId,
     checkout_session_id: p.checkoutSessionId,
+    static_qr_id: p.staticQrId,
     amount: major(p.amountMinor),
     currency: p.currency,
     fee: major(p.feeMinor),

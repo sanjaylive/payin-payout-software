@@ -20,7 +20,7 @@ export async function seedProviders(db: PrismaClient, sharmaId: string): Promise
   const enc = new FieldEncryptor(createKeyring(keyId, { [keyId]: process.env.ENCRYPTION_KEY! }));
 
   const defs = [
-    { code: 'mock-upi', name: 'Sandbox UPI collections', kind: 'PAYIN', adapter: 'mock', status: 'ACTIVE', capabilities: { payin_methods: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK'], min_amount_minor: '100', max_amount_minor: '10000000' }, costs: { payin_rate_micros: '100000' }, config: { auto_success_after_ms: 3000, timeout_ms: 8000 } },
+    { code: 'mock-upi', name: 'Sandbox UPI collections', kind: 'PAYIN', adapter: 'mock', status: 'ACTIVE', capabilities: { payin_methods: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK', 'UPI_STATIC_QR'], min_amount_minor: '100', max_amount_minor: '10000000' }, costs: { payin_rate_micros: '100000' }, config: { auto_success_after_ms: 3000, timeout_ms: 8000 } },
     { code: 'mock-upi-2', name: 'Sandbox UPI collections — fallback', kind: 'PAYIN', adapter: 'mock', status: 'ACTIVE', capabilities: { payin_methods: ['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK'], min_amount_minor: '100', max_amount_minor: '10000000' }, costs: { payin_rate_micros: '110000' }, config: { auto_success_after_ms: 3000, timeout_ms: 8000, collect_vpa: 'pay2all.mock2@upi', scripted_create_failures: false } },
     { code: 'mock-payout', name: 'Sandbox payouts — Provider 1', kind: 'PAYOUT', adapter: 'mock', status: 'ACTIVE', capabilities: { payout_modes: ['IMPS', 'NEFT', 'UPI'], max_amount_minor: '50000000' }, costs: { payout_flat_minor: '300' }, config: { auto_success_after_ms: 3000, timeout_ms: 10000 } },
     { code: 'mock-payout-2', name: 'Sandbox payouts — Provider 2', kind: 'PAYOUT', adapter: 'mock', status: 'ACTIVE', capabilities: { payout_modes: ['IMPS', 'NEFT', 'RTGS', 'UPI'] }, costs: { payout_flat_minor: '450' }, config: { auto_success_after_ms: 5000, timeout_ms: 10000 } },
@@ -49,6 +49,11 @@ export async function seedProviders(db: PrismaClient, sharmaId: string): Promise
         },
       }));
     ids.set(d.code, p.id);
+    // Databases seeded before static QR existed: let the primary sandbox issue them too.
+    const caps = (p.capabilities ?? {}) as { payin_methods?: string[] };
+    if (d.code === 'mock-upi' && caps.payin_methods && !caps.payin_methods.includes('UPI_STATIC_QR')) {
+      await db.provider.update({ where: { id: p.id }, data: { capabilities: json({ ...caps, payin_methods: [...caps.payin_methods, 'UPI_STATIC_QR'] }) } });
+    }
     // Every payment service belongs to an API vendor (docs/VENDORS.md); one per provider by default.
     if (!p.vendorId) {
       const vendor = await db.apiVendor.upsert({ where: { code: d.code }, create: { id: newId('apiVendor'), code: d.code, name: d.name }, update: {} });

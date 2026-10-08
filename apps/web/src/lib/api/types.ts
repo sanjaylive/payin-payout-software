@@ -399,7 +399,7 @@ export interface RoutingSimulation {
 export type PaymentStatus =
   | 'CREATED' | 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANCELLED' | 'SETTLEMENT_PENDING' | 'SETTLED'
   | 'REFUND_PENDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED' | 'DISPUTED' | 'CHARGEBACK';
-export type PayinMethod = 'UPI_QR' | 'UPI_INTENT' | 'PAYMENT_LINK';
+export type PayinMethod = 'UPI_QR' | 'UPI_INTENT' | 'PAYMENT_LINK' | 'UPI_STATIC_QR';
 
 export interface Refund {
   refund_id: string;
@@ -1200,8 +1200,10 @@ export interface PublicCheckoutPayment {
   failure_reason: string | null;
 }
 export interface PublicCheckout {
+  kind: 'CHECKOUT' | 'LINK' | 'PAGE';
   merchant: { name: string };
   platform: { name: string };
+  page: { slug: string; title: string; success_message: string | null } | null;
   order: { id: string; amount: string; currency: 'INR'; description: string | null };
   customer: { name: string | null; email: string | null; mobile: string | null };
   status: 'OPEN' | 'PAID' | 'EXPIRED' | 'CANCELLED';
@@ -1209,5 +1211,89 @@ export interface PublicCheckout {
   methods: { upi: boolean; gateways: { key: string; name: string; methods: string[] }[] };
   payment: PublicCheckoutPayment | null;
   return_url: string | null;
-  cancel_url: string;
+  cancel_url: string | null;
+}
+
+export interface PaymentLinkRow {
+  id: string;
+  object: 'payment_link';
+  reference: string;
+  amount: string;
+  currency: 'INR';
+  description: string | null;
+  status: 'OPEN' | 'PAID' | 'EXPIRED' | 'CANCELLED';
+  url: string;
+  customer: { name: string | null; email: string | null; mobile: string | null };
+  payment_id: string | null;
+  payment: { id: string; status: string; method: string; utr: string | null } | null;
+  attempts: number;
+  notified_at: string | null;
+  expires_at: string;
+  paid_at: string | null;
+  created_at: string;
+}
+
+export interface PaymentLinkSummary {
+  created: number;
+  paid: number;
+  paid_amount: string;
+  open_amount: string;
+}
+
+export type PageFieldType = 'text' | 'number' | 'email' | 'phone';
+export interface PageField {
+  key: string;
+  label: string;
+  type: PageFieldType;
+  required: boolean;
+}
+
+export type PageAmount = { amount_type: 'FIXED'; amount: string } | { amount_type: 'CUSTOMER'; min_amount: string; max_amount: string };
+
+export interface PaymentPageRow {
+  id: string;
+  slug: string;
+  url: string;
+  title: string;
+  description: string | null;
+  amount: PageAmount;
+  fields: PageField[];
+  success_message: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  stats?: { payments: number; collected: string; last_payment_at: string | null };
+}
+
+export interface PagePaymentRow {
+  checkout_session_id: string;
+  reference: string;
+  amount: string;
+  customer: { name: string | null; email: string | null; mobile: string | null };
+  fields: Record<string, string | null>;
+  payment_id: string | null;
+  paid_at: string;
+}
+
+export interface PublicPaymentPage {
+  slug: string;
+  title: string;
+  description: string | null;
+  amount: PageAmount;
+  fields: PageField[];
+  merchant: { name: string };
+  platform: { name: string };
+}
+
+export interface StaticQrRow {
+  id: string;
+  merchant_id: string;
+  label: string;
+  status: 'ACTIVE' | 'CLOSED';
+  upi_payload: string | null;
+  image_url: string | null;
+  provider?: string;
+  last_credit_at: string | null;
+  created_at: string;
+  closed_at: string | null;
+  today?: { count: number; amount: string };
 }

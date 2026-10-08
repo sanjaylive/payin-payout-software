@@ -20,11 +20,14 @@ import {
 let ctx: TestContext;
 let merchantOrgId: string;
 let platformOrgId: string;
+/** A merchant user whose role doesn't require two-factor: password sign-in yields a session directly. */
+let plainEmail: string;
 
 beforeAll(async () => {
   ctx = await createTestContext();
   merchantOrgId = (await orgBySlug(ctx, 'sharma-electronics')).id;
   platformOrgId = (await orgBySlug(ctx, 'pay2all')).id;
+  plainEmail = (await createUser(ctx, { roleKey: 'MERCHANT_FINANCE', organizationId: merchantOrgId })).email;
 });
 
 afterAll(async () => {
@@ -95,7 +98,7 @@ describe('login', () => {
       .post('/v1/auth/login')
       .set('X-Forwarded-For', randomIp())
       .set('X-Request-Id', 'req_test_correlation_1234')
-      .send({ identifier: 'owner@sharma-electronics.local', password: SEED_PASSWORD });
+      .send({ identifier: plainEmail, password: SEED_PASSWORD });
     expect(res.headers['x-request-id']).toBe('req_test_correlation_1234');
     const row = await ctx.prisma.auditLog.findFirst({
       where: { action: 'auth.login.succeeded', requestId: 'req_test_correlation_1234' },
@@ -106,7 +109,7 @@ describe('login', () => {
 
 describe('refresh token rotation', () => {
   it('rotates the refresh token and issues a new access token', async () => {
-    const { refresh: rt1 } = await login(ctx, 'owner@sharma-electronics.local');
+    const { refresh: rt1 } = await login(ctx, plainEmail);
     const res = await refresh(ctx, rt1!);
     expect(res.status).toBe(200);
     const rt2 = extractRefreshCookie(res);
@@ -116,7 +119,7 @@ describe('refresh token rotation', () => {
   });
 
   it('detects reuse of a consumed refresh token and revokes the whole session', async () => {
-    const { refresh: rt1, accessToken } = await login(ctx, 'owner@sharma-electronics.local');
+    const { refresh: rt1, accessToken } = await login(ctx, plainEmail);
     const rotated = await refresh(ctx, rt1!);
     const rt2 = extractRefreshCookie(rotated)!;
     // Move the consumption time outside the concurrency grace window.
@@ -138,13 +141,13 @@ describe('refresh token rotation', () => {
   });
 
   it('lets exactly one of several concurrent refreshes with the same token succeed', async () => {
-    const { refresh: rt } = await login(ctx, 'owner@sharma-electronics.local');
+    const { refresh: rt } = await login(ctx, plainEmail);
     const results = await Promise.all(Array.from({ length: 5 }, () => refresh(ctx, rt!)));
     expect(results.filter((r) => r.status === 200)).toHaveLength(1);
   });
 
   it('requires the CSRF header and an allowed origin', async () => {
-    const { refresh: rt } = await login(ctx, 'owner@sharma-electronics.local');
+    const { refresh: rt } = await login(ctx, plainEmail);
     const noHeader = await ctx.http().post('/v1/auth/refresh').set('Cookie', `p2a_rt=${rt}`);
     expect(noHeader.status).toBe(403);
     expect(noHeader.body.error.code).toBe('CSRF_REJECTED');
@@ -160,7 +163,7 @@ describe('refresh token rotation', () => {
 
 describe('sessions and logout', () => {
   it('logout revokes the session immediately (access token rejected)', async () => {
-    const { accessToken, refresh: rt } = await login(ctx, 'owner@kirana-fresh.local');
+    const { accessToken, refresh: rt } = await login(ctx, plainEmail);
     const out = await ctx
       .http()
       .post('/v1/auth/logout')

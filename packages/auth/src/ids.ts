@@ -45,6 +45,8 @@ export const ID_PREFIXES = {
   fundRequest: 'fnd',
   website: 'web',
   checkoutSession: 'cs',
+  paymentPage: 'pg',
+  staticQr: 'sqr',
   payment: 'pay',
   payout: 'pout',
   refund: 'rfnd',

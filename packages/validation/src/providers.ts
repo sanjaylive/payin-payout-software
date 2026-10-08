@@ -6,7 +6,7 @@ export const providerKindSchema = z.enum(['PAYIN', 'PAYOUT', 'BOTH']);
 export const providerEnvironmentSchema = z.enum(['TEST', 'LIVE']);
 
 const capabilities = z.strictObject({
-  payin_methods: z.array(z.enum(['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK', 'VIRTUAL_ACCOUNT', 'IMPS', 'NEFT', 'RTGS', 'CARD', 'NETBANKING'])).max(10).optional(),
+  payin_methods: z.array(z.enum(['UPI_QR', 'UPI_INTENT', 'PAYMENT_LINK', 'UPI_STATIC_QR', 'VIRTUAL_ACCOUNT', 'IMPS', 'NEFT', 'RTGS', 'CARD', 'NETBANKING'])).max(10).optional(),
   payout_modes: z.array(z.enum(['IMPS', 'NEFT', 'RTGS', 'UPI'])).max(4).optional(),
   min_amount_minor: z.string().regex(/^\d{1,17}$/).optional(),
   max_amount_minor: z.string().regex(/^\d{1,17}$/).optional(),

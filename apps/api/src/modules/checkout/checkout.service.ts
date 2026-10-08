@@ -126,6 +126,7 @@ export class CheckoutService {
     return {
       id: s.id,
       object: 'checkout_session',
+      kind: s.kind,
       merchant_order_id: s.merchantOrderId,
       amount: minorToMajorString(s.amountMinor),
       currency: 'INR',
@@ -200,7 +201,7 @@ export class CheckoutService {
   async listSessions(actor: Actor, q: z.output<typeof listCheckoutSessionsQuerySchema>) {
     const merchantId = merchantOnly(actor);
     const rows = await this.prisma.checkoutSession.findMany({
-      where: { AND: [{ merchantId }, q.status ? (q.status === 'EXPIRED' ? { OR: [{ status: 'EXPIRED' }, { status: 'OPEN', expiresAt: { lt: new Date() } }] } : q.status === 'OPEN' ? { status: 'OPEN', expiresAt: { gte: new Date() } } : { status: q.status }) : {}, q.merchant_order_id ? { merchantOrderId: q.merchant_order_id } : {}, keysetAfter(decodeCursor(q.cursor))] },
+      where: { AND: [{ merchantId, kind: 'CHECKOUT' }, q.status ? (q.status === 'EXPIRED' ? { OR: [{ status: 'EXPIRED' }, { status: 'OPEN', expiresAt: { lt: new Date() } }] } : q.status === 'OPEN' ? { status: 'OPEN', expiresAt: { gte: new Date() } } : { status: q.status }) : {}, q.merchant_order_id ? { merchantOrderId: q.merchant_order_id } : {}, keysetAfter(decodeCursor(q.cursor))] },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: q.limit + 1,
     });
@@ -245,16 +246,19 @@ export class CheckoutService {
   /** Everything the checkout page shows — nothing about the merchant beyond its public name. */
   async view(token: string) {
     const s = await this.byToken(token);
-    const [merchant, brand, payment] = await Promise.all([
+    const [merchant, brand, payment, page] = await Promise.all([
       this.prisma.merchant.findUniqueOrThrow({ where: { id: s.merchantId }, select: { organization: { select: { name: true } }, profile: { select: { displayName: true } } } }),
       this.brand.get(),
       this.latestPayment(s),
+      s.pageId ? this.prisma.paymentPage.findUnique({ where: { id: s.pageId }, select: { slug: true, title: true, successMessage: true } }) : null,
     ]);
     const status = this.effectiveStatus(s);
     const methods = status === 'OPEN' ? await this.methods(s) : { upi: false, gateways: [] };
     return {
+      kind: s.kind,
       merchant: { name: merchant.profile?.displayName ?? merchant.organization.name },
       platform: { name: brand.product_name },
+      page: page ? { slug: page.slug, title: page.title, success_message: page.successMessage } : null,
       order: { id: s.merchantOrderId, amount: minorToMajorString(s.amountMinor), currency: 'INR', description: s.description },
       customer: { name: s.customerName, email: s.customerEmail, mobile: s.customerMobile },
       status,
@@ -277,8 +281,12 @@ export class CheckoutService {
     return { upi, gateways: gateways.length ? [{ key: 'GATEWAY', name: 'Cards, netbanking & wallets', methods: [...new Set(gateways.flatMap((g) => g.methods))] }] : [] };
   }
 
-  /** The merchant's return URL with the outcome; verify server-side with GET /v1/checkout/sessions/:id. */
+  /**
+   * The merchant's return URL with the outcome; verify server-side with GET /v1/checkout/sessions/:id.
+   * Links and pages have none: the checkout page itself shows the receipt.
+   */
   private returnTo(s: CheckoutSession, status: string) {
+    if (!s.returnUrl) return null;
     const u = new URL(s.returnUrl);
     u.searchParams.set('checkout_session_id', s.id);
     u.searchParams.set('merchant_order_id', s.merchantOrderId);

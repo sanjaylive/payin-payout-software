@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { idSchema, sandboxCompleteSchema, sandboxPayoutSchema } from '@pay2all/validation';
+import { idSchema, sandboxCompleteSchema, sandboxPayoutSchema, sandboxStaticQrPaySchema, staticQrIdSchema } from '@pay2all/validation';
 import type { z } from 'zod';
 import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
@@ -33,5 +33,15 @@ export class SandboxController {
   @ApiZodBody(sandboxPayoutSchema)
   payout(@CurrentActor() actor: Actor, @Param('id', new ZodValidationPipe(idSchema('pout'))) id: string, @Body(new ZodValidationPipe(sandboxPayoutSchema)) body: z.output<typeof sandboxPayoutSchema>) {
     return this.sandbox.completePayout(actor, id, body.outcome);
+  }
+
+  @Post('static-qrs/:id/pay')
+  @ApiKeyAccess()
+  @HttpCode(200)
+  @RequirePermissions('payin.read')
+  @ApiOperation({ summary: 'Sandbox only: simulate a customer paying any amount to a static QR' })
+  @ApiZodBody(sandboxStaticQrPaySchema)
+  staticQr(@CurrentActor() actor: Actor, @Param('id', new ZodValidationPipe(staticQrIdSchema)) id: string, @Body(new ZodValidationPipe(sandboxStaticQrPaySchema)) body: z.output<typeof sandboxStaticQrPaySchema>) {
+    return this.sandbox.payStaticQr(actor, id, body.amount, body.payer_vpa);
   }
 }

@@ -12,6 +12,7 @@ import { ProviderRegistryService } from '../providers/provider-registry.service'
 import { type ProviderOutcome, PaymentTransitionsService } from '../payments/payment-transitions.service';
 import { RefundsService } from '../payments/refunds.service';
 import { PayoutTransitionsService } from '../payouts/payout-transitions.service';
+import { StaticQrService } from '../static-qr/static-qr.service';
 
 const PAYMENT_STATUS: Record<string, ProviderOutcome['status']> = {
   success: 'SUCCESS', captured: 'SUCCESS', paid: 'SUCCESS',
@@ -44,6 +45,7 @@ export class InboundEventsService {
     private readonly payouts: PayoutTransitionsService,
     private readonly ledger: LedgerService,
     private readonly audit: AuditService,
+    private readonly staticQrs: StaticQrService,
   ) {}
 
   async receive(code: string, rawBody: Buffer | undefined, headers: Record<string, string | undefined>) {
@@ -135,6 +137,20 @@ export class InboundEventsService {
           await this.payouts.applyOutcome(tx, attempt.payoutId, { status, utr: e.utr, providerReference: e.providerReference, failureReason: e.failureReason }, 'CALLBACK');
           await tx.providerWebhookEvent.update({ where: { id: eventId }, data: { status: 'PROCESSED', error: null, processedAt: new Date() } });
         });
+        return;
+      }
+      if (e.type === 'static_qr.credit') {
+        // Only captured money counts; the amount always comes from the verified provider event.
+        if (e.status !== 'SUCCESS' || !e.providerQrId || !e.providerReference || !e.amountMinor) return void (await mark('IGNORED', `Static QR event not a captured credit (${e.status})`));
+        const result = await this.staticQrs.recordCredit(ev.providerId, e.providerQrId, {
+          providerPaymentId: e.providerReference,
+          amountMinor: BigInt(e.amountMinor),
+          utr: e.utr,
+          rrn: e.rrn,
+          payerVpa: e.payerVpa,
+          paidAt: e.paidAt ? new Date(e.paidAt) : undefined,
+        });
+        await mark(result === 'UNKNOWN_QR' ? 'IGNORED' : 'PROCESSED', result === 'UNKNOWN_QR' ? 'Unknown static QR' : result === 'DUPLICATE' ? 'Already recorded' : undefined);
         return;
       }
       await mark('IGNORED', `Unsupported event type ${String(e.type)}`);

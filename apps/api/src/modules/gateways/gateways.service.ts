@@ -31,6 +31,9 @@ function platformOnly(actor: Actor) {
  * routing, health, webhooks, polling, refunds and reconciliation all work as for any provider.
  * Credentials are encrypted per environment and never returned (key names and last 4 only).
  */
+
+/** Gateways whose adapter also issues static (any-amount) UPI QR codes (docs/STATIC_QR.md). */
+const STATIC_QR_GATEWAYS = new Set(['razorpay']);
 @Injectable()
 export class GatewaysService {
   constructor(
@@ -112,7 +115,8 @@ export class GatewaysService {
             environment: input.environment,
             status: 'DISABLED',
             statusReason: 'Connected, not enabled yet',
-            capabilities: { payin_methods: ['PAYMENT_LINK', 'CARD', 'NETBANKING'], min_amount_minor: '100' },
+            // Static QR only where the adapter can issue one; it still needs its own route to be used.
+            capabilities: { payin_methods: ['PAYMENT_LINK', 'CARD', 'NETBANKING', ...(STATIC_QR_GATEWAYS.has(g.key) ? ['UPI_STATIC_QR'] : [])], min_amount_minor: '100' },
             config: { timeout_ms: 15000 },
           },
         });

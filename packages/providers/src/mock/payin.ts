@@ -2,11 +2,15 @@ import { ProviderError } from '../interfaces/errors';
 import type {
   CreatePaymentRequest,
   CreatePaymentResult,
+  CreateStaticQrRequest,
   PayinProvider,
   PaymentStatusResult,
   ProviderContext,
   RefundRequest,
   RefundResult,
+  StaticQrCredit,
+  StaticQrProvider,
+  StaticQrResult,
 } from '../interfaces/types';
 import { cfg, digits, mockHealthCheck, paise, settings, simulateLatency, ulidTime, verifyMockWebhook } from './shared';
 
@@ -19,7 +23,7 @@ import { cfg, digits, mockHealthCheck, paise, settings, simulateLatency, ulidTim
  * `config.scripted_create_failures: false` disables .91/.92 (used by the fallback sandbox so failover
  * can be demonstrated end to end).
  */
-export class MockPayinProvider implements PayinProvider {
+export class MockPayinProvider implements PayinProvider, StaticQrProvider {
   constructor(private readonly ctx: ProviderContext) {}
 
   private orderId(reference: string, amountMinor: bigint) {
@@ -76,6 +80,25 @@ export class MockPayinProvider implements PayinProvider {
     await simulateLatency(this.ctx);
     if (paise(req.amountMinor) === 13) return { providerRefundId: `mockrf_${req.reference}`, status: 'FAILED', failureReason: 'Simulated refund failure' };
     return { providerRefundId: `mockrf_${req.reference}`, status: 'SUCCESS' };
+  }
+
+  /**
+   * Static QR: stateless like the rest of the sandbox — credits arrive only through signed sandbox
+   * callbacks (POST /v1/sandbox/static-qrs/:id/pay), so there is nothing to list when polling.
+   */
+  async createStaticQr(req: CreateStaticQrRequest): Promise<StaticQrResult> {
+    await simulateLatency(this.ctx);
+    const providerQrId = `mockqr_${req.reference}`;
+    const vpa = cfg(this.ctx, 'collect_vpa', 'pay2all.mock@upi');
+    return { providerQrId, upiPayload: `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${encodeURIComponent(req.name.slice(0, 50))}&tr=${encodeURIComponent(providerQrId)}&cu=INR&mc=5411` };
+  }
+
+  async closeStaticQr(): Promise<void> {
+    await simulateLatency(this.ctx);
+  }
+
+  listStaticQrCredits(): Promise<StaticQrCredit[]> {
+    return Promise.resolve([]);
   }
 
   verifyWebhook(rawBody: Buffer, headers: Record<string, string | undefined>) {
