@@ -6,7 +6,7 @@ import { Label } from '@pay2all/ui/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@pay2all/ui/components/ui/select';
 import { Switch } from '@pay2all/ui/components/ui/switch';
 import { Textarea } from '@pay2all/ui/components/ui/textarea';
-import { Loader2, Save } from 'lucide-react';
+import { ArrowRight, Loader2, Save } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { toast } from 'sonner';
@@ -82,7 +82,27 @@ function Section({ title, description, children }: { title: string; description?
   );
 }
 
-export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readOnly: boolean }) {
+export type ProfileSection = 'identity' | 'address' | 'business' | 'volumes' | 'contact';
+const ALL_SECTIONS: ProfileSection[] = ['identity', 'address', 'business', 'volumes', 'contact'];
+
+export function ProfileForm({
+  app,
+  readOnly,
+  sections = ALL_SECTIONS,
+  title = 'Business details',
+  description = 'Save as you go — everything is checked again when you submit.',
+  onSaved,
+}: {
+  app: MerchantApplication;
+  readOnly: boolean;
+  /** Which parts to show (the onboarding wizard splits the profile over two steps). */
+  sections?: ProfileSection[];
+  title?: string;
+  description?: string;
+  /** Wizard mode: called after a successful save (or when nothing changed) to move on. */
+  onSaved?: () => void;
+}) {
+  const show = (s: ProfileSection) => sections.includes(s);
   const invalidate = useInvalidateMerchant(app.id);
   const original = toForm(app.profile);
   const [error, setError] = useState<unknown>(null);
@@ -94,7 +114,8 @@ export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readO
     setError(null);
     const payload = toPayload(values, original);
     if (!Object.keys(payload).length) {
-      toast.info('No changes to save');
+      if (onSaved) onSaved();
+      else toast.info('No changes to save');
       return;
     }
     try {
@@ -102,6 +123,7 @@ export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readO
       toast.success('Business profile saved');
       await invalidate();
       form.reset(values);
+      onSaved?.();
     } catch (e) {
       if (e instanceof ApiError && e.details?.length) {
         for (const d of e.details) form.setError(d.path as keyof FormValues, { message: d.message });
@@ -113,14 +135,14 @@ export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readO
   return (
     <Card className="shadow-none">
       <CardHeader>
-        <CardTitle className="text-base">Business details</CardTitle>
-        <CardDescription>Save as you go — everything is checked again when you submit.</CardDescription>
+        <CardTitle className="text-base">{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
       </CardHeader>
       <CardContent>
         <FormError error={error} />
         <form onSubmit={onSubmit} noValidate>
           <fieldset disabled={readOnly} className="space-y-8">
-            <Section title="Identity">
+            {show('identity') && <Section title="Identity">
               <FormField label="Legal name" error={err('legal_name')} {...register('legal_name')} />
               <FormField label="Display name" hint="Shown to your customers" error={err('display_name')} {...register('display_name')} />
               <div className="space-y-1.5">
@@ -142,17 +164,17 @@ export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readO
               <FormField label="GSTIN (optional)" className="font-mono uppercase" maxLength={15} error={err('gstin')} {...register('gstin')} />
               <FormField label="CIN (companies)" className="font-mono uppercase" maxLength={21} error={err('cin')} {...register('cin')} />
               <FormField label="LLPIN (LLPs)" className="font-mono uppercase" maxLength={8} placeholder="AAA-1234" error={err('llpin')} {...register('llpin')} />
-            </Section>
+            </Section>}
 
-            <Section title="Registered address">
+            {show('address') && <Section title="Registered address">
               <FormField label="Address line 1" error={err('registered_address.line1')} {...register('registered_address.line1')} />
               <FormField label="Address line 2" {...register('registered_address.line2')} />
               <FormField label="City" error={err('registered_address.city')} {...register('registered_address.city')} />
               <FormField label="State" error={err('registered_address.state')} {...register('registered_address.state')} />
               <FormField label="PIN code" inputMode="numeric" maxLength={6} error={err('registered_address.pincode')} {...register('registered_address.pincode')} />
-            </Section>
+            </Section>}
 
-            <Section title="Business" description="Used for risk assessment and your partner bank's onboarding.">
+            {show('business') && <Section title="Business" description="Used for risk assessment and your partner bank's onboarding.">
               <FormField label="Website" placeholder="https://" error={err('website')} {...register('website')} />
               <FormField label="App URL" placeholder="https://" error={err('app_url')} {...register('app_url')} />
               <FormField label="Business category" error={err('business_category')} {...register('business_category')} />
@@ -162,9 +184,9 @@ export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readO
                 <Textarea id="business_description" rows={3} aria-invalid={Boolean(err('business_description'))} {...register('business_description')} />
                 {err('business_description') && <p className="text-destructive text-xs">{err('business_description')}</p>}
               </div>
-            </Section>
+            </Section>}
 
-            <Section title="Volumes and services" description="Amounts in rupees, e.g. 250000.00">
+            {show('volumes') && <Section title="Volumes and services" description="Amounts in rupees, e.g. 250000.00">
               <FormField label="Expected monthly volume (₹)" inputMode="decimal" error={err('expected_monthly_volume')} {...register('expected_monthly_volume')} />
               <FormField label="Average ticket size (₹)" inputMode="decimal" error={err('average_ticket_size')} {...register('average_ticket_size')} />
               <FormField label="Maximum ticket size (₹)" inputMode="decimal" error={err('maximum_ticket_size')} {...register('maximum_ticket_size')} />
@@ -199,18 +221,18 @@ export function ProfileForm({ app, readOnly }: { app: MerchantApplication; readO
                   )}
                 />
               ))}
-            </Section>
+            </Section>}
 
-            <Section title="Primary contact">
+            {show('contact') && <Section title="Primary contact">
               <FormField label="Name" error={err('contact_name')} {...register('contact_name')} />
               <FormField label="Email" type="email" error={err('contact_email')} {...register('contact_email')} />
               <FormField label="Mobile" inputMode="tel" error={err('contact_mobile')} {...register('contact_mobile')} />
-            </Section>
+            </Section>}
           </fieldset>
           {!readOnly && (
             <div className="mt-8 flex justify-end">
-              <Button type="submit" disabled={formState.isSubmitting || !formState.isDirty}>
-                {formState.isSubmitting ? <Loader2 className="animate-spin" /> : <Save />} Save changes
+              <Button type="submit" disabled={formState.isSubmitting || (!onSaved && !formState.isDirty)}>
+                {formState.isSubmitting ? <Loader2 className="animate-spin" /> : onSaved ? <ArrowRight /> : <Save />} {onSaved ? 'Save and continue' : 'Save changes'}
               </Button>
             </div>
           )}

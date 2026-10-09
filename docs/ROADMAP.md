@@ -43,6 +43,7 @@ Legend: ✅ done · 🟡 in progress · ⬜ not started
 
 - [x] Merchant + profile + KYC screening + directors/UBOs (`MerchantPerson`) + bank accounts (encrypted, masked, hashed)
 - [x] Onboarding workspace (save drafts section by section; DRAFT → SUBMITTED) with a server-side requirements engine
+- [x] Merchant self sign-up (email code, no account enumeration, referral/custom-domain attribution) and a guided six-step onboarding wizard with review status ([ONBOARDING.md](ONBOARDING.md))
 - [x] Documents: upload through the API (magic-byte sniffing, server sha256, size cap), status workflow, expiry, audited downloads
 - [x] Compliance workflow: append-only `compliance_reviews`, reviewer/time/reason/notes, MORE_INFORMATION_REQUIRED loop, four-eyes rules
 - [x] Screening status fields (SANCTIONS / PEP / ADVERSE_REVIEW), recorded manually; provider integration later

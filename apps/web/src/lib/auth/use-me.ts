@@ -12,8 +12,12 @@ export function useMe() {
   return useQuery({ queryKey: ME_QUERY_KEY, queryFn: () => api.get<Me>('/v1/auth/me'), enabled: Boolean(token), staleTime: 60_000 });
 }
 
-export function homePathFor(me: Pick<Me, 'organization' | 'session'>): string {
+/** Merchants still filling in their application land on the onboarding wizard. */
+const ONBOARDING_STATUSES = ['DRAFT', 'MORE_INFORMATION_REQUIRED'];
+
+export function homePathFor(me: Pick<Me, 'organization' | 'session'> & Partial<Pick<Me, 'onboarding'>>): string {
   if (me.session.restricted) return '/setup-mfa';
+  if (me.onboarding && ONBOARDING_STATUSES.includes(me.onboarding.status)) return '/onboarding';
   switch (me.organization.type) {
     case 'PLATFORM':
       return '/admin';

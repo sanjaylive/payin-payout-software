@@ -34,6 +34,6 @@ import { TokenService } from './token.service';
     StepUpService,
     StepUpGuard,
   ],
-  exports: [AuthGuard, StepUpGuard, StepUpService, SessionService, PasswordService, TokenService, MfaService],
+  exports: [AuthService, AuthGuard, StepUpGuard, StepUpService, SessionService, PasswordService, TokenService, MfaService],
 })
 export class AuthModule {}

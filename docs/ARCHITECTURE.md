@@ -102,6 +102,7 @@ Each module owns its controllers, services, DTOs, policies and events. Modules c
 | `iam` | organizations, users, roles, permissions, memberships | 1 |
 | `audit` | append-only audit log writer + query API | 1 |
 | `merchants` / `compliance` | onboarding, KYC/KYB, documents, bank accounts, approvals | 2 |
+| `signup` | public merchant self sign-up with an email code (docs/ONBOARDING.md) | 2 |
 | `limits` | SYSTEM → RESELLER → MERCHANT limit resolution | 2 |
 | `ledger` | accounts, journals, balance service, adjustments | 3 |
 | `providers` / `routing` | provider config, credentials, routing engine, health | 4 |

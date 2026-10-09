@@ -3,6 +3,8 @@ import type { OrganizationType } from '@pay2all/types';
 export interface Me {
   user: { id: string; name: string; email: string; mobile: string | null; status: string; last_login_at: string | null; password_changed_at: string };
   organization: { id: string; name: string; type: OrganizationType; status: string };
+  /** Merchant organizations only. */
+  onboarding: { status: MerchantStatus } | null;
   roles: string[];
   permissions: string[];
   session: { id: string; restricted: boolean };

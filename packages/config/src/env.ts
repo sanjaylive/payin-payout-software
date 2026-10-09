@@ -90,6 +90,8 @@ export const apiEnvSchema = z
     WEBAUTHN_RP_ID: z.string().default(''),
     /** Break-glass switch for the dashboard IP allowlist (docs/SECURITY.md §1.8). Leave on. */
     DASHBOARD_IP_ALLOWLIST_ENFORCED: bool(true),
+    /** Public merchant self sign-up at /signup (docs/ONBOARDING.md). New accounts start as DRAFT merchants. */
+    SIGNUP_ENABLED: bool(true),
     /** Optional for the API's jobs process: empty = no Kafka fast path, DB polling only. */
     KAFKA_BROKERS: csv,
     KAFKA_CLIENT_ID: z.string().default('pay2all'),

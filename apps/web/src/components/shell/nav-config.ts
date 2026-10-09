@@ -15,6 +15,7 @@ import {
   type LucideIcon,
   Network,
   Receipt,
+  Rocket,
   ReceiptIndianRupee,
   Scale,
   Settings,
@@ -47,6 +48,7 @@ export interface NavItem extends Partial<NavLeaf> {
 
 export const MERCHANT_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, phase: 1 },
+  { label: 'Onboarding', href: '/onboarding', icon: Rocket, phase: 2 },
   { label: 'Analytics', href: '/analytics', icon: Activity, phase: 10, permission: 'report.read' },
   {
     label: 'Payin',

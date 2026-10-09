@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { PageHeader } from '@/components/common/page-header';
 import { useBalances } from '@/features/ledger/balance-cards';
 import { fmt } from '@/features/ledger/format';
+import { OnboardingBanner } from '@/features/onboarding/onboarding-banner';
 import { PayinCharts, PayinStatCards } from '@/features/payin/payin-overview';
 import { PayoutChart, PayoutStatCards } from '@/features/payout/payout-overview';
 import { useMe } from '@/lib/auth/use-me';
@@ -30,6 +31,7 @@ export default function MerchantDashboard() {
         description="Collections, payouts and balances at a glance."
         actions={<DateRangeFilter value={range} onChange={setRange} />}
       />
+      {isMerchant && <OnboardingBanner merchantId={me.organization.id} />}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         {isMerchant && <PayinStatCards range={range} />}
         {isMerchant && <PayoutStatCards range={range} approvalsHref="/payout/approvals" />}
@@ -43,7 +45,7 @@ export default function MerchantDashboard() {
           <CardTitle className="text-base">Get ready to go live</CardTitle>
         </CardHeader>
         <CardContent className="text-muted-foreground space-y-2 text-sm">
-          <p>1. Complete your <Link href="/compliance/profile" className="text-primary font-medium hover:underline">business profile and KYC documents</Link> under Compliance.</p>
+          <p>1. Complete <Link href="/onboarding" className="text-primary font-medium hover:underline">onboarding</Link>: business details, directors, bank account and KYC documents.</p>
           <p>2. Invite your team from <Link href="/team" className="text-primary font-medium hover:underline">Team</Link> and enable two-factor authentication in <Link href="/settings/security" className="text-primary font-medium hover:underline">Settings</Link>.</p>
           <p>3. <Link href="/payin/create" className="text-primary font-medium hover:underline">Create a test payment</Link> to see the QR, live status and ledger credit end to end.</p>
           <p>4. <Link href="/payout/beneficiaries" className="text-primary font-medium hover:underline">Add and verify a beneficiary</Link>, then make a payout; larger ones go to a teammate for approval.</p>

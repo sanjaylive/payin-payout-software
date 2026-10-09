@@ -43,7 +43,7 @@ Platform and reseller users must enroll TOTP on first sign-in (`AUTH_ENFORCE_MFA
 
 ## Documentation
 
-[Architecture](docs/ARCHITECTURE.md) · [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [Ledger](docs/LEDGER.md) · [Payin flow](docs/PAYIN_FLOW.md) · [Payout flow](docs/PAYOUT_FLOW.md) · [Deployment](docs/DEPLOYMENT.md) · [Roadmap](docs/ROADMAP.md)
+[Architecture](docs/ARCHITECTURE.md) · [Database](docs/DATABASE.md) · [Security](docs/SECURITY.md) · [Onboarding](docs/ONBOARDING.md) · [Ledger](docs/LEDGER.md) · [Payin flow](docs/PAYIN_FLOW.md) · [Payout flow](docs/PAYOUT_FLOW.md) · [Deployment](docs/DEPLOYMENT.md) · [Roadmap](docs/ROADMAP.md)
 
 ## Regulatory note
 

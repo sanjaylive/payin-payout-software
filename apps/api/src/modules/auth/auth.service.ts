@@ -164,6 +164,19 @@ export class AuthService {
     return session;
   }
 
+  /**
+   * First session for an account that has just proved its email address (merchant self sign-up).
+   * Same rules as a password sign-in without a second factor: roles that require MFA get a session
+   * restricted to enrolment.
+   */
+  async signInNewAccount(userId: string, organizationId: string, email: string): Promise<IssuedSession> {
+    const profile = await this.profiles.load(userId, organizationId);
+    const restricted = this.config.env.AUTH_ENFORCE_MFA && (profile?.requiresMfa ?? false);
+    const session = await this.completeLogin(userId, organizationId, false, restricted);
+    await this.loginEvents.record({ userId, organizationId, identifierMasked: maskIdentifier({ kind: 'email', value: email }), outcome: 'SUCCESS', sessionId: session.sessionId });
+    return session;
+  }
+
   private async completeLogin(userId: string, organizationId: string, mfaVerified: boolean, restricted: boolean) {
     const session = await this.sessions.create({ userId, organizationId, mfaVerified, restricted });
     const ip = RequestContextStore.get()?.ipAddress ?? null;

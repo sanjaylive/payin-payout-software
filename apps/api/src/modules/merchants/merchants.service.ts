@@ -35,6 +35,8 @@ export interface CreateMerchantInput {
   parentId?: string | null;
   source?: string | null;
   assignedSalesUserId?: string | null;
+  /** Primary contact, prefilled on the profile (self sign-up). */
+  contact?: { name: string; email: string; mobile: string };
 }
 
 @Injectable()
@@ -81,8 +83,8 @@ export class MerchantsService {
     return reseller.id;
   }
 
-  /** Create organization + merchant aggregate atomically (also used by lead conversion). */
-  async createInTx(tx: DbClient, actor: Actor, input: CreateMerchantInput) {
+  /** Create organization + merchant aggregate atomically (also used by lead conversion and self sign-up). */
+  async createInTx(tx: DbClient, actor: Pick<Actor, 'userId'>, input: CreateMerchantInput) {
     const platform = await tx.organization.findFirstOrThrow({ where: { type: 'PLATFORM' }, select: { id: true } });
     const id = newId('organization');
     await tx.organization.create({
@@ -97,7 +99,15 @@ export class MerchantsService {
       },
     });
     await tx.merchant.create({ data: { id, resellerId: input.resellerId } });
-    await tx.merchantProfile.create({ data: { merchantId: id, displayName: input.displayName, updatedById: actor.userId } });
+    const c = input.contact;
+    await tx.merchantProfile.create({
+      data: {
+        merchantId: id,
+        displayName: input.displayName,
+        updatedById: actor.userId,
+        ...(c ? { contactName: c.name, contactEmail: c.email, contactMobile: c.mobile } : {}),
+      },
+    });
     await tx.merchantKyc.create({ data: { merchantId: id } });
     await tx.complianceReview.create({
       data: { id: newId('complianceReview'), merchantId: id, action: 'CREATED', toStatus: 'DRAFT', reviewedById: actor.userId, reason: 'Merchant account created' },

@@ -38,7 +38,7 @@ import { type IssuedSession, SessionService } from './session.service';
 import { StepUpService } from './step-up.service';
 import { TokenService } from './token.service';
 
-function presentSession(s: IssuedSession) {
+export function presentSession(s: IssuedSession) {
   return {
     status: s.restricted ? 'MFA_ENROLLMENT_REQUIRED' : 'AUTHENTICATED',
     access_token: s.accessToken,

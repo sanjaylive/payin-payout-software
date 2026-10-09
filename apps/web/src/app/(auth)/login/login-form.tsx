@@ -171,7 +171,11 @@ export function LoginForm() {
   }
 
   return (
-    <AuthCard title="Sign in" description={`Welcome back. Sign in to your ${brand.short_name} account.`}>
+    <AuthCard
+      title="Sign in"
+      description={`Welcome back. Sign in to your ${brand.short_name} account.`}
+      footer={<p>New to {brand.short_name}? <Link href="/signup" className="text-primary font-medium hover:underline">Create an account</Link></p>}
+    >
       <FormError error={error} />
       <form onSubmit={onCredentials} className="space-y-5" noValidate>
         <FormField label="Email or mobile number" autoComplete="username" autoFocus error={credentials.formState.errors.identifier?.message} {...credentials.register('identifier')} />

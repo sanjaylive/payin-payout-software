@@ -11,8 +11,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@pay2all/ui/components/ui/textarea';
 import { formatDateTime } from '@pay2all/ui/lib/format';
 import { Download, Loader2, Upload } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
+import { FileDrop } from '@/components/common/file-drop';
 import { api, apiDownload, apiUpload } from '@/lib/api/client';
 import { errorMessage } from '@/lib/api/errors';
 import type { MerchantApplication, MerchantDocument } from '@/lib/api/types';
@@ -22,15 +23,22 @@ import { useInvalidateMerchant } from './use-merchant';
 
 const MAX_MB = 10;
 
-function UploadDialog({ app, open, onOpenChange, fixedType }: { app: MerchantApplication; open: boolean; onOpenChange: (o: boolean) => void; fixedType?: string }) {
+export function UploadDialog({ app, open, onOpenChange, fixedType }: { app: MerchantApplication; open: boolean; onOpenChange: (o: boolean) => void; fixedType?: string }) {
   const invalidate = useInvalidateMerchant(app.id);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [file, setFile] = useState<File | null>(null);
   const [type, setType] = useState(fixedType ?? '');
   const [personId, setPersonId] = useState('');
   const [busy, setBusy] = useState(false);
+  // The same dialog is reused for different document types (onboarding checklist).
+  const [shownFor, setShownFor] = useState(fixedType);
+  if (shownFor !== fixedType) {
+    setShownFor(fixedType);
+    setType(fixedType ?? '');
+    setPersonId('');
+    setFile(null);
+  }
 
   async function submit() {
-    const file = fileRef.current?.files?.[0];
     if (!file || !type) return;
     if (file.size > MAX_MB * 1024 * 1024) {
       toast.error(`File must be under ${MAX_MB} MB`);
@@ -44,6 +52,7 @@ function UploadDialog({ app, open, onOpenChange, fixedType }: { app: MerchantApp
     try {
       await apiUpload(`/v1/merchants/${app.id}/documents`, form);
       toast.success('Document uploaded');
+      setFile(null);
       onOpenChange(false);
       await invalidate();
     } catch (e) {
@@ -57,7 +66,7 @@ function UploadDialog({ app, open, onOpenChange, fixedType }: { app: MerchantApp
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Upload document</DialogTitle>
+          <DialogTitle>{fixedType ? `Upload: ${DOCUMENT_LABELS[fixedType] ?? 'document'}` : 'Upload document'}</DialogTitle>
           <DialogDescription>PDF, PNG or JPEG up to {MAX_MB} MB. Files are checked by content and stored encrypted.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -79,14 +88,11 @@ function UploadDialog({ app, open, onOpenChange, fixedType }: { app: MerchantApp
               </Select>
             </div>
           )}
-          <div className="space-y-1.5">
-            <Label htmlFor="doc-file">File</Label>
-            <Input id="doc-file" ref={fileRef} type="file" accept="application/pdf,image/png,image/jpeg" />
-          </div>
+          <FileDrop file={file} onFile={setFile} accept="application/pdf,image/png,image/jpeg" hint={`PDF, PNG or JPEG · up to ${MAX_MB} MB`} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button disabled={busy || !type} onClick={() => void submit()}>{busy ? <Loader2 className="animate-spin" /> : <Upload />} Upload</Button>
+          <Button disabled={busy || !type || !file || (type === 'DIRECTOR_KYC' && app.persons.length > 0 && !personId)} onClick={() => void submit()}>{busy ? <Loader2 className="animate-spin" /> : <Upload />} Upload</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -143,11 +149,25 @@ function ReviewDialog({ merchantId, doc, onClose }: { merchantId: string; doc: M
   );
 }
 
-export function DocumentsSection({ app, canUpload, onlyType, title = 'Documents', description }: { app: MerchantApplication; canUpload: boolean; onlyType?: string; title?: string; description?: string }) {
+export function DocumentsSection({
+  app,
+  canUpload,
+  onlyType,
+  excludeType,
+  title = 'Documents',
+  description,
+}: {
+  app: MerchantApplication;
+  canUpload: boolean;
+  onlyType?: string;
+  excludeType?: string;
+  title?: string;
+  description?: string;
+}) {
   const can = useCan();
   const [uploading, setUploading] = useState(false);
   const [reviewing, setReviewing] = useState<MerchantDocument | null>(null);
-  const docs = onlyType ? app.documents.filter((d) => d.type === onlyType) : app.documents;
+  const docs = app.documents.filter((d) => (!onlyType || d.type === onlyType) && d.type !== excludeType);
   const personName = (id: string | null) => app.persons.find((p) => p.id === id)?.full_name;
 
   return (

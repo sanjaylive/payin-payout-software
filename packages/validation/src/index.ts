@@ -27,3 +27,4 @@ export * from './bank-statement';
 export * from './disputes';
 export * from './gst';
 export * from './analytics';
+export * from './signup';

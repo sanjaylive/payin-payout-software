@@ -23,7 +23,7 @@ export class MeService {
       }),
       this.prisma.organization.findUniqueOrThrow({
         where: { id: actor.organizationId },
-        select: { id: true, name: true, type: true, status: true },
+        select: { id: true, name: true, type: true, status: true, merchant: { select: { status: true } } },
       }),
       this.prisma.userRole.findMany({
         where: { userId: actor.userId },
@@ -44,7 +44,9 @@ export class MeService {
         last_login_at: user.lastLoginAt,
         password_changed_at: user.passwordChangedAt,
       },
-      organization,
+      organization: { id: organization.id, name: organization.name, type: organization.type, status: organization.status },
+      /** Merchant organizations only: where onboarding stands (drives the web app's landing page). */
+      onboarding: organization.merchant ? { status: organization.merchant.status } : null,
       roles: [...actor.roleKeys],
       permissions: [...actor.permissions].sort(),
       session: { id: actor.sessionId, restricted: actor.restricted },
