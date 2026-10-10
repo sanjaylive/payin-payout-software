@@ -32,3 +32,35 @@
 		format json
 	}
 }
+
+# AHost (separate stack on this server, /opt/ahost): its api and web containers join this
+# stack's internal network as ahost-api / ahost-web. Mirrors deploy/Caddyfile.ahost in that repo.
+ahost.in {
+	encode zstd gzip
+
+	handle /api/v1/health {
+		respond 404
+	}
+
+	handle /api/* {
+		reverse_proxy ahost-api:4000
+	}
+
+	handle {
+		reverse_proxy ahost-web:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
+
+www.ahost.in {
+	redir https://ahost.in{uri} permanent
+}
