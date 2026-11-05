@@ -1,6 +1,6 @@
 # Deployment
 
-`npm run deploy` ships the committed `HEAD` of `main` to one Linux server over SSH, then runs the whole stack there with Docker Compose behind Caddy, with automatic HTTPS:
+`npm run deploy` pushes the committed `HEAD` of `main` to GitHub, where GitHub Actions checks it and builds the Docker image. The server then pulls that finished image over SSH (nothing is compiled on the server) and runs the whole stack there with Docker Compose behind Caddy, with automatic HTTPS:
 
 - **Domain:** `https://py.2all.co.in`
 - **Routing:** the dashboard and checkout are served at `/`; the API is under `/v1` on the same origin.
@@ -20,9 +20,16 @@ An `A` record (and `AAAA` if the server has IPv6) for `py.2all.co.in` pointing a
 ### Your machine
 Copy `infra/deploy/deploy.env.example` to `deploy.env` at the repo root. It is git-ignored. Set `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PORT`, `DEPLOY_DIR` (default `/opt/pay2all`) and `DOMAIN`.
 
+You also need the GitHub CLI signed in (`gh auth login`), and an `origin` remote pointing at the GitHub repository.
+
+### GitHub
+- `.github/workflows/build-image.yml` runs on every push to `main`. It runs typecheck, lint and unit tests, then builds `ghcr.io/<owner>/<repo>:<commit>` (linux/amd64) and pushes it to GHCR.
+- `PUBLIC_URL` is baked into the browser bundle at build time. It defaults to `https://py.2all.co.in`. For another domain, set the repository variable `PUBLIC_URL` to match `DOMAIN`.
+- The server pulls the image anonymously, so the GHCR package must be public. If you keep it private, set `GHCR_PULL_USER` and `GHCR_PULL_TOKEN` in `deploy.env`; the token needs the `read:packages` scope only.
+
 ## 2. First deploy
 
-1. **Run `npm run deploy`.** It runs the checks, uploads the code, and then stops. Because there is no environment file on the server yet, it creates `/opt/pay2all/.env.production` **on the server**, mode 600, with fresh random secrets. The secrets never exist on your machine or in git.
+1. **Run `npm run deploy`.** It pushes, waits for the CI build, uploads the deploy files, and then stops. Because there is no environment file on the server yet, it creates `/opt/pay2all/.env.production` **on the server**, mode 600, with fresh random secrets. The secrets never exist on your machine or in git.
 2. **Edit that file on the server.** Replace every `CHANGE_ME`:
 
    | Key | Value |
@@ -45,10 +52,10 @@ Copy `infra/deploy/deploy.env.example` to `deploy.env` at the repo root. It is g
 `npm run deploy` does the following, and stops at the first failure:
 
 1. Refuses to run with uncommitted changes, or from a branch other than `main` (override with `DEPLOY_ALLOW_BRANCH`).
-2. Runs `pnpm typecheck`, `pnpm lint` and `pnpm test`. Use `--skip-checks` only in an emergency: `npm run deploy -- --skip-checks`.
-3. Uploads the code with `git archive` to `releases/<commit>`.
+2. Pushes the branch to GitHub and waits for its "Build image" workflow run. That run does typecheck, lint, unit tests and the image build. If it fails, nothing is deployed.
+3. Uploads only `infra/` (compose files, Caddyfile, helper scripts) with `git archive` to `releases/<commit>`.
 4. Checks the env file: no `CHANGE_ME` left, and `DOMAIN` matches.
-5. Builds the image `pay2all-app:<commit>` **on the server**, so it matches the server's CPU architecture and nothing large crosses the network.
+5. Pulls `ghcr.io/<owner>/<repo>:<commit>` on the server and tags it `pay2all-app:<commit>`. The server only downloads the image; it never builds.
 6. Starts Postgres, Redis and Kafka, waiting until they are healthy.
 7. Runs `prisma migrate deploy`, then `db:bootstrap` (see §4).
 8. Starts the API and waits for it to be healthy, then starts jobs, worker, web and Caddy.
@@ -103,7 +110,6 @@ Use this mode when nginx on the server already serves other sites on ports 80/44
 - **Vhost:** the deploy installs `/etc/nginx/sites-available/pay2all-<domain>.conf` from `infra/deploy/nginx/site.conf`, using `install-site.sh`. That script runs `nginx -t` on the **whole** config before reloading. If the test fails, it restores the previous vhost, so a bad Pay2All vhost cannot take down the other sites. An unchanged vhost is left alone.
 - **Certificate:** on the first deploy, a temporary HTTP-only vhost answers the ACME challenge. `certbot certonly --webroot` then issues the certificate with `ACME_EMAIL`, which agrees to the Let's Encrypt terms. Certbot never edits the vhost, and renewals reload nginx through a deploy hook.
 - **Requirements:** the deploy user needs passwordless `sudo` for nginx, certbot and creating `DEPLOY_DIR`.
-- **Memory guard:** before building, the deploy checks that the server has at least `DEPLOY_MIN_AVAILABLE_MB` available (default 3000 MB). Memory held by the running Pay2All release counts as available, since the deploy replaces it. If there isn't enough, it stops rather than starve the other sites.
+- **Memory guard:** before starting, the deploy checks that the server has at least `DEPLOY_MIN_AVAILABLE_MB` available (default 3000 MB). Memory held by the running Pay2All release counts as available, since the deploy replaces it. If there isn't enough, it stops rather than starve the other sites.
   - Each service also has a `mem_limit` cap. Typical use is about 2–2.5 GB: three Kafka brokers at about 400 MB each, plus Postgres, Redis and four Node processes.
-  - The image build compiles one package at a time with a 1.5 GB Node heap.
   - The shared VPS needs a RAM upgrade to 8 GB before the first deploy.

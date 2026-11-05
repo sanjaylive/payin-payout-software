@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# npm run deploy [-- --skip-checks] [-- --rollback <release>]
+# npm run deploy [-- --rollback <release>]
 #
-# Ships the committed HEAD to one server over SSH and (re)starts the Docker Compose stack
-# (docs/DEPLOYMENT.md). Steps: local checks → copy source (git archive) → build the image on the
-# server → migrate + bootstrap → start → health check. Target settings come from deploy.env.
+# Pushes the committed HEAD to GitHub, waits for the "Build image" workflow (checks + image build,
+# .github/workflows/build-image.yml) and then has the server pull that finished image from GHCR and
+# (re)start the Docker Compose stack (docs/DEPLOYMENT.md). Nothing is compiled on the server.
+# Steps: push → wait for CI → upload infra/ → pull image → migrate + bootstrap → start → health
+# check. Target settings come from deploy.env.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -22,14 +24,19 @@ WEB_HOST_PORT=${WEB_HOST_PORT:-3500}
 # Refuse to build or start when the server has less memory available than this (MB).
 DEPLOY_MIN_AVAILABLE_MB=${DEPLOY_MIN_AVAILABLE_MB:-3000}
 KEEP_RELEASES=5
+# Registry image built by CI. Default: ghcr.io/<owner>/<repo> of the "origin" remote.
+DEPLOY_IMAGE=${DEPLOY_IMAGE:-}
+# Only needed while the GHCR package is private: a token with read:packages only (never a full
+# GitHub token), and its user. The server keeps the login in ~/.docker/config.json.
+GHCR_PULL_USER=${GHCR_PULL_USER:-}
+GHCR_PULL_TOKEN=${GHCR_PULL_TOKEN:-}
+WORKFLOW=build-image.yml
 
-SKIP_CHECKS=0
 ROLLBACK=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --skip-checks) SKIP_CHECKS=1 ;;
     --rollback) ROLLBACK=${2:?--rollback needs a release id}; shift ;;
-    -h|--help) sed -n '2,8p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,9p' "$0"; exit 0 ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -89,19 +96,38 @@ if [ -n "$ROLLBACK" ]; then
   exit 0
 fi
 
-# ---- Local checks -----------------------------------------------------------------------------
+# ---- Push and wait for the CI build ------------------------------------------------------------
 [ -z "$(git status --porcelain)" ] || die "Commit or stash your changes first: only committed code is deployed."
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
 [ "$BRANCH" = main ] || [ "${DEPLOY_ALLOW_BRANCH:-}" = "$BRANCH" ] || die "Deploys go from main (on $BRANCH). Set DEPLOY_ALLOW_BRANCH=$BRANCH to override."
-REL=$(git rev-parse --short=12 HEAD)
-if [ "$SKIP_CHECKS" = 0 ]; then
-  say "Typecheck, lint and unit tests"
-  pnpm typecheck && pnpm lint && pnpm test || die "Checks failed; nothing was deployed."
-fi
+command -v gh >/dev/null && gh auth status >/dev/null 2>&1 || die "The GitHub CLI (gh) must be installed and signed in (gh auth login)."
+REPO=$(git remote get-url origin 2>/dev/null | sed -E 's#^(git@github\.com:|https://github\.com/)##; s#\.git$##') || true
+[ -n "$REPO" ] || die "No GitHub remote named origin."
+IMAGE=${DEPLOY_IMAGE:-ghcr.io/$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')}
+SHA=$(git rev-parse HEAD)
+REL=${SHA:0:12}
 
-# ---- Ship and build ---------------------------------------------------------------------------
-say "Uploading release $REL"
-git archive --format=tar HEAD | "${SSH[@]}" "set -euo pipefail; rm -rf '$DEPLOY_DIR/releases/$REL.tmp'; mkdir -p '$DEPLOY_DIR/releases/$REL.tmp'; tar -x -C '$DEPLOY_DIR/releases/$REL.tmp'; rm -rf '$DEPLOY_DIR/releases/$REL'; mv '$DEPLOY_DIR/releases/$REL.tmp' '$DEPLOY_DIR/releases/$REL'"
+say "Pushing $BRANCH to GitHub ($REPO)"
+git push origin "$BRANCH" || die "git push failed; nothing was deployed."
+
+say "Waiting for the image build of $REL on GitHub Actions"
+RUN_ID=""
+for _ in $(seq 1 30); do
+  RUN_ID=$(gh run list -R "$REPO" --workflow "$WORKFLOW" --commit "$SHA" --event push --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)
+  [ -z "$RUN_ID" ] || break
+  sleep 4
+done
+[ -n "$RUN_ID" ] || die "No \"Build image\" run started for $REL. Check https://github.com/$REPO/actions"
+echo "https://github.com/$REPO/actions/runs/$RUN_ID"
+gh run watch "$RUN_ID" -R "$REPO" --exit-status --interval 15 >/dev/null \
+  || die "The CI build of $REL failed; nothing was deployed. Details: gh run view $RUN_ID -R $REPO --log-failed"
+echo "Image $IMAGE:$REL is built."
+
+# ---- Ship the deploy files and pull the image ---------------------------------------------------
+ARCH=$(remote "uname -m")
+[ "$ARCH" = x86_64 ] || die "The server is $ARCH, but CI builds linux/amd64 images."
+say "Uploading the deploy files of release $REL"
+git archive --format=tar HEAD infra | "${SSH[@]}" "set -euo pipefail; rm -rf '$DEPLOY_DIR/releases/$REL.tmp'; mkdir -p '$DEPLOY_DIR/releases/$REL.tmp'; tar -x -C '$DEPLOY_DIR/releases/$REL.tmp'; rm -rf '$DEPLOY_DIR/releases/$REL'; mv '$DEPLOY_DIR/releases/$REL.tmp' '$DEPLOY_DIR/releases/$REL'"
 
 if ! remote "test -f '$ENV_FILE'"; then
   say "First deploy: creating $ENV_FILE on the server with fresh secrets"
@@ -113,8 +139,12 @@ MISSING=$(remote "grep -o '^[A-Z_]*=CHANGE_ME' '$ENV_FILE' | cut -d= -f1 | tr '\
 remote "grep -q '^DOMAIN=$DOMAIN\$' '$ENV_FILE'" || die "DOMAIN in $ENV_FILE differs from $DOMAIN (deploy.env)."
 
 check_memory "$REL"
-say "Building image pay2all-app:$REL on the server (first build takes a few minutes)"
-remote "cd '$DEPLOY_DIR/releases/$REL' && docker build -f infra/deploy/Dockerfile --build-arg PUBLIC_URL='https://$DOMAIN' --build-arg APP_RELEASE='$REL' -t 'pay2all-app:$REL' ."
+if [ -n "$GHCR_PULL_TOKEN" ]; then
+  printf '%s' "$GHCR_PULL_TOKEN" | "${SSH[@]}" "docker login ghcr.io -u '${GHCR_PULL_USER:?set GHCR_PULL_USER with GHCR_PULL_TOKEN}' --password-stdin >/dev/null" || die "docker login to ghcr.io failed on the server."
+fi
+say "Pulling $IMAGE:$REL on the server"
+remote "docker pull -q '$IMAGE:$REL' && docker tag '$IMAGE:$REL' 'pay2all-app:$REL'" \
+  || die "The server could not pull $IMAGE:$REL. If the GHCR package is private, make it public (GitHub → Packages → settings) or set GHCR_PULL_USER/GHCR_PULL_TOKEN (read:packages) in deploy.env."
 
 # ---- Migrate and start ------------------------------------------------------------------------
 say "Starting data stores"
@@ -140,5 +170,5 @@ done
 if [ "$ok" = 1 ]; then echo "https://$DOMAIN is up (release $REL)."
 else echo "⚠ https://$DOMAIN did not answer yet. Check DNS (A record → $DEPLOY_HOST), ports 80/443, and: ssh $DEPLOY_USER@$DEPLOY_HOST 'docker compose -p pay2all logs --tail 100 api web'"; fi
 
-remote "cd '$DEPLOY_DIR/releases' && { ls -1t | grep -v -x '$REL' || true; } | tail -n +$KEEP_RELEASES | while read -r old; do rm -rf \"\$old\"; docker image rm \"pay2all-app:\$old\" >/dev/null 2>&1 || true; done; docker builder prune -f --filter until=168h >/dev/null 2>&1 || true"
+remote "cd '$DEPLOY_DIR/releases' && { ls -1t | grep -v -x '$REL' || true; } | tail -n +$KEEP_RELEASES | while read -r old; do rm -rf \"\$old\"; docker image rm \"pay2all-app:\$old\" '$IMAGE':\"\$old\" >/dev/null 2>&1 || true; done; docker image prune -f >/dev/null 2>&1 || true"
 echo "Rollback, if needed: npm run deploy -- --rollback <previous release>"

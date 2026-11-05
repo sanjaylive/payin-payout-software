@@ -1,5 +1,5 @@
-# One image for every Pay2All process (api, jobs, worker, web, migrate). Built on the server by
-# scripts/deploy.sh, so the image matches the server's CPU architecture and never leaves it.
+# One image for every Pay2All process (api, jobs, worker, web, migrate). Built by GitHub Actions
+# (.github/workflows/build-image.yml) for linux/amd64 and pushed to GHCR; the server only pulls it.
 FROM node:22-bookworm-slim AS build
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH CI=true NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable
