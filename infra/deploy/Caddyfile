@@ -64,3 +64,37 @@ ahost.in {
 www.ahost.in {
 	redir https://ahost.in{uri} permanent
 }
+
+# hostel.2all.co.in (hostelerp stack) on this stack's Caddy. Its deploy appended this block on the
+# server; it is kept here so Pay2All releases do not drop it. Caddy reaches hostel-api/web over
+# the pay2all_internal network, which the hostelerp stack joins.
+# /api/* goes straight to the API (mobile apps and the web app); health endpoints stay internal.
+hostel.2all.co.in {
+	encode zstd gzip
+
+	request_body {
+		max_size 25MB
+	}
+
+	handle /api/v1/health* {
+		respond 404
+	}
+
+	handle /api/* {
+		reverse_proxy hostel-api:4000
+	}
+
+	handle {
+		reverse_proxy hostel-web:3400
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}
