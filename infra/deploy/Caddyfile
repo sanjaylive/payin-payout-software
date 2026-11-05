@@ -9,7 +9,7 @@
 
 	handle /v1/* {
 		# flush_interval -1: live notifications are streamed.
-		reverse_proxy api:4000 {
+		reverse_proxy pay2all-api:4000 {
 			flush_interval -1
 		}
 	}
@@ -19,7 +19,7 @@
 	}
 
 	handle {
-		reverse_proxy web:3000
+		reverse_proxy pay2all-web:3000
 	}
 
 	header {

@@ -124,6 +124,11 @@ services:
     <<: *app
     command: ["node", "apps/api/dist/main.js"]
     volumes: [storage:/data/storage]
+    # Other stacks (ahost, hostelerp) join this network for the shared Caddy, and Compose registers
+    # their services there under their own names too (their "api"/"web" included). Everything that
+    # must reach *this* API or web uses the unique aliases pay2all-api / pay2all-web, never api/web.
+    networks:
+      internal: { aliases: [pay2all-api] }
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -162,6 +167,8 @@ services:
     working_dir: /app/apps/web
     command: ["node", "node_modules/next/dist/bin/next", "start", "--port", "3000"]
     mem_limit: 512m
+    networks:
+      internal: { aliases: [pay2all-web] }
     depends_on: [api]
 
 volumes:

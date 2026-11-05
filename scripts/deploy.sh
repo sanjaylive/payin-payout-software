@@ -137,6 +137,8 @@ fi
 MISSING=$(remote "grep -o '^[A-Z_]*=CHANGE_ME' '$ENV_FILE' | cut -d= -f1 | tr '\n' ' '" || true)
 [ -z "$MISSING" ] || die "Still CHANGE_ME in $ENV_FILE on the server: $MISSING"
 remote "grep -q '^DOMAIN=$DOMAIN\$' '$ENV_FILE'" || die "DOMAIN in $ENV_FILE differs from $DOMAIN (deploy.env)."
+# "api" is ambiguous on the shared network (other stacks' services are registered there too).
+remote "sed -i 's#^API_INTERNAL_URL=http://api:4000\$#API_INTERNAL_URL=http://pay2all-api:4000#' '$ENV_FILE'"
 
 check_memory "$REL"
 if [ -n "$GHCR_PULL_TOKEN" ]; then
