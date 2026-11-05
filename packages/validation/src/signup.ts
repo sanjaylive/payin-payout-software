@@ -12,6 +12,8 @@ export const signupStartSchema = z.strictObject({
   /** A reseller's referral code (its organization slug). Optional. */
   referral_code: z.string().trim().toLowerCase().regex(/^[a-z0-9-]{3,80}$/, 'Referral code not recognised').optional(),
   accept_terms: z.literal(true, { error: 'Accept the terms to continue' }),
+  /** MERCHANT (default): payment collection with KYB. AGENT: a customer service point (docs/AGENTS.md). */
+  account_type: z.enum(['MERCHANT', 'AGENT']).default('MERCHANT'),
 });
 export type SignupStartInput = z.input<typeof signupStartSchema>;
 

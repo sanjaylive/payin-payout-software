@@ -11,6 +11,7 @@ export interface SystemRoleDefinition {
 
 const platformAll = permissionsForScope('PLATFORM');
 const merchantAll = permissionsForScope('MERCHANT');
+const agentAll = permissionsForScope('AGENT');
 
 const without = (list: readonly PermissionKey[], ...remove: PermissionKey[]) =>
   list.filter((p) => !remove.includes(p));
@@ -190,6 +191,24 @@ export const SYSTEM_ROLES: readonly SystemRoleDefinition[] = [
       'organization.read', 'merchant.read', 'payin.read', 'dispute.read', 'payout.read', 'settlement.read',
       'ledger.read', 'report.read',
     ],
+  },
+
+  // ---- Agent counter (docs/AGENTS.md) — two-factor is optional for shop logins ----------------
+  {
+    key: 'AGENT_OWNER',
+    name: 'Owner',
+    scope: 'AGENT',
+    requiresMfa: false,
+    description: 'Runs the agent account: transactions, settings, staff and plan',
+    permissions: agentAll,
+  },
+  {
+    key: 'AGENT_OPERATOR',
+    name: 'Counter operator',
+    scope: 'AGENT',
+    requiresMfa: false,
+    description: 'Adds customers and records transactions at the counter',
+    permissions: ['agent.desk.read', 'agent.desk.write'],
   },
 ];
 

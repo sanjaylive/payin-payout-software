@@ -18,6 +18,8 @@ import { StaticQrService } from '../modules/static-qr/static-qr.service';
 import { DisputesService } from '../modules/disputes/disputes.service';
 import { InvoicesService } from '../modules/invoices/invoices.service';
 import { ReportGeneratorService } from '../modules/reports/report-generator.service';
+import { AgentBillingService } from '../modules/agents/agent-billing.service';
+import { AgentDriveService } from '../modules/agents/agent-drive.service';
 
 const job = (name: string, seconds: number, run: () => Promise<unknown>): ScheduledJob => ({
   name,
@@ -56,6 +58,8 @@ export class JobsRunner implements OnApplicationShutdown {
     private readonly staticQrs: StaticQrService,
     private readonly disputes: DisputesService,
     private readonly invoices: InvoicesService,
+    private readonly agentBilling: AgentBillingService,
+    private readonly agentDrive: AgentDriveService,
   ) {}
 
   async start(): Promise<void> {
@@ -88,6 +92,8 @@ export class JobsRunner implements OnApplicationShutdown {
         job('static-qr-reconcile', 60, () => this.staticQrs.pollActive()),
         job('dispute-reminders', 6 * 3600, () => this.disputes.remindDue()),
         job('invoice-generator', 3600, () => this.invoices.generateDue()),
+        job('agent-plan-orders', 60, () => this.agentBilling.syncPending()),
+        job('agent-drive-backup', 3600, () => this.agentDrive.runDue()),
       ],
       5_000,
     );

@@ -8,7 +8,7 @@
  * A permission answers "may the actor perform this action". *Which records* the action applies
  * to is decided separately by tenant scope (see docs/SECURITY.md §3).
  */
-export type OrgScope = 'PLATFORM' | 'RESELLER' | 'API_PARTNER' | 'MERCHANT';
+export type OrgScope = 'PLATFORM' | 'RESELLER' | 'API_PARTNER' | 'MERCHANT' | 'AGENT';
 
 export interface PermissionDefinition {
   description: string;
@@ -17,6 +17,7 @@ export interface PermissionDefinition {
 
 const ALL: readonly OrgScope[] = ['PLATFORM', 'RESELLER', 'API_PARTNER', 'MERCHANT'];
 const P: readonly OrgScope[] = ['PLATFORM'];
+const AG: readonly OrgScope[] = ['AGENT'];
 
 export const PERMISSIONS = {
   'organization.read': { description: 'View organization details', scopes: ALL },
@@ -106,6 +107,15 @@ export const PERMISSIONS = {
   'report.export': { description: 'Export reports', scopes: ALL },
 
   'system.settings.manage': { description: 'Change platform-wide settings', scopes: P },
+
+  // ---- Agents (customer service points, docs/AGENTS.md) --------------------------------------
+  'agent.desk.read': { description: 'View customers, transactions, receipts and reports at the counter', scopes: AG },
+  'agent.desk.write': { description: 'Add customers and beneficiaries, record transactions, send receipts', scopes: AG },
+  'agent.txn.manage': { description: 'Change the status of recorded transactions (failed, refunded)', scopes: AG },
+  'agent.settings.manage': { description: 'Shop profile, QR code, receipts, staff logins and Google Drive backup', scopes: AG },
+  'agent.billing.manage': { description: 'Choose and pay for a plan', scopes: AG },
+  'agent.admin.read': { description: 'View agents, their plans and usage', scopes: P },
+  'agent.admin.manage': { description: 'Edit agent plans, grant plans, suspend agents, set the billing account', scopes: P },
 } as const satisfies Record<string, PermissionDefinition>;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

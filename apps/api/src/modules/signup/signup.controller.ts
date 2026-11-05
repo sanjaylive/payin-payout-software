@@ -7,8 +7,7 @@ import { ApiZodBody } from '../../common/swagger/zod-openapi';
 import { ZodValidationPipe } from '../../common/validation/zod-validation.pipe';
 import { ApiConfig } from '../../config/api-config';
 import { Public } from '../access/decorators';
-import { presentSession } from '../auth/auth.controller';
-import { setRefreshCookie } from '../auth/auth.cookies';
+import { deliverSession } from '../auth/auth.controller';
 import { SignupService } from './signup.service';
 
 const origin = (req: Request) => (typeof req.headers.origin === 'string' ? req.headers.origin : undefined);
@@ -52,9 +51,8 @@ export class SignupController {
   @HttpCode(200)
   @ApiOperation({ summary: 'Verify the code: creates the merchant account and signs in (two-factor enrolment comes next)' })
   @ApiZodBody(signupVerifySchema)
-  async verify(@Body(new ZodValidationPipe(signupVerifySchema)) body: z.output<typeof signupVerifySchema>, @Res({ passthrough: true }) res: Response) {
+  async verify(@Body(new ZodValidationPipe(signupVerifySchema)) body: z.output<typeof signupVerifySchema>, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const session = await this.signup.verify(body.signup_id, body.code);
-    setRefreshCookie(res, this.config, session.refreshToken);
-    return presentSession(session);
+    return deliverSession(req, res, this.config, session);
   }
 }

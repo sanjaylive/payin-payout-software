@@ -4,6 +4,7 @@ export const OrganizationType = {
   RESELLER: 'RESELLER',
   API_PARTNER: 'API_PARTNER',
   MERCHANT: 'MERCHANT',
+  AGENT: 'AGENT',
 } as const;
 export type OrganizationType = (typeof OrganizationType)[keyof typeof OrganizationType];
 

@@ -42,6 +42,7 @@ import { SchemesModule } from './modules/schemes/schemes.module';
 import { BrandModule } from './modules/brand/brand.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { SignupModule } from './modules/signup/signup.module';
+import { AgentsModule } from './modules/agents/agents.module';
 import { FundsModule } from './modules/funds/funds.module';
 import { GatewaysModule } from './modules/gateways/gateways.module';
 import { CheckoutModule } from './modules/checkout/checkout.module';
@@ -108,6 +109,7 @@ export class AppModule implements NestModule {
         BrandModule,
         AnalyticsModule,
         SignupModule,
+        AgentsModule,
         FundsModule,
         GatewaysModule,
         CheckoutModule,

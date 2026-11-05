@@ -17,7 +17,7 @@ import {
   totpEnableSchema,
 } from '@pay2all/validation';
 import type { Request, Response } from 'express';
-import type { z } from 'zod';
+import { z } from 'zod';
 import { RequestContextStore } from '../../common/context/request-context';
 import { AppError } from '../../common/errors/app-error';
 import { RateLimitService } from '../../common/rate-limit/rate-limit.service';
@@ -27,7 +27,7 @@ import { ApiConfig } from '../../config/api-config';
 import { AllowRestrictedSession, AuthenticatedOnly, CurrentActor, Public, RequireStepUp } from '../access/decorators';
 import { AuditService } from '../audit/audit.service';
 import type { Actor } from './actor';
-import { assertCsrf, clearRefreshCookie, readRefreshCookie, setRefreshCookie } from './auth.cookies';
+import { assertCsrf, clearRefreshCookie, isMobileClient, readRefreshCookie, setRefreshCookie } from './auth.cookies';
 import { AuthService } from './auth.service';
 import { RATE_LIMITS } from './auth.util';
 import { MeService } from './me.service';
@@ -46,6 +46,15 @@ export function presentSession(s: IssuedSession) {
     expires_in: s.expiresIn,
   };
 }
+
+/** Hand a new session to the client: a cookie for browsers, the body for native apps (auth.cookies.ts). */
+export function deliverSession(req: Request, res: Response, config: ApiConfig, s: IssuedSession) {
+  if (isMobileClient(req)) return { ...presentSession(s), refresh_token: s.refreshToken };
+  setRefreshCookie(res, config, s.refreshToken);
+  return presentSession(s);
+}
+
+const mobileRefreshSchema = z.strictObject({ refresh_token: z.string().min(20).max(512) });
 
 @ApiTags('Auth')
 @Controller('v1/auth')
@@ -77,14 +86,14 @@ export class AuthController {
   @ApiZodBody(loginSchema)
   async login(
     @Body(new ZodValidationPipe(loginSchema)) body: z.output<typeof loginSchema>,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const result = await this.auth.login(body.identifier, body.password, body.location);
     if (result.kind === 'mfa_required') {
       return { status: 'MFA_REQUIRED', mfa_token: result.mfaToken, expires_in: result.expiresIn, mfa_methods: result.methods };
     }
-    setRefreshCookie(res, this.config, result.session.refreshToken);
-    return presentSession(result.session);
+    return deliverSession(req, res, this.config, result.session);
   }
 
   @Public()
@@ -94,6 +103,7 @@ export class AuthController {
   @ApiZodBody(mfaVerifySchema)
   async verifyMfa(
     @Body(new ZodValidationPipe(mfaVerifySchema)) body: z.output<typeof mfaVerifySchema>,
+    @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
     const session = await this.auth.completeMfaLogin(
@@ -106,8 +116,7 @@ export class AuthController {
             : this.mfa.verifyForLogin(userId, body.code!),
       body.location,
     );
-    setRefreshCookie(res, this.config, session.refreshToken);
-    return presentSession(session);
+    return deliverSession(req, res, this.config, session);
   }
 
   @Public()
@@ -138,6 +147,31 @@ export class AuthController {
       clearRefreshCookie(res, this.config);
       throw err;
     }
+  }
+
+  @Public()
+  @Post('mobile/refresh')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Native apps: rotate the refresh token (sent in the body) and issue a new access token' })
+  @ApiZodBody(mobileRefreshSchema)
+  async mobileRefresh(@Body(new ZodValidationPipe(mobileRefreshSchema)) body: z.output<typeof mobileRefreshSchema>, @Req() req: Request) {
+    if (!isMobileClient(req)) throw new AppError(ErrorCode.FORBIDDEN, 'Only for native apps');
+    await this.rateLimit.enforce(RATE_LIMITS.refreshByIp, RequestContextStore.get()?.ipAddress ?? 'unknown');
+    const session = await this.sessions.rotate(body.refresh_token);
+    return { ...presentSession(session), refresh_token: session.refreshToken };
+  }
+
+  @Public()
+  @Post('mobile/logout')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Native apps: sign out of the session that owns this refresh token' })
+  @ApiZodBody(mobileRefreshSchema)
+  async mobileLogout(@Body(new ZodValidationPipe(mobileRefreshSchema)) body: z.output<typeof mobileRefreshSchema>) {
+    const sessionId = await this.sessions.findSessionIdByRefreshToken(body.refresh_token);
+    if (sessionId && (await this.sessions.revoke(sessionId, 'LOGOUT'))) {
+      await this.audit.record({ action: 'auth.logout', resourceType: 'session', resourceId: sessionId, organizationId: null, actor: { type: 'USER', id: null }, metadata: { client: 'mobile' } });
+    }
+    return { logged_out: true };
   }
 
   @Public()

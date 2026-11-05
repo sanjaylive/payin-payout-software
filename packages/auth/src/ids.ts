@@ -89,6 +89,11 @@ export const ID_PREFIXES = {
   webhookEndpoint: 'whe',
   webhookAttempt: 'wha',
   deadLetter: 'dlq',
+  agentPlan: 'apn',
+  agentCustomer: 'acu',
+  agentBeneficiary: 'abn',
+  agentTransaction: 'atx',
+  agentPlanOrder: 'apo',
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

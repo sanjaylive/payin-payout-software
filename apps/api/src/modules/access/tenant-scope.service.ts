@@ -27,7 +27,9 @@ export class TenantScopeService {
       case 'RESELLER':
       case 'API_PARTNER':
         return { kind: 'RESELLER', resellerOrgId: actor.organizationId };
+      // Agents see only their own organization, like merchants.
       case 'MERCHANT':
+      case 'AGENT':
         return { kind: 'ORG', orgId: actor.organizationId };
     }
   }

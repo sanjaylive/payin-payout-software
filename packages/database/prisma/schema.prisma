@@ -32,6 +32,8 @@ enum OrganizationType {
   RESELLER
   API_PARTNER
   MERCHANT
+  /// Customer service point (docs/AGENTS.md): records walk-in cash and transfer business; no ledger money.
+  AGENT
 }
 
 enum OrganizationStatus {
@@ -103,6 +105,7 @@ model Organization {
   sessions         Session[]
   dashboardIpRules DashboardIpRule[]
   resellerBrand    ResellerBrand?
+  agentProfile     AgentProfile?
 
   @@index([parentId])
   @@index([type, status, createdAt(sort: Desc)])
@@ -3256,4 +3259,290 @@ model StaticQr {
   @@index([merchantId, createdAt(sort: Desc)])
   @@index([status, lastPolledAt])
   @@map("static_qrs")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Agents (customer service points) — docs/AGENTS.md
+// Agents *record* business done elsewhere (cash in/out, money transfer, bills). Nothing here moves
+// money or touches the ledger. Every row is owned by one AGENT organization (agent_id).
+// ---------------------------------------------------------------------------------------------
+
+enum AgentPlanCode {
+  FREE
+  STARTER
+  BUSINESS
+}
+
+enum AgentBillingPeriod {
+  MONTHLY
+  YEARLY
+}
+
+enum AgentTxnType {
+  /// DMT-style: the customer hands over cash, the agent sends it to a beneficiary's bank/UPI.
+  MONEY_TRANSFER
+  /// AEPS / micro-ATM / bank withdrawal: the agent pays cash to the customer.
+  CASH_WITHDRAWAL
+  /// The customer's cash goes into their own bank account.
+  CASH_DEPOSIT
+  BILL_PAYMENT
+  RECHARGE
+  OTHER
+}
+
+enum AgentTxnDirection {
+  /// Money comes into the agent's counter (cash or UPI received).
+  IN
+  /// Money leaves the agent's counter (cash paid out).
+  OUT
+}
+
+enum AgentPayMode {
+  CASH
+  UPI
+  BANK
+  OTHER
+}
+
+enum AgentTxnStatus {
+  SUCCESS
+  PENDING
+  FAILED
+  REFUNDED
+}
+
+enum AgentIdType {
+  AADHAAR
+  PAN
+  VOTER_ID
+  DRIVING_LICENCE
+  PASSPORT
+  OTHER
+}
+
+enum AgentOrderStatus {
+  PENDING
+  PAID
+  EXPIRED
+  CANCELLED
+}
+
+enum AgentDriveStatus {
+  CONNECTED
+  ERROR
+}
+
+/// Plan catalog. Prices and limits are edited by platform admins; codes are fixed.
+model AgentPlan {
+  id                String        @id
+  code              AgentPlanCode @unique
+  name              String        @db.VarChar(40)
+  description       String        @default("") @db.VarChar(255)
+  priceMonthlyMinor BigInt        @default(0) @map("price_monthly_minor")
+  priceYearlyMinor  BigInt        @default(0) @map("price_yearly_minor")
+  /// Recorded transactions per calendar month (IST). null = unlimited.
+  monthlyTxnLimit   Int?          @map("monthly_txn_limit")
+  /// Logins including the owner.
+  staffLimit        Int           @default(1) @map("staff_limit")
+  driveBackup       Boolean       @default(false) @map("drive_backup")
+  /// Shop name, logo and footer on receipts (otherwise the platform brand).
+  brandedReceipts   Boolean       @default(false) @map("branded_receipts")
+  /// Send receipts to customers by SMS / WhatsApp through the platform's vendors.
+  messaging         Boolean       @default(false)
+  active            Boolean       @default(true)
+  sortOrder         Int           @default(0) @map("sort_order")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  agents AgentProfile[]
+  orders AgentPlanOrder[]
+
+  @@map("agent_plans")
+}
+
+/// Single row (id = 'default'): agent program settings.
+model AgentProgramSettings {
+  id                String   @id @default("default") @db.VarChar(16)
+  /// The platform's own approved merchant that collects plan fees (a payment link per order).
+  billingMerchantId String?  @map("billing_merchant_id")
+  updatedById       String?  @map("updated_by_id")
+  updatedAt         DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("agent_program_settings")
+}
+
+/// One per AGENT organization (shares its id).
+model AgentProfile {
+  id            String    @id
+  shopName      String    @map("shop_name") @db.VarChar(120)
+  ownerName     String    @map("owner_name") @db.VarChar(120)
+  mobile        String    @db.VarChar(16)
+  email         String    @db.VarChar(254)
+  addressLine   String?   @map("address_line") @db.VarChar(255)
+  city          String?   @db.VarChar(80)
+  state         String?   @db.VarChar(80)
+  pincode       String?   @db.VarChar(6)
+  /// The agent's own UPI id: the app draws a upi://pay QR from it (no provider involved).
+  upiVpa        String?   @map("upi_vpa") @db.VarChar(100)
+  upiPayeeName  String?   @map("upi_payee_name") @db.VarChar(100)
+  /// Storage keys (docs/FILE_STORAGE.md) of an uploaded QR image (e.g. from their bank) and shop logo.
+  qrImageKey    String?   @map("qr_image_key") @db.VarChar(255)
+  logoKey       String?   @map("logo_key") @db.VarChar(255)
+  receiptFooter String?   @map("receipt_footer") @db.VarChar(200)
+  planId        String    @map("plan_id")
+  /// End of the paid period; null on Free. After it passes the agent is on Free again.
+  planExpiresAt DateTime? @map("plan_expires_at") @db.Timestamptz(3)
+  /// Last receipt number issued (receipts are R-000001, R-000002 … per agent).
+  receiptSeq    Int       @default(0) @map("receipt_seq")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  organization Organization @relation(fields: [id], references: [id], onDelete: Restrict)
+  plan         AgentPlan    @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([planId])
+  @@map("agent_profiles")
+}
+
+/// A walk-in customer (the sender in a money transfer).
+model AgentCustomer {
+  id            String       @id
+  agentId       String       @map("agent_id")
+  name          String       @db.VarChar(120)
+  mobile        String       @db.VarChar(16)
+  email         String?      @db.VarChar(254)
+  addressLine   String?      @map("address_line") @db.VarChar(255)
+  city          String?      @db.VarChar(80)
+  pincode       String?      @db.VarChar(6)
+  dateOfBirth   DateTime?    @map("date_of_birth") @db.Date
+  idType        AgentIdType? @map("id_type")
+  /// Encrypted (FieldEncryptor, AAD = customer id); only the last 4 are shown in lists.
+  idNumberEnc   String?      @map("id_number_enc")
+  idNumberLast4 String?      @map("id_number_last4") @db.VarChar(4)
+  note          String?      @db.VarChar(255)
+  createdById   String       @map("created_by_id")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  beneficiaries AgentBeneficiary[]
+  transactions  AgentTransaction[]
+
+  @@unique([agentId, mobile])
+  @@index([agentId, createdAt(sort: Desc)])
+  @@map("agent_customers")
+}
+
+/// Someone a customer sends money to (bank account and/or UPI id).
+model AgentBeneficiary {
+  id               String   @id
+  agentId          String   @map("agent_id")
+  customerId       String   @map("customer_id")
+  name             String   @db.VarChar(120)
+  bankName         String?  @map("bank_name") @db.VarChar(120)
+  /// Encrypted (AAD = beneficiary id).
+  accountNumberEnc String?  @map("account_number_enc")
+  accountLast4     String?  @map("account_last4") @db.VarChar(4)
+  ifsc             String?  @db.VarChar(11)
+  upiId            String?  @map("upi_id") @db.VarChar(100)
+  relation         String?  @db.VarChar(40)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer     AgentCustomer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  transactions AgentTransaction[]
+
+  @@index([agentId, customerId])
+  @@map("agent_beneficiaries")
+}
+
+/// A recorded transaction. Customer and beneficiary details are copied at the time, so a receipt
+/// never changes when the customer is edited later.
+model AgentTransaction {
+  id                 String            @id
+  agentId            String            @map("agent_id")
+  receiptNo          String            @map("receipt_no") @db.VarChar(20)
+  /// Random token for the customer's public receipt link.
+  receiptToken       String            @unique @map("receipt_token") @db.VarChar(64)
+  type               AgentTxnType
+  direction          AgentTxnDirection
+  mode               AgentPayMode
+  status             AgentTxnStatus    @default(SUCCESS)
+  amountMinor        BigInt            @map("amount_minor")
+  /// Service charge the agent collected from the customer.
+  feeMinor           BigInt            @default(0) @map("fee_minor")
+  /// Bank RRN / UTR / operator reference from wherever the transaction was really done.
+  reference          String?           @db.VarChar(64)
+  description        String?           @db.VarChar(255)
+  customerId         String?           @map("customer_id")
+  customerName       String?           @map("customer_name") @db.VarChar(120)
+  customerMobile     String?           @map("customer_mobile") @db.VarChar(16)
+  beneficiaryId      String?           @map("beneficiary_id")
+  beneficiaryName    String?           @map("beneficiary_name") @db.VarChar(120)
+  beneficiaryBank    String?           @map("beneficiary_bank") @db.VarChar(120)
+  beneficiaryAccount String?           @map("beneficiary_account") @db.VarChar(24)
+  beneficiaryIfsc    String?           @map("beneficiary_ifsc") @db.VarChar(11)
+  beneficiaryUpi     String?           @map("beneficiary_upi") @db.VarChar(100)
+  occurredAt         DateTime          @map("occurred_at") @db.Timestamptz(3)
+  createdById        String            @map("created_by_id")
+  createdByName      String            @map("created_by_name") @db.VarChar(120)
+  statusNote         String?           @map("status_note") @db.VarChar(255)
+  statusChangedAt    DateTime?         @map("status_changed_at") @db.Timestamptz(3)
+  receiptSentAt      DateTime?         @map("receipt_sent_at") @db.Timestamptz(3)
+  createdAt          DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  customer    AgentCustomer?    @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  beneficiary AgentBeneficiary? @relation(fields: [beneficiaryId], references: [id], onDelete: Restrict)
+
+  @@unique([agentId, receiptNo])
+  @@index([agentId, occurredAt(sort: Desc)])
+  @@index([agentId, customerId, occurredAt(sort: Desc)])
+  @@index([agentId, createdAt])
+  @@map("agent_transactions")
+}
+
+/// A plan purchase: one payment link on the billing merchant. Paid orders are the billing history.
+model AgentPlanOrder {
+  id                String             @id
+  agentId           String             @map("agent_id")
+  planId            String             @map("plan_id")
+  period            AgentBillingPeriod
+  amountMinor       BigInt             @map("amount_minor")
+  status            AgentOrderStatus   @default(PENDING)
+  checkoutSessionId String?            @unique @map("checkout_session_id")
+  checkoutUrl       String?            @map("checkout_url") @db.VarChar(512)
+  /// Set when paid (or granted by an admin): the plan period this order bought.
+  periodStart       DateTime?          @map("period_start") @db.Timestamptz(3)
+  periodEnd         DateTime?          @map("period_end") @db.Timestamptz(3)
+  paidAt            DateTime?          @map("paid_at") @db.Timestamptz(3)
+  /// Admin grant instead of a payment.
+  grantedById       String?            @map("granted_by_id")
+  createdById       String             @map("created_by_id")
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  plan AgentPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([agentId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@map("agent_plan_orders")
+}
+
+/// The agent's own Google Drive, connected with OAuth (scope drive.file) for backups.
+model AgentDriveConnection {
+  agentId         String           @id @map("agent_id")
+  googleEmail     String?          @map("google_email") @db.VarChar(254)
+  /// Encrypted OAuth refresh token (AAD = agent id).
+  refreshTokenEnc String           @map("refresh_token_enc")
+  folderId        String?          @map("folder_id") @db.VarChar(128)
+  status          AgentDriveStatus @default(CONNECTED)
+  autoBackup      Boolean          @default(true) @map("auto_backup")
+  lastBackupAt    DateTime?        @map("last_backup_at") @db.Timestamptz(3)
+  lastError       String?          @map("last_error") @db.VarChar(255)
+  connectedById   String           @map("connected_by_id")
+  createdAt       DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@map("agent_drive_connections")
 }

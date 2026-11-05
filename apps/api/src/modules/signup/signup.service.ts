@@ -18,6 +18,7 @@ import { maskEmail } from '../auth/auth.util';
 import { AuthService } from '../auth/auth.service';
 import type { IssuedSession } from '../auth/session.service';
 import { MerchantsService } from '../merchants/merchants.service';
+import { AgentProfileService } from '../agents/agent-profile.service';
 
 /** How long a started sign-up (and its code) stays valid. */
 export const SIGNUP_TTL_SECONDS = 15 * 60;
@@ -39,6 +40,8 @@ interface PendingSignup {
   email: string;
   mobile: string;
   passwordHash: string;
+  /** MERCHANT (KYB onboarding) or AGENT (customer service point, docs/AGENTS.md). Older entries lack it. */
+  accountType?: 'MERCHANT' | 'AGENT';
   referrer: Referrer | null;
   /** The email already has an account: no code is ever sent, so verification can never succeed. */
   existing: boolean;
@@ -80,6 +83,7 @@ export class SignupService {
     private readonly notifications: NotificationsService,
     private readonly brand: BrandService,
     private readonly merchants: MerchantsService,
+    private readonly agents: AgentProfileService,
     private readonly auth: AuthService,
     private readonly audit: AuditService,
   ) {}
@@ -116,6 +120,7 @@ export class SignupService {
       email: input.email,
       mobile: input.mobile,
       passwordHash: await hashPassword(input.password),
+      accountType: input.account_type,
       referrer,
       existing,
       codeHash: codeHash(id, code),
@@ -171,6 +176,24 @@ export class SignupService {
 
     const { userId, merchantId } = await this.createAccount(pending);
     const session = await this.auth.signInNewAccount(userId, merchantId, pending.email);
+    const web = this.config.env.WEB_PUBLIC_URL.replace(/\/$/, '');
+    if (pending.accountType === 'AGENT') {
+      await this.notifications.queue(this.prisma, {
+        template: 'agent_signup_welcome',
+        to: pending.email,
+        userId,
+        subject: 'Your {{product}} agent account is ready',
+        text: [
+          `Hi ${pending.name},`,
+          '',
+          `Your agent account for ${pending.businessName} is ready on the Free plan.`,
+          'Add your UPI id and QR code, then start recording customers, money transfers, cash in and cash out — with a receipt for every transaction.',
+          '',
+          `Open your counter: ${web}/agent`,
+        ].join('\n'),
+      });
+      return session;
+    }
     await this.notifications.queue(this.prisma, {
       template: 'signup_welcome',
       to: pending.email,
@@ -252,6 +275,7 @@ export class SignupService {
   }
 
   private async createAccount(p: PendingSignup): Promise<{ userId: string; merchantId: string }> {
+    if (p.accountType === 'AGENT') return this.createAgentAccount(p);
     const ownerRole = await this.prisma.role.findFirstOrThrow({ where: { key: 'MERCHANT_OWNER', organizationId: null }, select: { id: true } });
     const userId = newId('user');
     try {
@@ -280,6 +304,37 @@ export class SignupService {
         return merchantId;
       });
       return { userId, merchantId };
+    } catch (err) {
+      if (isUniqueViolation(err, 'mobile')) throw new AppError(ErrorCode.CONFLICT, 'This mobile number is already registered. Sign in, or sign up with another number');
+      if (isUniqueViolation(err, 'email')) throw new AppError(ErrorCode.CONFLICT, 'This email is already registered. Sign in instead');
+      throw err;
+    }
+  }
+
+  /** Agent sign-up: an AGENT organization on the Free plan with its owner (no KYB, two-factor optional). */
+  private async createAgentAccount(p: PendingSignup): Promise<{ userId: string; merchantId: string }> {
+    const ownerRole = await this.prisma.role.findFirstOrThrow({ where: { key: 'AGENT_OWNER', organizationId: null }, select: { id: true } });
+    const userId = newId('user');
+    try {
+      const agentId = await this.prisma.$transaction(async (tx) => {
+        await tx.user.create({ data: { id: userId, name: p.name, email: p.email, mobile: p.mobile, passwordHash: p.passwordHash, status: 'ACTIVE', emailVerifiedAt: new Date() } });
+        const r = p.referrer;
+        const agentId = await this.agents.createInTx(tx, { shopName: p.businessName, ownerName: p.name, email: p.email, mobile: p.mobile, parentId: r?.organizationId ?? null, source: r ? 'agent-signup:referral' : 'agent-signup' });
+        await tx.userRole.create({ data: { id: newId('membership'), userId, roleId: ownerRole.id, organizationId: agentId } });
+        await this.audit.record(
+          {
+            action: 'agent.signed_up',
+            resourceType: 'agent',
+            resourceId: agentId,
+            organizationId: agentId,
+            actor: { type: 'USER', id: userId, role: 'AGENT_OWNER' },
+            newValue: { shop_name: p.businessName, owner_email: maskEmail(p.email), referrer_id: r?.organizationId ?? null },
+          },
+          tx,
+        );
+        return agentId;
+      });
+      return { userId, merchantId: agentId };
     } catch (err) {
       if (isUniqueViolation(err, 'mobile')) throw new AppError(ErrorCode.CONFLICT, 'This mobile number is already registered. Sign in, or sign up with another number');
       if (isUniqueViolation(err, 'email')) throw new AppError(ErrorCode.CONFLICT, 'This email is already registered. Sign in instead');

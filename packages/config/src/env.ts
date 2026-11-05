@@ -113,6 +113,12 @@ export const apiEnvSchema = z
      * <cwd>/.storage outside production; in production, local storage is unavailable until set.
      */
     LOCAL_STORAGE_ROOT: z.string().default(''),
+    /**
+     * Google OAuth client (Web application) for agents' own Google Drive backups (docs/AGENTS.md §7).
+     * Authorised redirect URI: <API_PUBLIC_URL>/v1/public/agent-drive/callback. Empty = Drive backup off.
+     */
+    GOOGLE_OAUTH_CLIENT_ID: z.string().default(''),
+    GOOGLE_OAUTH_CLIENT_SECRET: z.string().default(''),
   })
   .superRefine((env, ctx) => {
     if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET) {

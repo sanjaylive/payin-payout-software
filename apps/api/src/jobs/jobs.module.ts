@@ -14,6 +14,7 @@ import { ReportsModule } from '../modules/reports/reports.module';
 import { StaticQrModule } from '../modules/static-qr/static-qr.module';
 import { DisputesModule } from '../modules/disputes/disputes.module';
 import { InvoicesModule } from '../modules/invoices/invoices.module';
+import { AgentsModule } from '../modules/agents/agents.module';
 import { JobsRunner } from './jobs.runner';
 
 /**
@@ -38,6 +39,7 @@ export class JobsModule {
         CommissionsModule,
         RiskModule,
         ReportsModule,
+        AgentsModule,
         StaticQrModule,
         DisputesModule,
         InvoicesModule,

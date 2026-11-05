@@ -17,6 +17,17 @@ function cookieOptions(config: ApiConfig): CookieOptions {
   };
 }
 
+export const CLIENT_HEADER = 'x-pay2all-client';
+
+/**
+ * Native apps (the Flutter agent app) cannot use the httpOnly cookie. They identify themselves with
+ * `X-Pay2All-Client: mobile` and receive the refresh token in the response body instead, keep it in
+ * the OS keystore, and rotate it through POST /v1/auth/mobile/refresh. Browsers never get it in a body.
+ */
+export function isMobileClient(req: Request): boolean {
+  return req.headers[CLIENT_HEADER] === 'mobile';
+}
+
 export function setRefreshCookie(res: Response, config: ApiConfig, token: string): void {
   res.cookie(REFRESH_COOKIE, token, { ...cookieOptions(config), maxAge: config.env.REFRESH_TOKEN_TTL_SECONDS * 1000 });
 }
