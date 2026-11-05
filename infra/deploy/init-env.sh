@@ -65,6 +65,9 @@ BOOTSTRAP_ADMIN_NAME="Platform Super Admin"
 # ---- Optional ----
 SENTRY_DSN=
 OTEL_EXPORTER_OTLP_ENDPOINT=
+# Agents' Google Drive backups (docs/AGENTS.md §7). Redirect URI: https://${DOMAIN}/v1/public/agent-drive/callback
+GOOGLE_OAUTH_CLIENT_ID=
+GOOGLE_OAUTH_CLIENT_SECRET=
 ENV
 chmod 600 "$OUT"
 echo "Created $OUT"

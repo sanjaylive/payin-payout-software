@@ -18,3 +18,5 @@ apps/web/public/downloads
 deploy.env
 .idea
 .vscode
+# The Flutter app (apps/mobile) is built separately, never into the server image.
+apps/mobile

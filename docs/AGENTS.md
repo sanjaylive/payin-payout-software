@@ -215,13 +215,13 @@ Every response is `{ "success": true, "data": … }`. Lists add `"meta": { "limi
 
 | | |
 | --- | --- |
-| `GET /v1/admin/agents/overview` | counts by plan, this month's volume and plan revenue |
-| `GET /v1/admin/agents?search&plan&cursor&limit` | agents |
+| `GET /v1/admin/agents/overview` | `{ agents, new_this_month, by_plan: [{ code, name, agents }], transactions_this_month, volume_this_month, plan_revenue_this_month, plan_orders_this_month }` |
+| `GET /v1/admin/agents?search&plan&cursor&limit` | agents: `plan_code` is the plan in force, `subscribed_plan_code` the one paid for (they differ once it lapses) |
 | `GET /v1/admin/agents/:agentId` | detail with orders |
 | `POST /v1/admin/agents/:agentId/status` | `{ status: ACTIVE\|SUSPENDED, reason? }`; suspending signs everyone out |
 | `POST /v1/admin/agents/:agentId/plan` | `{ plan_code, expires_at? (YYYY-MM-DD), note? }` |
 | `GET /v1/admin/agent-plans`, `PATCH /v1/admin/agent-plans/:code` | plan editor: `{ name?, description?, price_monthly?, price_yearly?, monthly_txn_limit? (null = unlimited), staff_limit?, drive_backup?, branded_receipts?, messaging?, active? }` |
-| `GET` / `PUT /v1/admin/agent-settings` | `{ billing_merchant_id }` |
+| `GET` / `PUT /v1/admin/agent-settings` | PUT `{ billing_merchant_id }` → `{ billing_merchant_id, billing_merchant_name, billing_ready }` |
 
 ## 9. Security notes
 

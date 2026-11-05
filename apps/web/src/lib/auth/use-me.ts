@@ -17,6 +17,8 @@ const ONBOARDING_STATUSES = ['DRAFT', 'MORE_INFORMATION_REQUIRED'];
 
 export function homePathFor(me: Pick<Me, 'organization' | 'session'> & Partial<Pick<Me, 'onboarding'>>): string {
   if (me.session.restricted) return '/setup-mfa';
+  // Agents (customer service points) have no KYB onboarding; they go straight to the counter.
+  if (me.organization.type === 'AGENT') return '/agent';
   if (me.onboarding && ONBOARDING_STATUSES.includes(me.onboarding.status)) return '/onboarding';
   switch (me.organization.type) {
     case 'PLATFORM':

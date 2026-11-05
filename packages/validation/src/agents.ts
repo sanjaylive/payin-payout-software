@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { passwordSchema } from './auth';
 import { emailSchema, idSchema, mobileSchema } from './common';
 import { BANK_ACCOUNT_RE, IFSC_RE, PINCODE_RE } from './india';
 import { amountSchema } from './merchant';
@@ -201,7 +202,7 @@ export const agentStaffCreateSchema = z.strictObject({
   name: text(120).min(2, 'Enter the name'),
   email: emailSchema,
   mobile: mobileSchema,
-  password: z.string().min(10, 'At least 10 characters').max(128),
+  password: passwordSchema,
 });
 
 export const agentStaffStatusSchema = z.strictObject({ active: z.boolean() });

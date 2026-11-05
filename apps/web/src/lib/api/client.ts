@@ -124,6 +124,15 @@ export async function apiDownload(path: string, fallbackName: string): Promise<v
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+/** Authenticated binary fetch (e.g. an uploaded image shown with an object URL). */
+export async function apiBlob(path: string): Promise<Blob> {
+  const get = () => fetch(buildUrl(path), { credentials: 'include', headers: { Authorization: `Bearer ${useAuthStore.getState().accessToken ?? ''}` } });
+  let res = await get();
+  if (res.status === 401 && (await refreshSession())) res = await get();
+  if (!res.ok) await parse(res);
+  return res.blob();
+}
+
 export async function apiRequest<T>(path: string, opts: RequestOptions = {}): Promise<ApiSuccess<T, PaginationMeta>> {
   let res = await send(path, opts);
   if (res.status === 401 && opts.auth !== false) {

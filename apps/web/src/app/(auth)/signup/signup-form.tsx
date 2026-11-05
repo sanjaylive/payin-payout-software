@@ -6,7 +6,7 @@ import { Checkbox } from '@pay2all/ui/components/ui/checkbox';
 import { cn } from '@pay2all/ui/lib/utils';
 import { signupFormSchema } from '@pay2all/validation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, ArrowRight, BadgeCheck, Building2, Eye, EyeOff, Loader2, Mail, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BadgeCheck, Building2, CloudUpload, Eye, EyeOff, Loader2, Mail, ReceiptText, RefreshCw, ShieldCheck, Sparkles, Store, Users } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -22,6 +22,7 @@ import { api, ApiError, apiRequest } from '@/lib/api/client';
 import type { SessionTokens } from '@/lib/api/types';
 import { useAuthStore } from '@/lib/auth/store';
 import { useBrand } from '@/lib/brand/brand-provider';
+import { AgentPlansPreview } from '@/features/agents/plans-preview';
 
 type FormValues = z.input<typeof signupFormSchema>;
 interface Started {
@@ -64,6 +65,19 @@ const PERKS = [
   { icon: Sparkles, text: 'Try everything in test mode while we review your business' },
 ];
 
+const AGENT_PERKS = [
+  { icon: ReceiptText, text: 'Record transfers, withdrawals, deposits and bills with a printable receipt for every customer' },
+  { icon: Users, text: 'Save customers and beneficiaries; find them by mobile number next time' },
+  { icon: CloudUpload, text: 'Daily totals, reports and CSV; Google Drive backup on paid plans' },
+];
+
+type AccountType = 'MERCHANT' | 'AGENT';
+
+const ACCOUNT_TYPES: { value: AccountType; title: string; text: string; icon: typeof Store }[] = [
+  { value: 'MERCHANT', title: 'Merchant', text: 'Collect payments', icon: Building2 },
+  { value: 'AGENT', title: 'Agent / CSP', text: 'Record cash & transfers', icon: Store },
+];
+
 export function SignupForm() {
   const brand = useBrand();
   const router = useRouter();
@@ -73,6 +87,8 @@ export function SignupForm() {
   const [error, setError] = useState<unknown>(null);
   const [started, setStarted] = useState<Started | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+  const [accountType, setAccountType] = useState<AccountType>(params.get('type')?.toLowerCase() === 'agent' ? 'AGENT' : 'MERCHANT');
+  const agent = accountType === 'AGENT';
 
   const info = useQuery({
     queryKey: ['signup-info', ref ?? ''],
@@ -91,7 +107,7 @@ export function SignupForm() {
     setError(null);
     try {
       const code = v.referral_code.trim();
-      const body = { name: v.name, business_name: v.business_name, email: v.email, mobile: v.mobile, password: v.password, accept_terms: true, ...(code ? { referral_code: code } : {}) };
+      const body = { name: v.name, business_name: v.business_name, email: v.email, mobile: v.mobile, password: v.password, accept_terms: true, account_type: accountType, ...(code ? { referral_code: code } : {}) };
       setStarted(stamp(await api.post<Started>('/v1/signup', body, { auth: false })));
     } catch (e) {
       if (e instanceof ApiError && e.details?.length) {
@@ -119,7 +135,7 @@ export function SignupForm() {
         onVerified={(tokens) => {
           setAccessToken(tokens.access_token!);
           toast.success('Email verified. Your account is ready');
-          router.replace(tokens.status === 'MFA_ENROLLMENT_REQUIRED' ? '/setup-mfa' : '/onboarding');
+          router.replace(tokens.status === 'MFA_ENROLLMENT_REQUIRED' ? '/setup-mfa' : agent ? '/agent' : '/onboarding');
         }}
       />
     );
@@ -129,7 +145,7 @@ export function SignupForm() {
   return (
     <AuthCard
       title="Create your account"
-      description={`Start accepting payments with ${brand.short_name}. It takes about two minutes.`}
+      description={agent ? `Run your counter on ${brand.short_name}: customers, receipts and daily totals. Free to start.` : `Start accepting payments with ${brand.short_name}. It takes about two minutes.`}
       footer={<p>Already have an account? <Link href="/login" className="text-primary font-medium hover:underline">Sign in</Link></p>}
     >
       {referrer && (
@@ -137,13 +153,34 @@ export function SignupForm() {
           <BadgeCheck className="text-primary size-4 shrink-0" /> Referred by <span className="font-medium">{referrer.name}</span>
         </div>
       )}
+      <div role="radiogroup" aria-label="Account type" className="mb-5 grid grid-cols-2 gap-2">
+        {ACCOUNT_TYPES.map((t) => {
+          const on = accountType === t.value;
+          return (
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={on}
+              onClick={() => setAccountType(t.value)}
+              className={cn('flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors', on ? 'border-primary bg-primary/5 ring-primary ring-1' : 'hover:border-primary/50')}
+            >
+              <t.icon className={cn('mt-0.5 size-4 shrink-0', on ? 'text-primary' : 'text-muted-foreground')} aria-hidden />
+              <span>
+                <span className="block text-sm font-medium">{t.title}</span>
+                <span className="text-muted-foreground block text-xs">{t.text}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
       <FormError error={error} />
       <form onSubmit={onSubmit} className="space-y-4" noValidate>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Your full name" autoComplete="name" autoFocus error={formState.errors.name?.message} {...register('name')} />
-          <FormField label="Business name" autoComplete="organization" error={formState.errors.business_name?.message} {...register('business_name')} />
+          <FormField label={agent ? 'Shop name' : 'Business name'} autoComplete="organization" error={formState.errors.business_name?.message} {...register('business_name')} />
         </div>
-        <FormField label="Work email" type="email" autoComplete="email" hint="We'll send a verification code here" error={formState.errors.email?.message} {...register('email')} />
+        <FormField label={agent ? 'Email' : 'Work email'} type="email" autoComplete="email" hint="We'll send a verification code here" error={formState.errors.email?.message} {...register('email')} />
         <FormField label="Mobile number" type="tel" inputMode="tel" autoComplete="tel-national" placeholder="98765 43210" error={formState.errors.mobile?.message} {...register('mobile')} />
         <div className="space-y-2">
           <div className="relative">
@@ -171,7 +208,7 @@ export function SignupForm() {
               <label className="flex items-start gap-2.5 text-sm leading-5">
                 <Checkbox checked={field.value} onCheckedChange={(v) => field.onChange(v === true)} className="mt-0.5" aria-invalid={Boolean(formState.errors.accept_terms)} />
                 <span className="text-muted-foreground">
-                  I agree to the {brand.short_name} terms of service and privacy policy, and confirm I&apos;m authorised to open an account for this business.
+                  I agree to the {brand.short_name} terms of service and privacy policy, and confirm I&apos;m authorised to open an account for this {agent ? 'shop' : 'business'}.
                 </span>
               </label>
               {formState.errors.accept_terms && <p className="text-destructive text-xs">{formState.errors.accept_terms.message}</p>}
@@ -179,11 +216,12 @@ export function SignupForm() {
           )}
         />
         <Button type="submit" size="lg" className="w-full" disabled={formState.isSubmitting}>
-          {formState.isSubmitting ? <Loader2 className="animate-spin" /> : <ArrowRight />} Create account
+          {formState.isSubmitting ? <Loader2 className="animate-spin" /> : <ArrowRight />} {agent ? 'Create agent account' : 'Create account'}
         </Button>
       </form>
+      {agent && <AgentPlansPreview className="mt-8" />}
       <ul className="mt-8 space-y-2.5 border-t pt-6">
-        {PERKS.map(({ icon: Icon, text }) => (
+        {(agent ? AGENT_PERKS : PERKS).map(({ icon: Icon, text }) => (
           <li key={text} className="text-muted-foreground flex items-start gap-2.5 text-xs leading-5">
             <Icon className="text-primary mt-0.5 size-4 shrink-0" /> {text}
           </li>

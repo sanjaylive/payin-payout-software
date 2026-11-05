@@ -3,3 +3,5 @@ pnpm-lock.yaml
 **/dist/**
 **/.next/**
 **/migrations/**/*.sql
+# Flutter app: formatted by dart format.
+apps/mobile/**

@@ -4,7 +4,9 @@ import {
   ArrowUpFromLine,
   Building2,
   ChartColumn,
+  CloudUpload,
   Code2,
+  Crown,
   FileCheck2,
   FileClock,
   Gauge,
@@ -12,6 +14,11 @@ import {
   Landmark,
   Palette,
   LayoutDashboard,
+  CirclePlus,
+  Contact,
+  QrCode,
+  Store,
+  UserCog,
   type LucideIcon,
   Network,
   Receipt,
@@ -153,6 +160,21 @@ export const PARTNER_NAV: NavItem[] = [
   { label: 'Settings', href: '/settings/security', icon: Settings, phase: 1 },
 ];
 
+/** Agent (customer service point) counter: docs/AGENTS.md. Operators see only the desk entries. */
+export const AGENT_NAV: NavItem[] = [
+  { label: 'Home', href: '/agent', icon: LayoutDashboard, phase: 1, permission: 'agent.desk.read' },
+  { label: 'New transaction', href: '/agent/new', icon: CirclePlus, phase: 1, permission: 'agent.desk.write' },
+  { label: 'Transactions', href: '/agent/transactions', icon: Receipt, phase: 1, permission: 'agent.desk.read', matchPrefix: true },
+  { label: 'Customers', href: '/agent/customers', icon: Contact, phase: 1, permission: 'agent.desk.read', matchPrefix: true },
+  { label: 'Reports', href: '/agent/reports', icon: ChartColumn, phase: 1, permission: 'agent.desk.read' },
+  { label: 'My QR', href: '/agent/qr', icon: QrCode, phase: 1, permission: 'agent.desk.read' },
+  { label: 'Plan', href: '/agent/plan', icon: Crown, phase: 1, permission: 'agent.desk.read' },
+  { label: 'Staff', href: '/agent/staff', icon: UserCog, phase: 1, permission: 'agent.settings.manage' },
+  { label: 'Backup', href: '/agent/backup', icon: CloudUpload, phase: 1, permission: 'agent.settings.manage' },
+  { label: 'Shop settings', href: '/agent/settings', icon: Settings, phase: 1, permission: 'agent.settings.manage' },
+  { label: 'Security', href: '/agent/security', icon: ShieldCheck, phase: 1 },
+];
+
 export const ADMIN_NAV: NavItem[] = [
   { label: 'Dashboard', href: '/admin', icon: LayoutDashboard, phase: 1 },
   { label: 'Analytics', href: '/admin/analytics', icon: Activity, phase: 10, permission: 'report.read' },
@@ -170,6 +192,7 @@ export const ADMIN_NAV: NavItem[] = [
   },
   { label: 'Resellers', href: '/admin/resellers', icon: Network, phase: 1, permission: 'reseller.read' },
   { label: 'API Partners', href: '/admin/api-partners', icon: Handshake, phase: 1, permission: 'api_partner.read' },
+  { label: 'Agents', href: '/admin/agents', icon: Store, phase: 1, permission: 'agent.admin.read', matchPrefix: true },
   {
     label: 'Transactions',
     icon: Receipt,
