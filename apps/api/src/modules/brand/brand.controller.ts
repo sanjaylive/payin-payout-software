@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { BRAND_ASSET_KINDS, BRAND_IMAGE_MAX_BYTES, brandAssetReasonSchema, customDomainSchema, idSchema, saveBrandSchema, saveResellerBrandSchema } from '@pay2all/validation';
+import { BRAND_ASSET_KINDS, BRAND_IMAGE_MAX_BYTES, brandAssetReasonSchema, customDomainSchema, idSchema, saveBrandSchema, saveLandingSchema, saveResellerBrandSchema } from '@pay2all/validation';
 import type { Response } from 'express';
 import { memoryStorage } from 'multer';
 import { z } from 'zod';
@@ -84,6 +84,15 @@ export class BrandController {
   @ApiZodBody(saveBrandSchema)
   save(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(saveBrandSchema)) body: z.output<typeof saveBrandSchema>) {
     return this.settings.save(actor, body);
+  }
+
+  @Put('landing')
+  @ApiBearerAuth()
+  @RequirePermissions('system.settings.manage')
+  @ApiOperation({ summary: 'Choose the public landing page: PAYMENTS (payin/payout) or CSP (agent counter register)' })
+  @ApiZodBody(saveLandingSchema)
+  saveLanding(@CurrentActor() actor: Actor, @Body(new ZodValidationPipe(saveLandingSchema)) body: z.output<typeof saveLandingSchema>) {
+    return this.settings.saveLanding(actor, body);
   }
 
   @Post('assets/:kind')

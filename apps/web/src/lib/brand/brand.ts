@@ -1,4 +1,4 @@
-import { BRAND_DEFAULTS } from '@pay2all/validation';
+import { BRAND_DEFAULTS, type LandingVariant } from '@pay2all/validation';
 
 export interface BrandAsset {
   url: string;
@@ -21,6 +21,8 @@ export interface Brand {
   login_headline: string;
   login_subtext: string;
   footer_text: string | null;
+  /** Public landing page at "/" (Settings → Landing Page). Older APIs omit it. */
+  landing_variant?: LandingVariant;
   version: number;
   updated_at: string | null;
   assets: { logo: BrandAsset | null; logo_dark: BrandAsset | null; icon: BrandAsset | null };

@@ -2,6 +2,7 @@
 export const SETTINGS_TABS: { label: string; href: string; permission?: string }[] = [
   { label: 'System', href: '/admin/settings/system', permission: 'system.settings.manage' },
   { label: 'Brand', href: '/admin/settings/brand', permission: 'system.settings.manage' },
+  { label: 'Landing Page', href: '/admin/settings/landing', permission: 'system.settings.manage' },
   { label: 'File Storage', href: '/admin/settings/storage', permission: 'system.settings.manage' },
   { label: 'Payment Gateways', href: '/admin/settings/gateways', permission: 'provider.read' },
   { label: 'Fund Accounts', href: '/admin/settings/fund-accounts', permission: 'fund.read' },
