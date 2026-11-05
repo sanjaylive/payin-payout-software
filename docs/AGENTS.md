@@ -142,7 +142,7 @@ Every response is `{ "success": true, "data": … }`. Lists add `"meta": { "limi
 | `POST /v1/signup` | `{ name, business_name, email, mobile, password, accept_terms: true, account_type: "AGENT", referral_code? }` → `{ signup_id, email_masked, expires_in, resend_after }` |
 | `POST /v1/signup/resend` | `{ signup_id }` |
 | `POST /v1/signup/verify` | `{ signup_id, code }` → session |
-| `POST /v1/auth/login` | `{ identifier (email or mobile), password }` → session, or `{ status: "MFA_REQUIRED", mfa_token, mfa_methods }` |
+| `POST /v1/auth/login` | `{ identifier (email or mobile), password }` → session, or `{ status: "MFA_REQUIRED", mfa_token, mfa_methods: { totp, passkey } }` (passkeys are web-only) |
 | `POST /v1/auth/mfa/verify` | `{ mfa_token, code }` or `{ mfa_token, recovery_code }` → session |
 | `GET /v1/auth/me` | user, organization `{ id, name, type: "AGENT", status }`, roles, `permissions[]` |
 | `POST /v1/auth/password/forgot` | `{ identifier }` (emails a reset link) |
