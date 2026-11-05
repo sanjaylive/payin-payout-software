@@ -71,7 +71,7 @@ const SWATCHES = [
   '#334155',
 ];
 
-type Fields = Omit<Brand, 'version' | 'updated_at' | 'assets'>;
+type Fields = Omit<Brand, 'version' | 'updated_at' | 'assets' | 'owner' | 'landing_variant'>;
 type Pending =
   { file: File; url: string; width: number | null; height: number | null } | 'REMOVE' | null;
 

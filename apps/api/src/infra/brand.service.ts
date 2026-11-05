@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { BrandAssetKind, PrismaClient, ResellerBrand } from '@pay2all/database';
 import { ApiConfig } from '../config/api-config';
-import { BRAND_DEFAULTS } from '@pay2all/validation';
+import { BRAND_DEFAULTS, LANDING_VARIANTS, type LandingVariant } from '@pay2all/validation';
 import { PRISMA } from './tokens';
 
 export interface Brand {
@@ -16,6 +16,8 @@ export interface Brand {
   login_headline: string;
   login_subtext: string;
   footer_text: string | null;
+  /** Public landing page shown at "/" (platform setting; resellers inherit it). */
+  landing_variant: LandingVariant;
   version: number;
   updated_at: Date | null;
   /** Relative API paths with a content hash, so they can be cached forever. */
@@ -151,6 +153,7 @@ export class BrandService {
             login_headline: s.loginHeadline,
             login_subtext: s.loginSubtext,
             footer_text: s.footerText,
+            landing_variant: (LANDING_VARIANTS as readonly string[]).includes(s.landingVariant) ? (s.landingVariant as LandingVariant) : 'PAYMENTS',
           }
         : {}),
       version: s?.version ?? 0,

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { BrandAssetKind, PrismaClient } from '@pay2all/database';
 import { ErrorCode } from '@pay2all/types';
-import { BRAND_IMAGE_MAX_BYTES, type saveBrandSchema } from '@pay2all/validation';
+import { BRAND_DEFAULTS, BRAND_IMAGE_MAX_BYTES, type saveBrandSchema, type saveLandingSchema } from '@pay2all/validation';
 import type { z } from 'zod';
 import { AppError } from '../../common/errors/app-error';
 import { BrandService } from '../../infra/brand.service';
@@ -79,6 +79,25 @@ export class BrandSettingsService {
       }
       const { reason, version: _v, ...after } = input;
       await this.audit.record({ action: 'brand.updated', resourceType: 'brand', resourceId: 'default', organizationId: null, oldValue: before ? { product_name: before.productName, short_name: before.shortName, company_name: before.companyName, primary_color: before.primaryColor, support_email: before.supportEmail } : null, newValue: after, metadata: { reason } }, tx);
+    });
+    this.brand.invalidate();
+    return this.brand.get();
+  }
+
+  /** Switch the public landing page (Payments gateway vs CSP counter register). */
+  async saveLanding(actor: Actor, input: z.output<typeof saveLandingSchema>) {
+    platformOnly(actor);
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.brandSettings.findUnique({ where: { id: 'default' } });
+      if (before) {
+        await tx.brandSettings.update({ where: { id: 'default' }, data: { landingVariant: input.landing_variant, updatedById: actor.userId, version: { increment: 1 } } });
+      } else {
+        const d = BRAND_DEFAULTS;
+        await tx.brandSettings.create({
+          data: { id: 'default', productName: d.product_name, shortName: d.short_name, companyName: d.company_name, tagline: d.tagline, loginHeadline: d.login_headline, loginSubtext: d.login_subtext, landingVariant: input.landing_variant, updatedById: actor.userId },
+        });
+      }
+      await this.audit.record({ action: 'brand.landing_changed', resourceType: 'brand', resourceId: 'default', organizationId: null, oldValue: { landing_variant: before?.landingVariant ?? 'PAYMENTS' }, newValue: { landing_variant: input.landing_variant }, metadata: { reason: input.reason } }, tx);
     });
     this.brand.invalidate();
     return this.brand.get();

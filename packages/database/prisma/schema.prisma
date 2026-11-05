@@ -2767,6 +2767,8 @@ model BrandSettings {
   loginHeadline String   @map("login_headline") @db.VarChar(120)
   loginSubtext  String   @map("login_subtext") @db.VarChar(300)
   footerText    String?  @map("footer_text") @db.VarChar(200)
+  /// Which public landing page "/" shows: PAYMENTS (payin/payout) or CSP (agent counter register).
+  landingVariant String  @default("PAYMENTS") @map("landing_variant") @db.VarChar(20)
   version       Int      @default(1)
   updatedById   String?  @map("updated_by_id")
   updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)

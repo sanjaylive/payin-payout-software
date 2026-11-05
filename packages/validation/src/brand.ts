@@ -6,6 +6,10 @@ export const BRAND_ASSET_KINDS = ['LOGO', 'LOGO_DARK', 'ICON'] as const;
 export const BRAND_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml', 'image/x-icon'] as const;
 export const BRAND_IMAGE_MAX_BYTES = 1024 * 1024;
 
+/** Public landing page shown at "/": payin/payout gateway, or the CSP / agent counter register. */
+export const LANDING_VARIANTS = ['PAYMENTS', 'CSP'] as const;
+export type LandingVariant = (typeof LANDING_VARIANTS)[number];
+
 export const BRAND_DEFAULTS = {
   product_name: 'Pay2All Payments',
   short_name: 'Pay2All',
@@ -18,6 +22,7 @@ export const BRAND_DEFAULTS = {
   login_headline: 'Collections, payouts and settlements — on one reliable ledger.',
   login_subtext: 'Every rupee is double-entry accounted, every action is audited, and every API call is idempotent.',
   footer_text: null as string | null,
+  landing_variant: 'PAYMENTS' as LandingVariant,
 };
 
 /** Plain text only: no markup or control characters anywhere a brand string is shown. */
@@ -105,4 +110,10 @@ export const customDomainSchema = z.strictObject({
     .transform((v) => v.replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
     .refine((v) => /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(v) && v.length <= 253, 'Enter a domain like pay.yourcompany.com')
     .refine((v) => !/(^|\.)(localhost|local|internal|test|example)$/.test(v), 'Use a public domain you own'),
+});
+
+/** Super admin: switch the public landing page (Settings → Landing Page). */
+export const saveLandingSchema = z.strictObject({
+  landing_variant: z.enum(LANDING_VARIANTS),
+  reason: z.string().trim().min(5, 'Give a reason (at least 5 characters)').max(300),
 });

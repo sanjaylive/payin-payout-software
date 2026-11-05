@@ -6,7 +6,7 @@ import Link from 'next/link';
 export default function NotFound() {
   return (
     <div className="grid min-h-dvh place-items-center">
-      <EmptyState icon={SearchX} title="Page not found" description="The page you're looking for doesn't exist." action={<Button asChild><Link href="/">Go home</Link></Button>} />
+      <EmptyState icon={SearchX} title="Page not found" description="The page you're looking for doesn't exist." action={<Button asChild><Link href="/home">Go home</Link></Button>} />
     </div>
   );
 }
